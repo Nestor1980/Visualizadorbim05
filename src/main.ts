@@ -12,28 +12,46 @@ import * as OBF from "@thatopen/components-front";
 const container = document.getElementById('container');
 
 if (container) {
-  // 2. Inicializar el núcleo de la plataforma
-  const components = new OBC.Components();
-  console.log("✅ 02_Components creado");
+    // 2. Inicializar el núcleo de la plataforma
+    const components = new OBC.Components();
+    console.log("✅ 02_Components creado");
 
-  // 3. Crear el Mundo con tipos específicos (Genéricos)
-  const worlds = components.get(OBC.Worlds);
-  const world = worlds.create<
-    OBC.SimpleScene,
-    OBC.OrthoPerspectiveCamera,
-    OBC.SimpleRenderer
-  >();
-  console.log("✅ 03_World creado");
+    // 3. Crear el Mundo con tipos específicos (Genéricos)
+    const worlds = components.get(OBC.Worlds);
+    const world = worlds.create<
+      OBC.SimpleScene,
+      OBC.OrthoPerspectiveCamera,
+      OBC.SimpleRenderer
+    >();
+    console.log("✅ 03_World creado");
+
+
 
   // 4. Asignar las instancias correspondientes
   world.scene = new OBC.SimpleScene(components);
-  world.renderer = new OBC.SimpleRenderer(components, container);
+  world.renderer = new OBF.PostproductionRenderer(components, container);
   world.camera = new OBC.OrthoPerspectiveCamera(components);
   console.log("✅ 04_World configurado");
 
   // 5. Inicializar el sistema de componentes
   components.init();
   console.log("✅ 05_Components inicializado");
+
+  // ===============================
+// PASO 3 – Hoverer
+// ===============================
+const hoverer = components.get(OBF.Hoverer);
+
+hoverer.world = world;
+hoverer.enabled = true;
+
+hoverer.material = new THREE.MeshBasicMaterial({
+  color: 0x6528d7,
+  transparent: true,
+  opacity: 0.5,
+  depthTest: false,
+});
+
 
   // 📏 PASO 5.1 – Crear LengthMeasurement (That Open Front – API correcta)
 const measurer = components.get(OBF.LengthMeasurement);
@@ -74,9 +92,10 @@ measurer.list.onItemAdded.add((line) => {
 fragments.init(workerUrl);
 console.log("✅ FragmentsManager configurado con worker local")
   // Configurar los eventos del FragmentsManager
-  world.camera.controls.addEventListener("rest", () =>
-    fragments.core.update(true)
-  );
+  world.camera.controls.addEventListener("update", () => {
+  fragments.core.update();
+});
+
 
   // Asegurar que los modelos se agreguen a la escena cuando se carguen
   fragments.list.onItemSet.add(({ value: model }) => {
@@ -212,13 +231,11 @@ const panel = BUI.Component.create<BUI.PanelSection>(() => {
           }}">
           ${measurer.unitsList.map(
             (unit) =>
-              BUI.html`
-                <bim-option
-                  label=${unit}
-                  value=${unit}
-                  ?checked=${unit === measurer.units}>
-                </bim-option>
-              `
+              BUI.html`<bim-option
+                label=${unit}
+                value=${unit}
+                ?checked=${unit === measurer.units}>
+              </bim-option>`
           )}
         </bim-dropdown>
 
