@@ -11,8 +11,8 @@ export class BIMViewer {
   constructor(container: HTMLElement) {
     this.components = new OBC.Components();
     this.world = this.components.get(OBC.Worlds).create();
-    this.scene = this.world.getScene();
-    this.camera = this.world.getCamera();
+    this.scene = this.components.get(OBC.SimpleScenes).create();
+    this.camera = this.world.camera;
     this.renderer = this.world.getRenderer();
     this.renderer.domElement.style.width = '100%';
     this.renderer.domElement.style.height = '100%';

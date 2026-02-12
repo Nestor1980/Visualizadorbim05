@@ -1,8 +1,10 @@
-import * as THREE from 'three';
-import * as OBC from '@thatopen/components';
-import * as BUI from '@thatopen/ui';
-// You have to import * as FRAGS from "@thatopen/fragments"
+import * as THREE from "three";
+import Stats from "stats.js";
+import * as OBC from "@thatopen/components";
+import * as BUI from "@thatopen/ui";
 import * as FRAGS from "@thatopen/fragments";
+// You have to import * as OBF from "@thatopen/components-front"
+import * as OBF from "@thatopen/components-front";
 
 
 
@@ -10,28 +12,69 @@ import * as FRAGS from "@thatopen/fragments";
 const container = document.getElementById('container');
 
 if (container) {
-  // 2. Inicializar el núcleo de la plataforma
-  const components = new OBC.Components();
-  console.log("✅ 02_Components creado");
+    // 2. Inicializar el núcleo de la plataforma
+    const components = new OBC.Components();
+    console.log("✅ 02_Components creado");
 
-  // 3. Crear el Mundo con tipos específicos (Genéricos)
-  const worlds = components.get(OBC.Worlds);
-  const world = worlds.create<
-    OBC.SimpleScene,
-    OBC.OrthoPerspectiveCamera,
-    OBC.SimpleRenderer
-  >();
-  console.log("✅ 03_World creado");
+    // 3. Crear el Mundo con tipos específicos (Genéricos)
+    const worlds = components.get(OBC.Worlds);
+    const world = worlds.create<
+      OBC.SimpleScene,
+      OBC.OrthoPerspectiveCamera,
+      OBC.SimpleRenderer
+    >();
+    console.log("✅ 03_World creado");
+
+
 
   // 4. Asignar las instancias correspondientes
   world.scene = new OBC.SimpleScene(components);
-  world.renderer = new OBC.SimpleRenderer(components, container);
+  world.renderer = new OBF.PostproductionRenderer(components, container);
   world.camera = new OBC.OrthoPerspectiveCamera(components);
   console.log("✅ 04_World configurado");
 
   // 5. Inicializar el sistema de componentes
   components.init();
   console.log("✅ 05_Components inicializado");
+
+  // ===============================
+// PASO 3 – Hoverer
+// ===============================
+const hoverer = components.get(OBF.Hoverer);
+
+hoverer.world = world;
+hoverer.enabled = true;
+
+hoverer.material = new THREE.MeshBasicMaterial({
+  color: 0x6528d7,
+  transparent: true,
+  opacity: 0.5,
+  depthTest: false,
+});
+
+
+  // 📏 PASO 5.1 – Crear LengthMeasurement (That Open Front – API correcta)
+const measurer = components.get(OBF.LengthMeasurement);
+measurer.world = world;
+measurer.color = new THREE.Color("#494cb6");
+measurer.enabled = true;
+measurer.snappings = [FRAGS.SnappingClass.POINT];
+container.ondblclick = () => {
+  measurer.create();
+};
+window.onkeydown = (event) => {
+  if (event.code === "Delete" || event.code === "Backspace") {
+    measurer.delete();
+  }
+};
+measurer.list.onItemAdded.add((line) => {
+  const center = new THREE.Vector3();
+  line.getCenter(center);
+  const radius = line.distance() / 3;
+  const sphere = new THREE.Sphere(center, radius);
+
+  world.camera.controls.fitToSphere(sphere, true);
+});
 
 
   // 6. Configurar la escena y el entorno visual
@@ -49,9 +92,10 @@ if (container) {
 fragments.init(workerUrl);
 console.log("✅ FragmentsManager configurado con worker local")
   // Configurar los eventos del FragmentsManager
-  world.camera.controls.addEventListener("rest", () =>
-    fragments.core.update(true)
-  );
+  world.camera.controls.addEventListener("update", () => {
+  fragments.core.update();
+});
+
 
   // Asegurar que los modelos se agreguen a la escena cuando se carguen
   fragments.list.onItemSet.add(({ value: model }) => {
@@ -128,6 +172,114 @@ const startApp = async () => {
   await setupIfcLoader();
   await loadExampleModel();
   BUI.Manager.init();
+  // ===============================
+// UI – Length Measurement Panel
+// ===============================
+
+const deleteDimensions = () => {
+  measurer.list.clear();
+};
+
+const getAllValues = () => {
+  const lengths: number[] = [];
+  for (const line of measurer.list) {
+    lengths.push(line.value);
+  }
+  return lengths;
+};
+
+const panel = BUI.Component.create<BUI.PanelSection>(() => {
+  const onLogValues = () => {
+    const data = getAllValues();
+    console.log("📏 Medidas:", data);
+  };
+
+  return BUI.html`
+    <bim-panel active label="Mediciones de Distancia" class="options-menu">
+      <bim-panel-section label="Controles">
+        <bim-label>Doble click: crear medición</bim-label>
+        <bim-label>Delete / Backspace: borrar</bim-label>
+      </bim-panel-section>
+
+      <bim-panel-section label="Medidor">
+        <bim-checkbox checked label="Habilitado"
+          @change="${({ target }: { target: BUI.Checkbox }) => {
+            measurer.enabled = target.value;
+          }}">
+        </bim-checkbox>
+
+        <bim-checkbox checked label="Visible"
+          @change="${({ target }: { target: BUI.Checkbox }) => {
+            measurer.visible = target.value;
+          }}">
+        </bim-checkbox>
+
+        <bim-color-input
+          label="Color"
+          color=#${measurer.linesMaterial.color.getHexString()}
+          @input="${({ target }: { target: BUI.ColorInput }) => {
+            measurer.color = new THREE.Color(target.color);
+          }}">
+        </bim-color-input>
+
+        <bim-dropdown
+          label="Unidades"
+          required
+          @change="${({ target }: { target: BUI.Dropdown }) => {
+            const [units] = target.value;
+            measurer.units = units;
+          }}">
+          ${measurer.unitsList.map(
+            (unit) =>
+              BUI.html`<bim-option
+                label=${unit}
+                value=${unit}
+                ?checked=${unit === measurer.units}>
+              </bim-option>`
+          )}
+        </bim-dropdown>
+
+        <bim-dropdown
+          label="Precisión"
+          required
+          @change="${({ target }: { target: BUI.Dropdown }) => {
+            const [rounding] = target.value;
+            measurer.rounding = rounding;
+          }}">
+          <bim-option label="0" value=0></bim-option>
+          <bim-option label="1" value=1></bim-option>
+          <bim-option label="2" value=2 checked></bim-option>
+          <bim-option label="3" value=3></bim-option>
+          <bim-option label="4" value=4></bim-option>
+        </bim-dropdown>
+
+        <bim-button label="Borrar todo"
+          @click=${() => deleteDimensions()}>
+        </bim-button>
+
+        <bim-button label="Log de valores"
+          @click=${onLogValues}>
+        </bim-button>
+      </bim-panel-section>
+    </bim-panel>
+  `;
+});
+
+document.body.append(panel);
+const button = BUI.Component.create<BUI.PanelSection>(() => {
+  return BUI.html`
+    <bim-button
+      class="phone-menu-toggler"
+      icon="solar:settings-bold"
+      @click="${() => {
+        panel.classList.toggle("options-menu-visible");
+      }}">
+    </bim-button>
+  `;
+});
+
+document.body.append(button);
+
   console.log("Visor BIM activo");
 };  // ✅ Esta llave cierra la función startApp
 
