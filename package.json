@@ -11,6 +11,7 @@
     "@thatopen/components-front": "^3.3.1",
     "@thatopen/fragments": "^3.3.2",
     "@thatopen/ui": "^3.3.3",
+    "@thatopen/ui-obc": "^3.3.3",
     "three": "^0.182.0"
   },
   "devDependencies": {
