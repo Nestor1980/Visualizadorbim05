@@ -3,57 +3,519 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Visualizador BIM IFC</title>
+  <title>Visualizador BIM IFC con BCF Topics</title>
+  
+  <!-- ESTILOS DE BIM UI COMPONENTS (OBLIGATORIOS) -->
+  <link rel="stylesheet" href="https://unpkg.com/@thatopen/ui@latest/dist/thatopen.css" />
+  <link rel="stylesheet" href="https://unpkg.com/@thatopen/ui-obc@latest/dist/thatopen-obc.css" />
+  
   <style>
-    html, body {
-      height: 100%;
+    /* ===========================
+       RESET Y ESTILOS BASE
+       =========================== */
+    * {
       margin: 0;
       padding: 0;
       box-sizing: border-box;
     }
-    body {
-      width: 100vw;
-      height: 100vh;
+
+    html, body {
+      width: 100%;
+      height: 100%;
       overflow: hidden;
-      background: #181818;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
     }
-    #container {
+
+    body {
+      background: #1a1a1a;
+      color: #e0e0e0;
+    }
+
+    /* ===========================
+       CONTAINER PRINCIPAL
+       =========================== */
+    #app-container {
       width: 100vw;
       height: 100vh;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    /* ===========================
+       BARRA SUPERIOR (TOOLBAR)
+       =========================== */
+    #toolbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 60px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+      z-index: 1000;
+    }
+
+    #toolbar h1 {
+      color: white;
+      font-size: 18px;
+      font-weight: 600;
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    #toolbar-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    /* Botón de carga de archivo */
+    .file-input-wrapper {
+      position: relative;
+      overflow: hidden;
+      display: inline-block;
+    }
+
+    .file-input-wrapper input[type=file] {
+      position: absolute;
+      left: -9999px;
+    }
+
+    .file-input-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 16px;
+      background: white;
+      color: #667eea;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .file-input-label:hover {
+      background: #f0f0f0;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+    }
+
+    .file-input-label:active {
+      transform: translateY(0);
+    }
+
+    /* ===========================
+       CONTAINER 3D
+       =========================== */
+    #container {
+      width: 100%;
+      height: 100%;
+      position: relative;
+      background: #202932;
+      margin-top: 60px;
+    }
+
+    /* ===========================
+       GRID LAYOUT (CUANDO SE ACTIVE)
+       =========================== */
+    bim-grid {
+      width: 100%;
+      height: calc(100vh - 60px);
+      margin-top: 60px;
+      display: grid;
       position: absolute;
       top: 0;
       left: 0;
-      background: #222;
-      display: flex;
+      background: #1a1a1a;
+    }
+
+    /* ===========================
+       VIEWPORT 3D
+       =========================== */
+    bim-viewport {
+      width: 100%;
+      height: 100%;
+      position: relative;
+      background: #202932;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    /* ===========================
+       PANELES BIM
+       =========================== */
+    bim-panel {
+      background: #1e1e1e;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    }
+
+    bim-panel-section {
+      border-bottom: 1px solid #333;
+    }
+
+    bim-panel-section:last-child {
+      border-bottom: none;
+    }
+
+    /* ===========================
+       MODAL DEL FORMULARIO
+       =========================== */
+    .form-dialog {
+      border: none;
+      border-radius: 12px;
+      background-color: transparent;
+      padding: 0;
+      max-width: min(500px, 90vw);
+      max-height: 90vh;
+      overflow: visible;
+    }
+
+    .form-dialog::backdrop {
+      background-color: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(4px);
+    }
+
+    /* ===========================
+       TABLA DE TOPICS
+       =========================== */
+    bim-table {
+      width: 100%;
+      height: 100%;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    bim-table-row {
+      transition: background-color 0.2s ease;
+      cursor: pointer;
+      border-bottom: 1px solid #2a2a2a;
+    }
+
+    bim-table-row:hover {
+      background-color: rgba(102, 126, 234, 0.1) !important;
+    }
+
+    bim-table-row[data-selected="true"] {
+      background-color: rgba(102, 126, 234, 0.3) !important;
+    }
+
+    /* ===========================
+       BOTONES
+       =========================== */
+    bim-button {
+      transition: all 0.2s ease;
+    }
+
+    bim-button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    }
+
+    bim-button:active {
+      transform: translateY(0);
+    }
+
+    /* ===========================
+       INPUTS
+       =========================== */
+    bim-text-input {
+      width: 100%;
+    }
+
+    bim-dropdown {
+      width: 100%;
+    }
+
+    bim-color-input {
+      width: 100%;
+    }
+
+    /* ===========================
+       SCROLLBAR PERSONALIZADO
+       =========================== */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: #2a2a2a;
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #555;
+      border-radius: 4px;
+      transition: background 0.2s ease;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #777;
+    }
+
+    /* ===========================
+       PANEL DE MEDICIONES
+       =========================== */
+    .measurement-panel {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      z-index: 999;
+      max-width: 350px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+      border-radius: 8px;
+      transition: transform 0.3s ease;
+    }
+
+    .measurement-panel.hidden {
+      transform: translateX(calc(100% + 40px));
+    }
+
+    .measurement-toggle {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      z-index: 998;
+    }
+
+    /* ===========================
+       LOADING INDICATOR
+       =========================== */
+    .loading-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.8);
+      display: none;
       align-items: center;
       justify-content: center;
+      z-index: 9999;
     }
-    #file-input {
-      position: absolute;
-      top: 20px;
-      left: 20px;
-      z-index: 10;
-      padding: 8px 12px;
-      cursor: pointer;
+
+    .loading-overlay.active {
+      display: flex;
+    }
+
+    .loading-spinner {
+      width: 50px;
+      height: 50px;
+      border: 4px solid #333;
+      border-top: 4px solid #667eea;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    /* ===========================
+       NOTIFICACIONES
+       =========================== */
+    .notification {
+      position: fixed;
+      top: 80px;
+      right: 20px;
+      padding: 12px 20px;
       background: white;
-      border: 2px solid #333;
-      border-radius: 4px;
-      font-size: 14px;
+      color: #333;
+      border-radius: 6px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      z-index: 2000;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      animation: slideIn 0.3s ease;
+      max-width: 350px;
     }
-    #file-input:hover {
-      background: #f0f0f0;
+
+    .notification.success {
+      background: #10b981;
+      color: white;
+    }
+
+    .notification.error {
+      background: #ef4444;
+      color: white;
+    }
+
+    .notification.info {
+      background: #3b82f6;
+      color: white;
+    }
+
+    @keyframes slideIn {
+      from {
+        transform: translateX(400px);
+        opacity: 0;
+      }
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
+
+    /* ===========================
+       RESPONSIVE DESIGN
+       =========================== */
+    @media (max-width: 768px) {
+      #toolbar h1 {
+        font-size: 16px;
+      }
+
+      .file-input-label {
+        padding: 8px 12px;
+        font-size: 12px;
+      }
+
+      .measurement-panel {
+        bottom: 10px;
+        right: 10px;
+        max-width: calc(100vw - 20px);
+      }
+
+      .measurement-toggle {
+        bottom: 10px;
+        right: 10px;
+      }
+
+      .notification {
+        top: 70px;
+        right: 10px;
+        left: 10px;
+        max-width: none;
+      }
+
+      bim-grid {
+        font-size: 14px;
+      }
+    }
+
+    /* ===========================
+       TEMA OSCURO (POR DEFECTO)
+       =========================== */
+    :root {
+      --bim-ui_bg-base: #1a1a1a;
+      --bim-ui_bg-contrast-10: #2a2a2a;
+      --bim-ui_bg-contrast-20: #333333;
+      --bim-ui_bg-contrast-40: #555555;
+      --bim-ui_bg-contrast-60: #777777;
+      --bim-ui_main-base: #667eea;
+      --bim-ui_accent-base: #764ba2;
+      --bim-ui_size-base: 8px;
+      --bim-ui_size-xs: 4px;
+      --bim-ui_size-sm: 6px;
+      --bim-ui_size-md: 12px;
+      --bim-ui_size-lg: 16px;
+      --bim-ui_size-xl: 24px;
+    }
+
+    /* ===========================
+       ANIMACIONES DE ENTRADA
+       =========================== */
+    @keyframes fadeInUp {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .form-dialog[open] {
+      animation: fadeInUp 0.3s ease;
+    }
+
+    /* ===========================
+       UTILIDADES
+       =========================== */
+    .hidden {
+      display: none !important;
+    }
+
+    .pointer {
+      cursor: pointer;
+    }
+
+    .no-select {
+      user-select: none;
+    }
+
+    /* ===========================
+       PRINT STYLES
+       =========================== */
+    @media print {
+      #toolbar,
+      .measurement-panel,
+      .measurement-toggle,
+      .file-input-wrapper,
+      bim-button {
+        display: none !important;
+      }
+
+      bim-grid {
+        margin-top: 0;
+        height: 100vh;
+      }
     }
   </style>
-  <link rel="stylesheet" href="/public/bim-panel.css" />
 </head>
 <body>
-  <!-- Input PRIMERO para que esté encima -->
-  <input type="file" id="file-input" accept=".ifc" />
-  
-  <!-- Container DESPUÉS -->
-  <div id="container"></div>
-  
-  <!-- Script al final -->
-  <script type="module" src="/src/main.ts"></script>
+  <!-- Loading Overlay -->
+  <div class="loading-overlay" id="loading">
+    <div class="loading-spinner"></div>
+  </div>
+
+  <!-- Barra Superior (Toolbar) -->
+  <div id="toolbar">
+    <h1>
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M3 3H21V21H3V3Z" stroke="white" stroke-width="2"/>
+        <path d="M9 9H15V15H9V9Z" fill="white"/>
+      </svg>
+      Visualizador BIM - BCF Topics
+    </h1>
+    
+    <div id="toolbar-actions">
+      <!-- Input para cargar archivos IFC (oculto visualmente) -->
+      <div class="file-input-wrapper">
+        <input type="file" id="file-input" accept=".ifc" />
+        <label for="file-input" class="file-input-label">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M21 15V19C21 19.5304 20.7893 20.0391 20.4142 20.4142C20.0391 20.7893 19.5304 21 19 21H5C4.46957 21 3.96086 20.7893 3.58579 20.4142C3.21071 20.0391 3 19.5304 3 19V15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M17 8L12 3L7 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M12 3V15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          Cargar IFC
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <!-- Container Principal -->
+  <div id="app-container">
+    <!-- El container 3D se inicializa aquí -->
+    <div id="container"></div>
+  </div>
+
+  <!-- Script Principal (apunta a tu archivo TypeScript) -->
+  <script type="module" src="/src/main_topics_integrado.ts"></script>
 </body>
 </html>

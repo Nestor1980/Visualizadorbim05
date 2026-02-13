@@ -5,6 +5,8 @@ import * as BUI from "@thatopen/ui";
 import * as FRAGS from "@thatopen/fragments";
 // You have to import * as OBF from "@thatopen/components-front"
 import * as OBF from "@thatopen/components-front";
+// Import para TopicsUI y componentes BCF
+import * as CUI from "@thatopen/ui-obc";
 
 
 
@@ -167,11 +169,295 @@ console.log("✅ FragmentsManager configurado con worker local")
     console.log("✅ Fragments descargados");
   };
 
+  // ===============================
+  // NUEVO: CONFIGURACIÓN DE BCF TOPICS
+  // ===============================
+  
+  // Definir usuarios para el sistema BCF
+  const users: CUI.TopicUserStyles = {
+    "admin@proyecto.com": {
+      name: "Administrador",
+      picture: "https://www.profilebakery.com/wp-content/uploads/2023/04/Profile-Image-AI.jpg",
+    },
+    "arquitecto@proyecto.com": {
+      name: "Arquitecto Principal",
+      picture: "https://www.profilebakery.com/wp-content/uploads/2023/04/Portrait-Photography.jpg",
+    },
+    "ingeniero@proyecto.com": {
+      name: "Ingeniero Estructural",
+      picture: "https://www.profilebakery.com/wp-content/uploads/2023/04/AI-Portrait.jpg",
+    },
+  };
+
+  // Obtener el componente BCFTopics
+  const topics = components.get(OBC.BCFTopics);
+
+  // Configurar usuarios y etiquetas
+  topics.setup({
+    users: new Set(Object.keys(users)),
+    labels: new Set(["Arquitectura", "Estructura", "MEP", "Coordinación", "General"]),
+  });
+
+  // Configurar viewpoints (puntos de vista)
+  const viewpoints = components.get(OBC.Viewpoints);
+  topics.list.onItemSet.add(({ value: topic }) => {
+    const viewpoint = viewpoints.create();
+    viewpoint.world = world;
+    topic.viewpoints.add(viewpoint.guid);
+  });
+
+  console.log("✅ BCFTopics configurado");
+
+  // ===============================
+  // CREAR TABLA DE TOPICS
+  // ===============================
+  
+  const [topicsList] = CUI.tables.topicsList({
+    components,
+    dataStyles: { users },
+  });
+
+  // Permitir selección de filas
+  topicsList.selectableRows = true;
+
+  // ===============================
+  // CREAR FORMULARIO DE TOPICS
+  // ===============================
+  
+  const [topicForm, updateTopicForm] = CUI.forms.topic({
+    components,
+    styles: { users },
+  });
+
+  // Activar búsqueda en dropdown de asignados
+  const assigneeDropdown = topicForm.querySelector<BUI.Dropdown>(
+    "bim-dropdown[name='assignedTo']",
+  );
+  if (assigneeDropdown) assigneeDropdown.searchBox = true;
+
+  // Crear modal para el formulario
+  const topicsModal = BUI.Component.create<HTMLDialogElement>(() => {
+    return BUI.html`
+      <dialog class="form-dialog">
+       <bim-panel style="border-radius: var(--bim-ui_size-base); width: 22rem;">
+        ${topicForm}
+       </bim-panel> 
+      </dialog>
+    `;
+  });
+
+  document.body.append(topicsModal);
+
+  // Botón para mostrar el formulario
+  const showFormBtn = BUI.Component.create(() => {
+    const onClick = () => {
+      topicsModal.showModal();
+    };
+
+    return BUI.html`
+      <bim-button style="flex: 0" @click=${onClick} label="Crear Tema" icon="material-symbols:task"></bim-button>
+    `;
+  });
+
+  // Configurar callbacks del formulario
+  updateTopicForm({
+    onCancel: () => {
+      topicsModal.close();
+    },
+    onSubmit: () => {
+      topicsModal.close();
+    },
+  });
+
+  // ===============================
+  // CREAR PANEL DE DETALLES DEL TOPIC
+  // ===============================
+
+  interface TopicPanelActions {
+    information: Partial<CUI.TopicInformationSectionActions>;
+    viewpoints: Partial<CUI.TopicViewpointsSectionActions>;
+    relatedTopics: Partial<CUI.TopicRelationsSectionActions>;
+    comments: Partial<CUI.TopicCommentsSectionActions>;
+  }
+
+  interface TopicPanelUI {
+    components: OBC.Components;
+    topic?: OBC.Topic;
+    styles?: Partial<CUI.TopicStyles>;
+    actions?: Partial<TopicPanelActions>;
+    world?: OBC.World;
+  }
+
+  const [topicPanel, updateTopicPanel] = BUI.Component.create<
+    HTMLElement,
+    TopicPanelUI
+  >(
+    (state) => {
+      const { components, topic, world, actions, styles } = state;
+
+      let topicSections: BUI.TemplateResult | undefined;
+      let missingTopicSection: BUI.TemplateResult | undefined;
+
+      if (topic) {
+        const [information] = CUI.sections.topicInformation({
+          components,
+          topic,
+          actions: actions?.information,
+          styles,
+        });
+
+        const [viewpoints] = CUI.sections.topicViewpoints({
+          components,
+          topic,
+          world,
+          actions: actions?.viewpoints,
+        });
+
+        const [relatedTopics] = CUI.sections.topicRelations({
+          components,
+          topic,
+          actions: actions?.relatedTopics,
+        });
+
+        const [comments] = CUI.sections.topicComments({
+          topic,
+          actions: actions?.comments,
+          styles: styles?.users,
+        });
+
+        topicSections = BUI.html`
+          <bim-panel-section label="Información" icon="ph:info-bold">
+            ${information}
+          </bim-panel-section>
+          <bim-panel-section label="Comentarios" icon="majesticons:comment-line">
+            ${comments}
+          </bim-panel-section>
+          <bim-panel-section label="Vistas" icon="tabler:camera">
+            ${viewpoints}
+          </bim-panel-section>
+          <bim-panel-section label="Temas Relacionados" icon="tabler:link">
+            ${relatedTopics}
+          </bim-panel-section>
+        `;
+      } else {
+        missingTopicSection = BUI.html`
+          <bim-panel-section label="Sin Tema" icon="material-symbols:chat-error">
+            <bim-label>No hay ningún tema seleccionado para mostrar</bim-label>
+          </bim-panel-section> 
+        `;
+      }
+
+      return BUI.html`
+        <bim-panel>
+          ${missingTopicSection}
+          ${topicSections}
+        </bim-panel> 
+      `;
+    },
+    { components, world, styles: { users } },
+  );
+
+  // Actualizar panel cuando cambia un topic
+  topics.list.onItemUpdated.add(() => updateTopicPanel());
+
+  // Evento click en las filas de la tabla
+  // @ts-ignore
+  topicsList.addEventListener(
+    "rowcreated",
+    (event: CustomEvent<BUI.RowCreatedEventDetail<{ Guid: string }>>) => {
+      const { row } = event.detail;
+      row.addEventListener("click", () => {
+        const { Guid } = row.data;
+        if (!Guid) return;
+        const topic = topics.list.get(Guid);
+        if (!topic) return;
+        updateTopicPanel({ topic });
+      });
+
+      row.style.cursor = "pointer";
+      row.addEventListener("mouseover", () => {
+        row.style.backgroundColor = `color-mix(
+          in lab,
+          var(--bim-ui_bg-contrast-20) 30%,
+          var(--bim-ui_main-base) 10%
+        )`;
+      });
+
+      row.addEventListener("mouseout", () => {
+        row.style.removeProperty("background-color");
+      });
+    },
+  );
+
+  // ===============================
+  // BOTÓN PARA DESCARGAR BCF
+  // ===============================
+
+  const downloadBtn = BUI.Component.create(() => {
+    const onDownload = async () => {
+      const selectedTopics = [...topicsList.selection]
+        .map(({ Guid }) => {
+          if (!(Guid && typeof Guid === "string")) return null;
+          const topic = topics.list.get(Guid);
+          return topic;
+        })
+        .filter((topic) => topic) as OBC.Topic[];
+
+      const topicsToExport =
+        selectedTopics.length > 0 ? selectedTopics : [...topics.list.values()];
+
+      if (topicsToExport.length === 0) {
+        alert("No hay temas para descargar");
+        return;
+      }
+
+      const bcfData = await topics.export(topicsToExport);
+      const bcfFile = new File([bcfData], "temas.bcf");
+
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(bcfFile);
+      a.download = bcfFile.name;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      
+      console.log("✅ BCF descargado");
+    };
+
+    return BUI.html`<bim-button style="flex: 0" @click=${onDownload} label="Descargar BCF" icon="material-symbols:download"></bim-button> `;
+  });
+
+  // ===============================
+  // PANEL PRINCIPAL BCF
+  // ===============================
+
+  const bcfPanel = BUI.Component.create(() => {
+    const onTextInput = (e: Event) => {
+      const input = e.target as BUI.TextInput;
+      topicsList.queryString = input.value;
+    };
+
+    return BUI.html`
+      <bim-panel>
+        <bim-panel-section label="Gestión BCF" fixed>
+          <div style="display: flex; justify-content: space-between; gap: 0.5rem">
+            <bim-text-input style="flex-grow: 0; flex-basis: 15rem" @input=${onTextInput} placeholder="Buscar tema..." debounce="100"></bim-text-input>
+            <div style="display: flex; gap: 0.5rem">
+              ${showFormBtn}
+              ${downloadBtn}
+            </div> 
+          </div> 
+          ${topicsList}
+        </bim-panel-section>
+      </bim-panel>
+    `;
+  });
+
   // 10. Ejecutar la aplicación e inicializar la UI
 const startApp = async () => {
   await setupIfcLoader();
   await loadExampleModel();
   BUI.Manager.init();
+  
   // ===============================
 // UI – Length Measurement Panel
 // ===============================
@@ -188,7 +474,7 @@ const getAllValues = () => {
   return lengths;
 };
 
-const panel = BUI.Component.create<BUI.PanelSection>(() => {
+const measurementPanel = BUI.Component.create<BUI.PanelSection>(() => {
   const onLogValues = () => {
     const data = getAllValues();
     console.log("📏 Medidas:", data);
@@ -265,23 +551,50 @@ const panel = BUI.Component.create<BUI.PanelSection>(() => {
   `;
 });
 
-document.body.append(panel);
-const button = BUI.Component.create<BUI.PanelSection>(() => {
+document.body.append(measurementPanel);
+
+const toggleButton = BUI.Component.create<BUI.PanelSection>(() => {
   return BUI.html`
     <bim-button
       class="phone-menu-toggler"
       icon="solar:settings-bold"
       @click="${() => {
-        panel.classList.toggle("options-menu-visible");
+        measurementPanel.classList.toggle("options-menu-visible");
       }}">
     </bim-button>
   `;
 });
 
-document.body.append(button);
+document.body.append(toggleButton);
 
-  console.log("Visor BIM activo");
-};  // ✅ Esta llave cierra la función startApp
+  // ===============================
+  // CREAR GRID LAYOUT CON BCF
+  // ===============================
+  
+  const viewport = document.createElement("bim-viewport") as BUI.Viewport;
+  viewport.append(container);
+
+  const app = document.createElement("bim-grid") as BUI.Grid<["main"]>;
+  app.layouts = {
+    main: {
+      template: `
+      "topicPanel viewport" 1fr
+      "topicPanel bcfPanel" 25rem
+      /24rem 1fr
+      `,
+      elements: { 
+        bcfPanel, 
+        viewport, 
+        topicPanel 
+      },
+    },
+  };
+
+  app.layout = "main";
+  document.body.append(app);
+
+  console.log("✅ Visor BIM con BCF Topics activo");
+};
 
 startApp();
 }
