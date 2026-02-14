@@ -6,6 +6,13 @@ import * as FRAGS from "@thatopen/fragments";
 // You have to import * as OBF from "@thatopen/components-front"
 import * as OBF from "@thatopen/components-front";
 
+import { DiagnosticoComponentes } from "./computo/diagnostico-componentes";
+
+// 👇 Para extractor de cómputos
+import { ExtractorIFC } from "./computo/extractor-ifc";
+import { DatosElementoIFC } from "./computo/tipos";
+import { ComputoMuros } from './computo/computo-muros';
+import { TablaCantidades } from './computo/tabla-cantidades';
 
 
 // 1. Seleccionar el contenedor HTML
@@ -98,13 +105,67 @@ console.log("✅ FragmentsManager configurado con worker local")
 
 
   // Asegurar que los modelos se agreguen a la escena cuando se carguen
-  fragments.list.onItemSet.add(({ value: model }) => {
-    model.useCamera(world.camera.three);
-    world.scene.three.add(model.object);
-    fragments.core.update(true);
-    console.log("✅ 07a_Modelo agregado a la escena");
-  });
+  // 👇 CREAR EXTRACTOR
+const extractor = new ExtractorIFC(components);
+let datosExtraidos: DatosElementoIFC[] = [];
 
+fragments.list.onItemSet.add(async ({ value: model }) => {
+  model.useCamera(world.camera.three);
+  world.scene.three.add(model.object);
+  fragments.core.update(true);
+  console.log("✅ 07a_Modelo agregado a la escena");
+
+  // ===============================
+  // DEBUGGING: Ver estructura del modelo
+  // ===============================
+  console.log("=== 🔍 DEBUGGING: Estructura del Modelo ===");
+  const modelAny = model as any;
+  
+  console.log("📦 Modelo UUID:", modelAny.uuid || 'sin UUID');
+  console.log("📦 Keys del modelo:", Object.keys(model));
+  
+  // Verificar dónde están las propiedades
+  if (modelAny.data) {
+    console.log("  ✅ model.data existe");
+    console.log("  📁 Keys en data:", Object.keys(modelAny.data));
+  }
+  
+  if (modelAny.properties) {
+    console.log("  ✅ model.properties existe");
+    console.log("  📊 Cantidad de propiedades:", Object.keys(modelAny.properties).length);
+    
+    // Mostrar las primeras 3 propiedades como ejemplo
+    const propKeys = Object.keys(modelAny.properties).slice(0, 3);
+    console.log("  📋 Primeras propiedades:", propKeys);
+    
+    if (propKeys.length > 0) {
+      console.log("  📄 Ejemplo de propiedad:", modelAny.properties[propKeys[0]]);
+    }
+  }
+  
+  if (modelAny.ifcMetadata) {
+    console.log("  ✅ model.ifcMetadata existe");
+    console.log("  📁 Keys en ifcMetadata:", Object.keys(modelAny.ifcMetadata));
+  }
+
+  // ===============================
+  // Extraer datos (ahora debería funcionar)
+  // ===============================
+  console.log("🔍 Extrayendo datos del modelo...");
+  try {
+    datosExtraidos = await extractor.extraerTodosLosElementos();
+    console.log(`✅ ${datosExtraidos.length} elementos extraídos`);
+    
+    if (datosExtraidos.length > 0) {
+      const resumen = await extractor.generarResumenPorTipo();
+      console.table(resumen);
+    } else {
+      console.warn("⚠️ No se extrajeron elementos. Verificar estructura del IFC.");
+    }
+  } catch (error) {
+    console.error("❌ Error extrayendo datos:", error);
+  }
+});
 // 8. Configurar el cargador IFC
   const ifcLoader = components.get(OBC.IfcLoader);
   
@@ -284,4 +345,28 @@ document.body.append(button);
 };  // ✅ Esta llave cierra la función startApp
 
 startApp();
+// ===============================
+// BOTÓN: Mostrar Cantidades de Muros
+// ===============================
+const btnCantidadesMuros = document.getElementById('btn-cantidades-muros');
+
+if (btnCantidadesMuros) {
+  btnCantidadesMuros.addEventListener('click', async () => {
+    console.log('🧱 Generando reporte de cantidades de muros...');
+    
+    try {
+      // Generar resumen de muros
+      const resumen = await ComputoMuros.generarResumen();
+      
+      // Mostrar tabla en panel flotante
+      TablaCantidades.crearPanelFlotante(resumen);
+      
+      console.log('✅ Tabla de cantidades mostrada');
+      
+    } catch (error) {
+      console.error('❌ Error generando cantidades:', error);
+      alert('Error al generar cantidades. Verifica que el modelo IFC esté cargado.');
+    }
+  });
+}
 }
