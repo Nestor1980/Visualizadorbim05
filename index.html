@@ -5,55 +5,32 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Visualizador BIM IFC</title>
   <style>
-    html, body {
-      height: 100%;
+    * {
       margin: 0;
       padding: 0;
       box-sizing: border-box;
     }
-    body {
-      width: 100vw;
-      height: 100vh;
+
+    html, body {
+      width: 100%;
+      height: 100%;
       overflow: hidden;
       background: #181818;
     }
-    #container {
-      width: 100vw;
-      height: 100vh;
-      position: absolute;
-      top: 0;
-      left: 0;
-      background: #222;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    #file-input {
-      position: absolute;
-      top: 20px;
-      left: 20px;
+
+    bim-grid {
+      position: fixed;
+      inset: 0;
       z-index: 10;
-      padding: 8px 12px;
-      cursor: pointer;
-      background: white;
-      border: 2px solid #333;
-      border-radius: 4px;
-      font-size: 14px;
     }
-    #file-input:hover {
-      background: #f0f0f0;
+
+    bim-panel {
+      position: relative;
     }
   </style>
-  <link rel="stylesheet" href="/public/bim-panel.css" />
 </head>
 <body>
-  <!-- Input PRIMERO para que esté encima -->
-  <input type="file" id="file-input" accept=".ifc" />
-  
-  <!-- Container DESPUÉS -->
   <div id="container"></div>
-  
-  <!-- Script al final -->
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>
