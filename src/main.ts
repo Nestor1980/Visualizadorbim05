@@ -373,6 +373,87 @@ section.setAttribute("label", "Mediciones");
 const rightPanel = document.createElement("bim-panel") as BUI.Panel;
 rightPanel.label = "BCF Topics";
 
+// ===============================
+// PASO 16 – Floating Toolbar ✅
+// ===============================
+
+// PASO 16.1 – Crear la toolbar con sus secciones
+const toolbar = BUI.Component.create<BUI.Toolbar>(() => {
+  return BUI.html`
+    <bim-toolbar style="justify-self: center;">
+
+      <!-- Sección: Cámara -->
+      <bim-toolbar-section label="Cámara">
+        <bim-button
+          tooltip-title="Perspectiva"
+          tooltip-text="Alternar entre cámara ortográfica y perspectiva"
+          icon="tabler:camera"
+          @click=${() => world.camera.projection.toggle()}>
+        </bim-button>
+
+        <bim-button
+          tooltip-title="Fit Model"
+          tooltip-text="Ajustar vista al modelo cargado"
+          icon="material-symbols:fit-screen"
+          @click=${async () => {
+          const meshes = world.scene.three.children.filter(
+          (c): c is THREE.Mesh => c instanceof THREE.Mesh
+          );
+          await world.camera.fit(meshes);
+          }}>
+        </bim-button>
+      </bim-toolbar-section>
+
+      <!-- Sección: Medición -->
+      <bim-toolbar-section label="Medición">
+        <bim-button
+          tooltip-title="Activar Medición"
+          tooltip-text="Activa o desactiva la herramienta de medición"
+          icon="solar:ruler-bold"
+          @click=${() => {
+            measurer.enabled = !measurer.enabled;
+            console.log("Medición:", measurer.enabled);
+          }}>
+        </bim-button>
+
+        <bim-button
+          tooltip-title="Borrar mediciones"
+          tooltip-text="Elimina todas las líneas de medición"
+          icon="material-symbols:delete-outline"
+          @click=${() => measurer.list.clear()}>
+        </bim-button>
+      </bim-toolbar-section>
+
+      <!-- Sección: Visibilidad -->
+      <bim-toolbar-section label="Visibilidad">
+        <bim-button
+          tooltip-title="Mostrar todo"
+          tooltip-text="Restaura la visibilidad de todos los elementos"
+          icon="material-symbols:visibility"
+          @click=${() => {
+          for (const [, model] of fragments.list) {
+          model.object.visible = true;
+          }
+          fragments.core.update(true);
+          console.log("Visibilidad: todo visible");}}>
+        </bim-button>
+      </bim-toolbar-section>
+
+      <!-- Sección: BCF -->
+      <bim-toolbar-section label="BCF">
+        <bim-button
+          tooltip-title="Nuevo Topic"
+          tooltip-text="Abre el formulario para crear un nuevo BCF Topic"
+          icon="material-symbols:task"
+          @click=${() => topicsModal.showModal()}>
+        </bim-button>
+      </bim-toolbar-section>
+
+    </bim-toolbar>
+  `;
+});
+console.log("✅ 16.1_Floating Toolbar creada");
+
 const grid = document.createElement("bim-grid") as BUI.Grid<["main"]>;
 document.body.append(grid);
 
@@ -393,7 +474,10 @@ grid.layouts = {
 };
 
 grid.layout = "main";
+document.body.append(toolbar);
 console.log("✅ 11_bim-grid layout activado por código");
+
+
     // ===============================
 // PASO 13 – Lista de BCF Topics ✅
 // ===============================
