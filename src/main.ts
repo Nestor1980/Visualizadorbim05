@@ -83,13 +83,8 @@ if (container) {
   measurer.enabled = false;
   measurer.snappings = [FRAGS.SnappingClass.POINT];
 
-  viewport.ondblclick = () => measurer.create();
-
-  window.onkeydown = (event) => {
-    if (event.code === "Delete" || event.code === "Backspace") {
-      measurer.delete();
-    }
-  };
+  // NOTA: viewport.ondblclick y window.onkeydown se definen
+  // más abajo en el MUTEX, bifurcando según el modo activo.
 
   measurer.list.onItemAdded.add((line) => {
     const center = new THREE.Vector3();
@@ -98,56 +93,77 @@ if (container) {
     const sphere = new THREE.Sphere(center, radius);
     world.camera.controls.fitToSphere(sphere, true);
   });
-  console.log("✅ 5.4_LengthMeasurement configurado");
+  console.log("✅ 5_LengthMeasurement configurado");
 
   // ===============================
-  // *** NUEVO – MUTEX DE HERRAMIENTAS
-  // Colocado justo después del PASO 5, antes del PASO 6
+  // PASO 5.5 – Clipper (Planos de Sección)
   // ===============================
-  type ToolMode = "navigate" | "measure";
+  const clipper = components.get(OBC.Clipper);
+  clipper.enabled = false;
+  console.log("✅ 5.5_Clipper configurado");
+
+  // ===============================
+  // MUTEX DE HERRAMIENTAS
+  // ===============================
+  type ToolMode = "navigate" | "measure" | "section";
   let activeMode: ToolMode = "navigate";
 
-  // *** NUEVO – Estado reactivo para re-renderizar el toolbar
-  const toolbarState = { mode: activeMode };
-
-  // *** NUEVO – Variable para guardar referencia al botón de medición
   let measureBtnEl: BUI.Button | null = null;
+  let sectionBtnEl: BUI.Button | null = null;
 
   const setMode = (mode: ToolMode) => {
     activeMode = mode;
-    const toolbarState = { mode: activeMode };
 
     // Desactivar todo primero
     measurer.enabled = false;
     highlighter.enabled = false;
     hoverer.enabled = false;
+    clipper.enabled = false;
 
     if (mode === "navigate") {
       highlighter.enabled = true;
       hoverer.enabled = true;
     } else if (mode === "measure") {
       measurer.enabled = true;
+    } else if (mode === "section") {
+      clipper.enabled = true;
     }
 
-    // *** NUEVO – Actualizar estilo visual del botón en el toolbar
-    if (measureBtnEl) {
-      if (mode === "measure") {
-        measureBtnEl.style.background = "var(--bim-ui_main-base)";
-        measureBtnEl.style.borderRadius = "4px";
-        measureBtnEl.style.outline = "2px solid var(--bim-ui_accent-base, #6528d7)";
-      } else {
-        measureBtnEl.style.background = "";
-        measureBtnEl.style.borderRadius = "";
-        measureBtnEl.style.outline = "";
-      }
-    }
+    // Estilos de botón activo/inactivo
+    const activeStyle = {
+      background: "var(--bim-ui_main-base)",
+      borderRadius: "4px",
+      outline: "2px solid var(--bim-ui_accent-base, #6528d7)",
+    };
+    const resetStyle = { background: "", borderRadius: "", outline: "" };
+
+    [measureBtnEl, sectionBtnEl].forEach(btn => {
+      if (btn) Object.assign(btn.style, resetStyle);
+    });
+
+    if (mode === "measure" && measureBtnEl) Object.assign(measureBtnEl.style, activeStyle);
+    if (mode === "section" && sectionBtnEl) Object.assign(sectionBtnEl.style, activeStyle);
 
     console.log(`🔧 Modo activo: ${mode}`);
   };
 
+  // Doble click: bifurca según modo activo
+  viewport.ondblclick = () => {
+    if (activeMode === "measure") measurer.create();
+    else if (activeMode === "section") clipper.create(world);
+  };
+
+  // Delete / Backspace: bifurca según modo activo
+  window.onkeydown = (event) => {
+    if (event.code === "Delete" || event.code === "Backspace") {
+      if (activeMode === "measure") measurer.delete();
+      else if (activeMode === "section") clipper.deletePlane();
+    }
+  };
+
   // Estado inicial: navegación con highlighter y hoverer activos
   setMode("navigate");
-  console.log("✅ MUTEX_Modos de herramienta configurados");
+  console.log("✅ MUTEX_Modos de herramienta configurados (navigate | measure | section)");
 
   // ===============================
   // PASO 6 – Escena y entorno visual
@@ -171,7 +187,7 @@ if (container) {
     fragments.core.update();
   });
 
-  // PASO 7.3 – Agregar modelos a la escena (UN SOLO onItemSet, limpio)
+  // PASO 7.3 – Agregar modelos a la escena
   fragments.list.onItemSet.add(({ value: model }) => {
     model.useCamera(world.camera.three);
     world.scene.three.add(model.object);
@@ -269,7 +285,7 @@ if (container) {
           </bim-panel-section>
 
           <bim-panel-section label="Controles" icon="solar:ruler-bold">
-            <bim-label>Doble click: crear medición</bim-label>
+            <bim-label>Doble click: crear medición / plano de sección</bim-label>
             <bim-label>Delete / Backspace: borrar</bim-label>
             <bim-button label="Descargar .frag" @click=${() => downloadFragments()}>
             </bim-button>
@@ -324,10 +340,41 @@ if (container) {
             </bim-button>
           </bim-panel-section>
 
+          <!-- ===============================
+               SECCIÓN CLIPPER (NUEVA)
+               =============================== -->
+          <bim-panel-section label="Sección" icon="material-symbols:cut">
+
+            <bim-checkbox label="Flip plano"
+              @change="${({ target }: { target: BUI.Checkbox }) => {
+                clipper.flipPlane = target.value;
+              }}">
+            </bim-checkbox>
+
+            <bim-number-input
+              label="Tamaño del plano"
+              value="5"
+              min="1"
+              max="30"
+              step="1"
+              suffix="m"
+              @change="${({ target }: { target: BUI.NumberInput }) => {
+                clipper.size = target.value;
+              }}">
+            </bim-number-input>
+
+            <bim-button
+              label="Borrar todos los planos"
+              icon="material-symbols:delete-outline"
+              @click=${() => clipper.deleteAll()}>
+            </bim-button>
+
+          </bim-panel-section>
+
         </bim-panel>
       `;
     });
-    console.log("✅ 10.2_Panel de mediciones creado");
+    console.log("✅ 10.2_Panel creado (incluye sección Clipper)");
 
     measurer.list.onItemAdded.add(() => {
       const existing = panel.querySelector("bim-panel-section[label='Mediciones']");
@@ -382,14 +429,12 @@ if (container) {
     // ETAPA 2 – Quantities / Selection Information
     // ===============================
 
-    // 2.1 – Crear la tabla itemsData (vacía al inicio)
     const [itemsDataTable, updateItemsData] = CUI.tables.itemsData({
       components,
       modelIdMap: {},
       emptySelectionWarning: true,
     });
 
-    // 2.2 – Sección acordeón en el rightPanel
     const quantitiesSection = document.createElement("bim-panel-section") as BUI.PanelSection;
     quantitiesSection.label = "Selection Information";
     quantitiesSection.icon = "material-symbols:info";
@@ -397,7 +442,6 @@ if (container) {
     quantitiesSection.append(itemsDataTable);
     rightPanel.append(quantitiesSection);
 
-    // 2.3 – VERSIÓN FINAL
     spatialTree.selectableRows = true;
 
     spatialTree.addEventListener("click", (event: Event) => {
@@ -617,7 +661,7 @@ if (container) {
 
     // ===============================
     // PASO 16 – Floating Toolbar
-    // *** NUEVO: el botón de medición usa setMode() y guarda referencia en measureBtnEl
+    // (incluye nueva sección "Sección" con Clipper)
     // ===============================
     const toolbar = BUI.Component.create<BUI.Toolbar>(() => {
       return BUI.html`
@@ -644,28 +688,43 @@ if (container) {
           </bim-toolbar-section>
 
           <bim-toolbar-section label="Medición">
-
-            <!-- *** NUEVO: usa setMode() y registra la referencia del botón -->
             <bim-button
               tooltip-title="Activar Medición"
               tooltip-text="Activa/desactiva la herramienta de medición. Doble click para medir."
               icon="solar:ruler-bold"
               ${BUI.ref((el: Element | undefined) => { measureBtnEl = el as BUI.Button ?? null; })}
-
               @click=${() => {
-                if (activeMode === "measure") {
-                  setMode("navigate");
-                } else {
-                  setMode("measure");
-                }
+                if (activeMode === "measure") setMode("navigate");
+                else setMode("measure");
               }}>
             </bim-button>
-
             <bim-button
               tooltip-title="Borrar mediciones"
               tooltip-text="Elimina todas las líneas de medición"
               icon="material-symbols:delete-outline"
               @click=${() => measurer.list.clear()}>
+            </bim-button>
+          </bim-toolbar-section>
+
+          <!-- ===============================
+               NUEVA SECCIÓN: PLANOS DE CORTE
+               =============================== -->
+          <bim-toolbar-section label="Sección">
+            <bim-button
+              tooltip-title="Plano de corte"
+              tooltip-text="Activa/desactiva la herramienta de sección. Doble click sobre el modelo para crear un plano de corte."
+              icon="material-symbols:cut"
+              ${BUI.ref((el: Element | undefined) => { sectionBtnEl = el as BUI.Button ?? null; })}
+              @click=${() => {
+                if (activeMode === "section") setMode("navigate");
+                else setMode("section");
+              }}>
+            </bim-button>
+            <bim-button
+              tooltip-title="Borrar planos"
+              tooltip-text="Elimina todos los planos de corte activos"
+              icon="material-symbols:layers-clear"
+              @click=${() => clipper.deleteAll()}>
             </bim-button>
           </bim-toolbar-section>
 
@@ -696,7 +755,7 @@ if (container) {
         </bim-toolbar>
       `;
     });
-    console.log("✅ 16.1_Floating Toolbar creada");
+    console.log("✅ 16.1_Floating Toolbar creada (incluye Sección)");
 
     // ===============================
     // PASO 11 – Grid layout
@@ -951,7 +1010,7 @@ if (container) {
     console.log("✅ E_Botón importar BCF creado");
     console.log("✅ 14.5_Formulario modal y botón BCF creados");
 
-    console.log("Visor BIM activo");
+    console.log("Visor BIM activo ✅");
   }; // ✅ Esta llave cierra startApp
 
   startApp();
