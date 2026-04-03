@@ -99,6 +99,7 @@ if (container) {
   // PASO 5.5 – Clipper (Planos de Sección)
   // ===============================
   const clipper = components.get(OBC.Clipper);
+  
   clipper.enabled = false;
   console.log("✅ 5.5_Clipper configurado");
 
@@ -157,7 +158,7 @@ if (container) {
   window.onkeydown = (event) => {
     if (event.code === "Delete" || event.code === "Backspace") {
       if (activeMode === "measure") measurer.delete();
-      else if (activeMode === "section") clipper.deletePlane();
+      else if (activeMode === "section") clipper.delete(world);
     }
   };
 
@@ -171,9 +172,34 @@ if (container) {
   world.scene.setup();
   world.scene.three.background = new THREE.Color('#202932');
   const grids = components.get(OBC.Grids);
-  grids.create(world);
+  const worldGrid = grids.create(world);
   await world.camera.controls.setLookAt(10, 10, 10, 0, 0, 0);
   console.log("✅ 6.1_Escena configurada");
+
+  // ===============================
+  // PASO 6.2 – Función: ajustar grilla al piso del modelo
+  // ===============================
+const adjustGridToModel = () => {
+  const box = new THREE.Box3();
+
+  // Recorrer todos los objetos de la escena para calcular el bounding box
+  world.scene.three.traverse((object) => {
+    if (object instanceof THREE.Mesh) {
+      const meshBox = new THREE.Box3().setFromObject(object);
+      box.union(meshBox);
+    }
+  });
+
+  // Verificar que el bounding box es válido
+  if (box.isEmpty()) {
+    console.warn("⚠️ Bounding box vacío, grilla no ajustada");
+    return;
+  }
+
+  const pisoY = box.min.y;
+  worldGrid.three.position.y = pisoY;
+  console.log(`✅ Grilla ajustada a Y = ${pisoY.toFixed(4)}`);
+};
 
   // ===============================
   // PASO 7 – FragmentsManager
@@ -188,12 +214,17 @@ if (container) {
   });
 
   // PASO 7.3 – Agregar modelos a la escena
-  fragments.list.onItemSet.add(({ value: model }) => {
-    model.useCamera(world.camera.three);
-    world.scene.three.add(model.object);
-    fragments.core.update(true);
-    console.log("✅ 7.3_Modelo agregado a la escena");
-  });
+ fragments.list.onItemSet.add(({ value: model }) => {
+  model.useCamera(world.camera.three);
+  world.scene.three.add(model.object);
+  fragments.core.update(true);
+  console.log("✅ 7.3_Modelo agregado a la escena");
+
+  // Pequeño delay para asegurar que la geometría está lista
+  setTimeout(() => {
+    adjustGridToModel();
+  }, 500);
+ });
 
   // ===============================
   // PASO 8 – IfcLoader
@@ -345,33 +376,25 @@ if (container) {
                =============================== -->
           <bim-panel-section label="Sección" icon="material-symbols:cut">
 
-            <bim-checkbox label="Flip plano"
-              @change="${({ target }: { target: BUI.Checkbox }) => {
-                clipper.flipPlane = target.value;
-              }}">
-            </bim-checkbox>
+  <bim-number-input
+    label="Tamaño del plano"
+    value="5"
+    min="1"
+    max="30"
+    step="1"
+    suffix="m"
+    @change="${({ target }: { target: BUI.NumberInput }) => {
+      clipper.size = target.value;
+    }}">
+  </bim-number-input>
 
-            <bim-number-input
-              label="Tamaño del plano"
-              value="5"
-              min="1"
-              max="30"
-              step="1"
-              suffix="m"
-              @change="${({ target }: { target: BUI.NumberInput }) => {
-                clipper.size = target.value;
-              }}">
-            </bim-number-input>
+  <bim-button
+    label="Borrar todos los planos"
+    icon="material-symbols:delete-outline"
+    @click=${() => clipper.deleteAll(world)}>
+  </bim-button>
 
-            <bim-button
-              label="Borrar todos los planos"
-              icon="material-symbols:delete-outline"
-              @click=${() => clipper.deleteAll()}>
-            </bim-button>
-
-          </bim-panel-section>
-
-        </bim-panel>
+</bim-panel-section>
       `;
     });
     console.log("✅ 10.2_Panel creado (incluye sección Clipper)");
