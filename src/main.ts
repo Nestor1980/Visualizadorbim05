@@ -1,39 +1,139 @@
-//1 Importaciones
+// ===============================
+// IMPORTACIONES
+// ===============================
 import * as THREE from "three";
-import Stats from "stats.js";
 import * as OBC from "@thatopen/components";
 import * as BUI from "@thatopen/ui";
 import * as FRAGS from "@thatopen/fragments";
 import * as OBF from "@thatopen/components-front";
 import * as CUI from "@thatopen/ui-obc";
 
-// 1.1 Seleccionar el contenedor HTML
-const container = document.getElementById('container');
+// ===============================
+// HELPER: Conversión de materiales a Phong
+// ===============================
+
+/**
+ * Convierte cualquier material a MeshPhongMaterial preservando el color original.
+ * MeshPhongMaterial responde a luces direccionales, dando volumen y sombra.
+ */
+function convertToPhong(mat: THREE.Material): THREE.MeshPhongMaterial {
+  const src = mat as any;
+  const color = src.color
+    ? (src.color as THREE.Color).clone()
+    : new THREE.Color(0xd4cfc8);
+
+  return new THREE.MeshPhongMaterial({
+    color,
+    transparent: src.transparent ?? false,
+    opacity:     src.opacity ?? 1,
+    side:        THREE.DoubleSide,
+    shininess:   12,
+    specular:    new THREE.Color(0x1a1a1a),
+  });
+}
+
+// ===============================
+// PALETA DE COLORES POR CATEGORÍA IFC
+// ===============================
+
+const IFC_FALLBACK_COLORS: Record<
+  string,
+  { hex: number; opacity?: number; transparent?: boolean }
+> = {
+  IFCWALL:              { hex: 0xf0ebe0 },
+  IFCWALLSTANDARDCASE: { hex: 0xf0ebe0 },
+  IFCSLAB:              { hex: 0xc8c0b0 },
+  IFCCOLUMN:            { hex: 0xb8b0a0 },
+  IFCBEAM:              { hex: 0xa8a090 },
+  IFCROOF:              { hex: 0x606060 },
+  IFCDOOR:              { hex: 0x9b7b4a },
+  IFCWINDOW:            { hex: 0x88bbdd, opacity: 0.35, transparent: true },
+  IFCSTAIR:             { hex: 0xd4c5a9 },
+  IFCCOVERING:          { hex: 0xddd0b8 },
+  IFCFURNISHINGELEMENT: { hex: 0xc0a882 },
+  IFCPLATE:             { hex: 0xb0a898 },
+  IFCMEMBER:            { hex: 0x909888 },
+  IFCFOOTING:           { hex: 0xa8a090 },
+  IFCPILE:              { hex: 0xa8a090 },
+  IFCFLOWSEGMENT:       { hex: 0xff6b35 },
+  IFCFLOWFITTING:       { hex: 0xff6b35 },
+  IFCFLOWTERMINAL:      { hex: 0xff9500 },
+  IFCPIPESEGMENT:       { hex: 0xff6b35 },
+  IFCPIPEFITTING:       { hex: 0xff6b35 },
+  IFCDUCTSEGMENT:       { hex: 0x7ec8e3 },
+  IFCDUCTFITTING:       { hex: 0x7ec8e3 },
+  IFCCURTAINWALL:       { hex: 0x99ccee, opacity: 0.4, transparent: true },
+  IFCSPACE:             { hex: 0x88ccaa, opacity: 0.15, transparent: true },
+};
+
+// ===============================
+// ESTILOS DE SECCIÓN POR CATEGORÍA IFC
+// ===============================
+
+// Categorías IFC que reciben relleno de sección (muros, losas, estructura)
+const SECTION_FILL_CATEGORIES: RegExp[] = [
+  /IFCWALL/i, /IFCWALLSTANDARDCASE/i,
+  /IFCSLAB/i,
+  /IFCCOLUMN/i, /IFCBEAM/i,
+  /IFCFOOTING/i, /IFCPILE/i,
+  /IFCROOF/i,
+];
+
+// ===============================
+// ESTILOS COMPACTOS PANEL DERECHO
+// ===============================
+{
+  const s = document.createElement("style");
+  s.textContent = `
+    /* Reducir espaciado interno en tablas BUI del panel derecho ~35% */
+    bim-table {
+      --bim-ui--gap: 2px;
+      --bim-ui--size-xs: 14px;
+      --bim-ui--size-sm: 18px;
+      line-height: 1.2;
+    }
+    bim-table-row, bim-table-row * {
+      min-height: unset !important;
+      padding-top: 1px !important;
+      padding-bottom: 1px !important;
+      line-height: 1.25 !important;
+    }
+    bim-label {
+      line-height: 1.2 !important;
+      padding: 1px 2px !important;
+    }
+  `;
+  document.head.appendChild(s);
+}
+
+// ===============================
+// BOOTSTRAP
+// ===============================
+
+const container = document.getElementById("container");
 
 if (container) {
-
   const viewport = document.createElement("bim-viewport");
 
-  // 2.1 Inicializar el núcleo de la plataforma
+  // ===============================
+  // PASO 2 – Components + World
+  // ===============================
   const components = new OBC.Components();
   console.log("✅ 02_Components creado");
 
-  // 2.2 Crear el Mundo con tipos específicos
   const worlds = components.get(OBC.Worlds);
-  const world = worlds.create<
+  const world  = worlds.create<
     OBC.SimpleScene,
     OBC.OrthoPerspectiveCamera,
     OBC.SimpleRenderer
   >();
   console.log("✅ 2.2_World creado");
 
-  // 2.3 Asignar escena, renderer y cámara
-  world.scene = new OBC.SimpleScene(components);
+  world.scene    = new OBC.SimpleScene(components);
   world.renderer = new OBF.PostproductionRenderer(components, viewport);
-  world.camera = new OBC.OrthoPerspectiveCamera(components);
+  world.camera   = new OBC.OrthoPerspectiveCamera(components);
   console.log("✅ 2.3_World configurado");
 
-  // 2.4 Inicializar el sistema de componentes
   components.init();
   console.log("✅ 2.4_Components inicializado");
 
@@ -42,34 +142,30 @@ if (container) {
   // ===============================
   const topics = components.get(OBC.BCFTopics);
   topics.setup({
-    users: new Set(["arquitecto@proyecto.com", "ingeniero@proyecto.com"]),
+    users:  new Set(["arquitecto@proyecto.com", "ingeniero@proyecto.com"]),
     labels: new Set(["Arquitectura", "Estructura", "MEP", "Coordinación"]),
   });
 
   const viewpoints = components.get(OBC.Viewpoints);
   topics.list.onItemSet.add(({ value: topic }) => {
-    const viewpoint = viewpoints.create();
-    viewpoint.world = world;
-    viewpoint.updateCamera();
-    topic.viewpoints.add(viewpoint.guid);
+    const vp   = viewpoints.create();
+    vp.world   = world;
+    vp.updateCamera();
+    topic.viewpoints.add(vp.guid);
   });
   console.log("✅ 3_BCFTopics + Viewpoints configurados");
 
   // ===============================
-  // PASO 4 – Hoverer
+  // PASO 4 – Hoverer + Highlighter
   // ===============================
-  const hoverer = components.get(OBF.Hoverer);
-  hoverer.world = world;
-  hoverer.enabled = true;
+  const hoverer    = components.get(OBF.Hoverer);
+  hoverer.world    = world;
+  hoverer.enabled  = true;
   hoverer.material = new THREE.MeshBasicMaterial({
-    color: 0x6528d7,
-    transparent: true,
-    opacity: 0.5,
-    depthTest: false,
+    color: 0x6528d7, transparent: true, opacity: 0.5, depthTest: false,
   });
   console.log("✅ 4.1_Hoverer configurado");
 
-  // PASO 4.2 – Highlighter para selección de elementos
   const highlighter = components.get(OBF.Highlighter);
   highlighter.setup({ world });
   console.log("✅ 4.2_Highlighter configurado");
@@ -77,75 +173,164 @@ if (container) {
   // ===============================
   // PASO 5 – LengthMeasurement
   // ===============================
-  const measurer = components.get(OBF.LengthMeasurement);
-  measurer.world = world;
-  measurer.color = new THREE.Color("#494cb6");
-  measurer.enabled = false;
+  const measurer     = components.get(OBF.LengthMeasurement);
+  measurer.world     = world;
+  measurer.color     = new THREE.Color("#494cb6");
+  measurer.enabled   = false;
   measurer.snappings = [FRAGS.SnappingClass.POINT];
-
-  viewport.ondblclick = () => measurer.create();
-
-  window.onkeydown = (event) => {
-    if (event.code === "Delete" || event.code === "Backspace") {
-      measurer.delete();
-    }
-  };
 
   measurer.list.onItemAdded.add((line) => {
     const center = new THREE.Vector3();
     line.getCenter(center);
-    const radius = line.distance() / 3;
-    const sphere = new THREE.Sphere(center, radius);
-    world.camera.controls.fitToSphere(sphere, true);
+    world.camera.controls.fitToSphere(
+      new THREE.Sphere(center, line.distance() / 3), true
+    );
   });
-  console.log("✅ 5.4_LengthMeasurement configurado");
+  console.log("✅ 5_LengthMeasurement configurado");
 
   // ===============================
-  // *** NUEVO – MUTEX DE HERRAMIENTAS
-  // Colocado justo después del PASO 5, antes del PASO 6
+  // PASO 5.5 – Clipper + Section Fill via Stencil Buffer
+  // Técnica correcta: front-face decrement / back-face increment.
+  // El stencil queda > 0 solo en la cara de corte (sección transversal).
+  // NOTA: la postproducción se desactiva en modo sección porque el
+  // EffectComposer de @pmndrs/postprocessing crea render targets sin
+  // stencilBuffer, lo que impediría que esta técnica funcione.
   // ===============================
-  type ToolMode = "navigate" | "measure";
+
+  const clipper   = components.get(OBC.Clipper);
+  clipper.enabled = false;
+
+  const sectionFillGroup   = new THREE.Group();
+  sectionFillGroup.name    = "SectionFillGroup";
+  sectionFillGroup.visible = false;
+  world.scene.three.add(sectionFillGroup);
+
+  // Meshes de categorías objetivo – se populan al cargar el modelo
+  let fillSourceMeshes: THREE.Mesh[] = [];
+
+  const rebuildSectionFills = () => {
+    while (sectionFillGroup.children.length)
+      sectionFillGroup.remove(sectionFillGroup.children[0]);
+
+    if (fillSourceMeshes.length === 0) return;
+
+    for (const [, cp] of (clipper as any).list) {
+      const plane: THREE.Plane | undefined = (cp as any).plane;
+      if (!(plane instanceof THREE.Plane)) continue;
+
+      // — Paso stencil: front decrement + back increment —
+      const stencilGroup = new THREE.Group();
+      for (const mesh of fillSourceMeshes) {
+        mesh.updateWorldMatrix(true, false);
+        for (const [side, op] of [
+          [THREE.FrontSide, THREE.DecrementWrapStencilOp],
+          [THREE.BackSide,  THREE.IncrementWrapStencilOp],
+        ] as [THREE.Side, THREE.StencilOp][]) {
+          const mat = new THREE.MeshBasicMaterial({
+            colorWrite: false, depthWrite: false,
+            side, clippingPlanes: [plane],
+          });
+          mat.stencilWrite = true;
+          mat.stencilFunc  = THREE.AlwaysStencilFunc;
+          mat.stencilFail  = op;
+          mat.stencilZFail = op;
+          mat.stencilZPass = op;
+          const sm = new THREE.Mesh(mesh.geometry, mat);
+          sm.matrixAutoUpdate = false;
+          sm.matrix.copy(mesh.matrixWorld);
+          sm.renderOrder = 3;
+          stencilGroup.add(sm);
+        }
+      }
+      sectionFillGroup.add(stencilGroup);
+
+      // — Plano de relleno: dibuja donde stencil ≠ 0, luego lo limpia —
+      const fillMat = new THREE.MeshBasicMaterial({
+        color: 0xC0B8A8, side: THREE.DoubleSide,
+        depthWrite: false, depthTest: false,
+      });
+      fillMat.stencilWrite = true;
+      fillMat.stencilRef   = 0;
+      fillMat.stencilFunc  = THREE.NotEqualStencilFunc;
+      fillMat.stencilFail  = THREE.ReplaceStencilOp;
+      fillMat.stencilZFail = THREE.ReplaceStencilOp;
+      fillMat.stencilZPass = THREE.ReplaceStencilOp;
+
+      const fillMesh = new THREE.Mesh(new THREE.PlaneGeometry(2000, 2000), fillMat);
+      fillMesh.renderOrder = 4;
+      fillMesh.quaternion.setFromUnitVectors(
+        new THREE.Vector3(0, 0, 1), plane.normal.clone().normalize()
+      );
+      fillMesh.position.copy(plane.normal.clone().multiplyScalar(-plane.constant));
+      sectionFillGroup.add(fillMesh);
+    }
+  };
+
+  console.log("✅ 5.5_Section Fill Stencil preparado");
+
+  // ===============================
+  // MUTEX DE HERRAMIENTAS
+  // ===============================
+  type ToolMode = "navigate" | "measure" | "section";
   let activeMode: ToolMode = "navigate";
 
-  // *** NUEVO – Estado reactivo para re-renderizar el toolbar
-  const toolbarState = { mode: activeMode };
-
-  // *** NUEVO – Variable para guardar referencia al botón de medición
   let measureBtnEl: BUI.Button | null = null;
+  let sectionBtnEl: BUI.Button | null = null;
+  // Wrapper para postproduction (se asigna después de su creación).
+  // Usar un objeto evita que TypeScript estreche el tipo a `never` en closures.
+  const pp = { ref: null as { enabled: boolean } | null };
 
   const setMode = (mode: ToolMode) => {
     activeMode = mode;
-    const toolbarState = { mode: activeMode };
 
-    // Desactivar todo primero
-    measurer.enabled = false;
-    highlighter.enabled = false;
-    hoverer.enabled = false;
+    measurer.enabled         = false;
+    highlighter.enabled      = false;
+    hoverer.enabled          = false;
+    clipper.enabled          = false;
+    sectionFillGroup.visible = false;
 
     if (mode === "navigate") {
       highlighter.enabled = true;
-      hoverer.enabled = true;
+      hoverer.enabled     = true;
+      if (pp.ref) pp.ref.enabled = true;
     } else if (mode === "measure") {
       measurer.enabled = true;
+      if (pp.ref) pp.ref.enabled = true;
+    } else if (mode === "section") {
+      clipper.enabled          = true;
+      sectionFillGroup.visible = true;
+      // Desactivar postproducción: el EffectComposer no tiene stencilBuffer
+      // en sus render targets, lo que impide la técnica de stencil fill
+      if (pp.ref) pp.ref.enabled = false;
     }
 
-    // *** NUEVO – Actualizar estilo visual del botón en el toolbar
-    if (measureBtnEl) {
-      if (mode === "measure") {
-        measureBtnEl.style.background = "var(--bim-ui_main-base)";
-        measureBtnEl.style.borderRadius = "4px";
-        measureBtnEl.style.outline = "2px solid var(--bim-ui_accent-base, #6528d7)";
-      } else {
-        measureBtnEl.style.background = "";
-        measureBtnEl.style.borderRadius = "";
-        measureBtnEl.style.outline = "";
-      }
-    }
+    const activeStyle = {
+      background: "var(--bim-ui_main-base)", borderRadius: "4px",
+      outline: "2px solid var(--bim-ui_accent-base, #6528d7)",
+    };
+    const resetStyle = { background: "", borderRadius: "", outline: "" };
+
+    [measureBtnEl, sectionBtnEl].forEach((btn) => {
+      if (btn) Object.assign(btn.style, resetStyle);
+    });
+    if (mode === "measure" && measureBtnEl) Object.assign(measureBtnEl.style, activeStyle);
+    if (mode === "section" && sectionBtnEl) Object.assign(sectionBtnEl.style, activeStyle);
 
     console.log(`🔧 Modo activo: ${mode}`);
   };
 
-  // Estado inicial: navegación con highlighter y hoverer activos
+  viewport.ondblclick = () => {
+    if (activeMode === "measure")      measurer.create();
+    else if (activeMode === "section") { clipper.create(world); rebuildSectionFills(); }
+  };
+
+  window.onkeydown = (event) => {
+    if (event.code === "Delete" || event.code === "Backspace") {
+      if (activeMode === "measure")      measurer.delete();
+      else if (activeMode === "section") { clipper.delete(world); rebuildSectionFills(); }
+    }
+  };
+
   setMode("navigate");
   console.log("✅ MUTEX_Modos de herramienta configurados");
 
@@ -153,44 +338,179 @@ if (container) {
   // PASO 6 – Escena y entorno visual
   // ===============================
   world.scene.setup();
-  world.scene.three.background = new THREE.Color('#202932');
-  const grids = components.get(OBC.Grids);
-  grids.create(world);
+
+  // ── CAMBIO 1: Fondo plano de color en lugar del sky esférico ──
+  // La SphereGeometry generaba artefactos de outline (circunferencias visibles
+  // en la parte superior) porque el postprocesado de bordes detectaba sus
+  // segmentos de latitud/longitud como aristas del modelo.
+  world.scene.three.background = new THREE.Color(0xc8deff);
+
+  // Iluminación
+  world.scene.three.add(new THREE.AmbientLight(0xffffff, 0.55));
+
+  // ── CAMBIO 2: Intensidad solar 2.0 → 1.0 ──
+  const sunLight = new THREE.DirectionalLight(0xfff5e0, 1.0);
+  sunLight.position.set(60, 90, 40);
+  sunLight.castShadow           = true;
+  sunLight.shadow.mapSize.width = sunLight.shadow.mapSize.height = 4096;
+  sunLight.shadow.camera.near   = 0.5;
+  sunLight.shadow.camera.far    = 800;
+  sunLight.shadow.camera.left   = sunLight.shadow.camera.bottom = -120;
+  sunLight.shadow.camera.right  = sunLight.shadow.camera.top    =  120;
+  sunLight.shadow.bias          = -0.0005;
+  sunLight.shadow.normalBias    =  0.02;
+  world.scene.three.add(sunLight);
+
+  const fillLight = new THREE.DirectionalLight(0xc8deff, 0.45);
+  fillLight.position.set(-40, 30, -30);
+  world.scene.three.add(fillLight);
+  world.scene.three.add(new THREE.HemisphereLight(0xc8e0ff, 0xd4c8a0, 0.35));
+
+  const threeRenderer = (world.renderer as OBF.PostproductionRenderer).three;
+  threeRenderer.shadowMap.enabled    = true;
+  threeRenderer.shadowMap.type       = THREE.PCFSoftShadowMap;
+  threeRenderer.localClippingEnabled = true;
+
+  const grids     = components.get(OBC.Grids);
+  const worldGrid = grids.create(world);
   await world.camera.controls.setLookAt(10, 10, 10, 0, 0, 0);
-  console.log("✅ 6.1_Escena configurada");
+  console.log("✅ 6.1_Escena configurada con iluminación mejorada");
+
+  // ===============================
+  // PASO 6.2 – Postproducción
+  // ===============================
+  const postproduction = (world.renderer as OBF.PostproductionRenderer).postproduction;
+  postproduction.enabled = true;
+
+  postproduction.basePass.isolatedMaterials.push(worldGrid.material);
+  postproduction.outlinesEnabled           = true;
+  postproduction.glossEnabled              = true;
+  postproduction.glossPass.minGloss        = -0.1;
+  postproduction.glossPass.maxGloss        = 0.4;
+  postproduction.glossPass.glossExponent   = 4;
+  postproduction.glossPass.fresnelExponent = 3;
+
+  postproduction.aoPass.updateGtaoMaterial({
+    radius: 0.5, distanceFallOff: 1.0, scale: 2.5, samples: 16, thickness: 1.0,
+  });
+
+  postproduction.smaaEnabled = true;
+
+  // ── CAMBIO 3: Estilo por defecto COLOR_PEN (era COLOR_SHADOWS) ──
+  postproduction.style = OBF.PostproductionAspect.COLOR_PEN;
+
+  // ── CAMBIO 4: Ancho de bordes 1.2 → 1.0 ──
+  postproduction.edgesPass.width = 1.0;
+
+  // Enlazar el wrapper pp con la instancia real de postproduction
+  pp.ref = postproduction;
+
+  console.log("✅ 6.2_Postproducción activada");
+
+  // ===============================
+  // PASO 6.3 – Ajustar grilla al piso
+  // ===============================
+  const adjustGridToModel = () => {
+    const box = new THREE.Box3();
+    world.scene.three.traverse((obj) => {
+      if (obj instanceof THREE.Mesh && !(obj.material instanceof THREE.ShaderMaterial))
+        box.union(new THREE.Box3().setFromObject(obj));
+    });
+    if (!box.isEmpty()) {
+      worldGrid.three.position.y = box.min.y;
+      console.log(`✅ Grilla ajustada a Y = ${box.min.y.toFixed(4)}`);
+    }
+  };
 
   // ===============================
   // PASO 7 – FragmentsManager
   // ===============================
   const fragments = components.get(OBC.FragmentsManager);
-  const workerUrl = "/workers/worker.mjs";
-  fragments.init(workerUrl);
+  fragments.init("/workers/worker.mjs");
   console.log("✅ 7.1_FragmentsManager configurado");
 
   world.camera.controls.addEventListener("update", () => {
     fragments.core.update();
   });
 
-  // PASO 7.3 – Agregar modelos a la escena (UN SOLO onItemSet, limpio)
-  fragments.list.onItemSet.add(({ value: model }) => {
+  // ===============================
+  // PASO 7.3 – Modelo cargado: Phong + colores + Hatch Stencil
+  // ===============================
+  fragments.list.onItemSet.add(async ({ value: model }) => {
     model.useCamera(world.camera.three);
     world.scene.three.add(model.object);
     fragments.core.update(true);
     console.log("✅ 7.3_Modelo agregado a la escena");
+
+    // --- PASO A: Convertir materiales a Phong ---
+    model.object.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        child.castShadow    = true;
+        child.receiveShadow = true;
+        if (Array.isArray(child.material)) {
+          child.material = child.material.map((m) => convertToPhong(m));
+        } else {
+          child.material = convertToPhong(child.material);
+        }
+      }
+    });
+    console.log("✅ 7.4_Materiales convertidos a Phong");
+
+    // --- PASO B: Colores fallback por categoría IFC ---
+    for (const [categoryName, colorDef] of Object.entries(IFC_FALLBACK_COLORS)) {
+      try {
+        const results    = await model.getItemsOfCategories([new RegExp(`^${categoryName}$`, "i")]);
+        const ids: number[] = [];
+        for (const itemIds of Object.values(results)) ids.push(...(itemIds as number[]));
+        if (ids.length === 0) continue;
+
+        const idSet = new Set(ids);
+        model.object.traverse((child) => {
+          if (!(child instanceof THREE.Mesh)) return;
+          const localId = child.userData?.localId as number | undefined;
+          if (localId === undefined || !idSet.has(localId)) return;
+          const mats = Array.isArray(child.material) ? child.material : [child.material];
+          for (const mat of mats) {
+            const phong   = mat as THREE.MeshPhongMaterial;
+            const isWhite = phong.color.r > 0.95 && phong.color.g > 0.95 && phong.color.b > 0.95;
+            if (isWhite) {
+              phong.color.setHex(colorDef.hex);
+              if (colorDef.transparent) { phong.transparent = true; phong.opacity = colorDef.opacity ?? 0.5; }
+            }
+          }
+        });
+        console.log(`  ✅ Color fallback ${categoryName}: ${ids.length} elementos`);
+      } catch { /* categoría no presente en este modelo */ }
+    }
+    console.log("✅ 7.5_Colores por categoría IFC aplicados");
+
+    // --- PASO C: Recolectar meshes de categorías objetivo para relleno de sección ---
+    fillSourceMeshes = [];
+    try {
+      const results = await model.getItemsOfCategories(SECTION_FILL_CATEGORIES);
+      const ids = new Set<number>();
+      for (const itemIds of Object.values(results))
+        for (const id of itemIds as number[]) ids.add(id);
+      model.object.traverse((child) => {
+        if (!(child instanceof THREE.Mesh)) return;
+        const localId = child.userData?.localId as number | undefined;
+        if (localId !== undefined && ids.has(localId)) fillSourceMeshes.push(child);
+      });
+      console.log(`✅ 7.6_${fillSourceMeshes.length} meshes listos para relleno de sección`);
+    } catch (e) {
+      console.warn("⚠️ Error recolectando meshes para sección:", e);
+    }
+    setTimeout(() => adjustGridToModel(), 500);
   });
 
   // ===============================
   // PASO 8 – IfcLoader
   // ===============================
-  const ifcLoader = components.get(OBC.IfcLoader);
-
+  const ifcLoader      = components.get(OBC.IfcLoader);
   const setupIfcLoader = async () => {
     await ifcLoader.setup({
       autoSetWasm: false,
-      wasm: {
-        path: "https://unpkg.com/web-ifc@0.0.74/",
-        absolute: true,
-      },
+      wasm: { path: "https://unpkg.com/web-ifc@0.0.74/", absolute: true },
     });
     console.log("✅ 8.1_IfcLoader configurado");
   };
@@ -204,22 +524,17 @@ if (container) {
     CUI.Manager.init();
     console.log("✅ 9.1_BUI y CUI Managers inicializados");
 
-    // PASO 8.3 – Descargar fragmentos
     const downloadFragments = async () => {
       const [model] = fragments.list.values();
       if (!model) { console.warn("No hay modelo para descargar"); return; }
-      const fragsBuffer = await model.getBuffer(false);
-      const file = new File([fragsBuffer], "modelo.frag");
+      const file = new File([await model.getBuffer(false)], "modelo.frag");
       const link = document.createElement("a");
-      link.href = URL.createObjectURL(file);
-      link.download = file.name;
-      link.click();
+      link.href = URL.createObjectURL(file); link.download = file.name; link.click();
       URL.revokeObjectURL(link.href);
-      console.log("✅ 8.3_Fragments descargados");
     };
 
     // ===============================
-    // PASO 10 – Panel de mediciones
+    // PASO 10 – Panel izquierdo
     // ===============================
     const deleteDimensions = () => measurer.list.clear();
 
@@ -231,32 +546,25 @@ if (container) {
 
     const loadIfcBtn = BUI.Component.create<BUI.Button>(() => {
       const onClick = async () => {
-        const input = document.createElement("input");
-        input.type = "file";
-        input.accept = ".ifc";
+        const input    = document.createElement("input");
+        input.type     = "file";
+        input.accept   = ".ifc";
         input.onchange = async () => {
           const file = input.files?.[0];
           if (!file) return;
           console.log("📂 Cargando:", file.name);
-          const data = await file.arrayBuffer();
-          const buffer = new Uint8Array(data);
-          await ifcLoader.load(buffer, false, file.name, {
+          await ifcLoader.load(new Uint8Array(await file.arrayBuffer()), false, file.name, {
             processData: { progressCallback: (p) => console.log("Progreso:", p) },
           });
           console.log("✅ Modelo cargado!");
         };
         input.click();
       };
-      return BUI.html`
-        <bim-button label="Cargar IFC" icon="mage:box-3d-fill" @click=${onClick}>
-        </bim-button>
-      `;
+      return BUI.html`<bim-button label="Cargar IFC" icon="mage:box-3d-fill" @click=${onClick}></bim-button>`;
     });
 
     const [modelsList] = CUI.tables.modelsList({
-      components,
-      metaDataTags: ["schema"],
-      actions: { download: false },
+      components, metaDataTags: ["schema"], actions: { download: false },
     });
 
     const panel = BUI.Component.create<BUI.PanelSection>(() => {
@@ -269,65 +577,101 @@ if (container) {
           </bim-panel-section>
 
           <bim-panel-section label="Controles" icon="solar:ruler-bold">
-            <bim-label>Doble click: crear medición</bim-label>
+            <bim-label>Doble click: crear medición / plano de sección</bim-label>
             <bim-label>Delete / Backspace: borrar</bim-label>
-            <bim-button label="Descargar .frag" @click=${() => downloadFragments()}>
-            </bim-button>
+            <bim-button label="Descargar .frag" @click=${() => downloadFragments()}></bim-button>
           </bim-panel-section>
 
           <bim-panel-section label="Medidor" icon="solar:ruler-cross-pen-bold">
             <bim-checkbox checked label="Habilitado"
-              @change="${({ target }: { target: BUI.Checkbox }) => {
-                measurer.enabled = target.value;
-              }}">
+              @change="${({ target }: { target: BUI.Checkbox }) => { measurer.enabled = target.value; }}">
             </bim-checkbox>
-
             <bim-checkbox checked label="Visible"
-              @change="${({ target }: { target: BUI.Checkbox }) => {
-                measurer.visible = target.value;
-              }}">
+              @change="${({ target }: { target: BUI.Checkbox }) => { measurer.visible = target.value; }}">
             </bim-checkbox>
-
-            <bim-color-input
-              label="Color"
-              color=#${measurer.linesMaterial.color.getHexString()}
-              @input="${({ target }: { target: BUI.ColorInput }) => {
-                measurer.color = new THREE.Color(target.color);
-              }}">
+            <bim-color-input label="Color" color=#${measurer.linesMaterial.color.getHexString()}
+              @input="${({ target }: { target: BUI.ColorInput }) => { measurer.color = new THREE.Color(target.color); }}">
             </bim-color-input>
-
             <bim-dropdown label="Unidades" required
-              @change="${({ target }: { target: BUI.Dropdown }) => {
-                const [units] = target.value;
-                measurer.units = units;
-              }}">
-              ${measurer.unitsList.map(
-                (unit) => BUI.html`
-                  <bim-option label=${unit} value=${unit} ?checked=${unit === measurer.units}>
-                  </bim-option>`
-              )}
+              @change="${({ target }: { target: BUI.Dropdown }) => { const [units] = target.value; measurer.units = units; }}">
+              ${measurer.unitsList.map((unit) => BUI.html`
+                <bim-option label=${unit} value=${unit} ?checked=${unit === measurer.units}></bim-option>`)}
             </bim-dropdown>
-
             <bim-dropdown label="Precisión" required
-              @change="${({ target }: { target: BUI.Dropdown }) => {
-                const [rounding] = target.value;
-                measurer.rounding = rounding;
-              }}">
+              @change="${({ target }: { target: BUI.Dropdown }) => { const [rounding] = target.value; measurer.rounding = rounding; }}">
               <bim-option label="0" value=0></bim-option>
               <bim-option label="1" value=1></bim-option>
               <bim-option label="2" value=2 checked></bim-option>
               <bim-option label="3" value=3></bim-option>
               <bim-option label="4" value=4></bim-option>
             </bim-dropdown>
+            <bim-button label="Borrar todo" @click=${() => deleteDimensions()}></bim-button>
+          </bim-panel-section>
 
-            <bim-button label="Borrar todo" @click=${() => deleteDimensions()}>
+          <bim-panel-section label="Sección" icon="material-symbols:cut">
+            <bim-number-input label="Tamaño del plano"
+              value="5" min="1" max="30" step="1" suffix="m"
+              @change="${({ target }: { target: BUI.NumberInput }) => { clipper.size = target.value; }}">
+            </bim-number-input>
+            <bim-checkbox checked label="Mostrar relleno en sección"
+              @change="${({ target }: { target: BUI.Checkbox }) => {
+                sectionFillGroup.visible = target.value && activeMode === "section";
+              }}">
+            </bim-checkbox>
+            <bim-button label="Borrar todos los planos" icon="material-symbols:delete-outline"
+              @click=${() => clipper.deleteAll()}>
             </bim-button>
+          </bim-panel-section>
+
+          <bim-panel-section label="Renderizado" icon="material-symbols:photo-camera">
+            <bim-checkbox checked label="Postproducción"
+              @change="${({ target }: { target: BUI.Checkbox }) => { postproduction.enabled = target.value; }}">
+            </bim-checkbox>
+            <bim-checkbox checked label="Outlines (bordes)"
+              @change="${({ target }: { target: BUI.Checkbox }) => { postproduction.outlinesEnabled = target.value; }}">
+            </bim-checkbox>
+            <bim-checkbox checked label="Gloss (brillo)"
+              @change="${({ target }: { target: BUI.Checkbox }) => { postproduction.glossEnabled = target.value; }}">
+            </bim-checkbox>
+            <bim-checkbox checked label="SMAA (antialiasing)"
+              @change="${({ target }: { target: BUI.Checkbox }) => { postproduction.smaaEnabled = target.value; }}">
+            </bim-checkbox>
+            <bim-dropdown label="Estilo" required
+              @change="${({ target }: { target: BUI.Dropdown }) => {
+                postproduction.style = target.value[0] as OBF.PostproductionAspect;
+              }}">
+              <bim-option label="Color"                  value="${OBF.PostproductionAspect.COLOR}"></bim-option>
+              <bim-option label="Pen"                    value="${OBF.PostproductionAspect.PEN}"></bim-option>
+              <bim-option label="Pen + Sombras"          value="${OBF.PostproductionAspect.PEN_SHADOWS}"></bim-option>
+              <bim-option checked label="Color + Pen"    value="${OBF.PostproductionAspect.COLOR_PEN}"></bim-option>
+              <bim-option label="Color + Sombras"        value="${OBF.PostproductionAspect.COLOR_SHADOWS}"></bim-option>
+              <bim-option label="Color + Pen + Sombras"  value="${OBF.PostproductionAspect.COLOR_PEN_SHADOWS}"></bim-option>
+            </bim-dropdown>
+            <!-- ── CAMBIO 4 en UI: valor inicial 1.0 (era 1.2) ── -->
+            <bim-number-input label="Ancho de bordes" value="1.0" min="0.5" max="5" step="0.1"
+              @change="${({ target }: { target: BUI.NumberInput }) => { postproduction.edgesPass.width = target.value; }}">
+            </bim-number-input>
+            <bim-number-input label="Intensidad AO" value="2.5" min="0" max="10" step="0.1"
+              @change="${({ target }: { target: BUI.NumberInput }) => {
+                postproduction.aoPass.updateGtaoMaterial({ scale: target.value });
+              }}">
+            </bim-number-input>
+            <bim-checkbox checked label="Sombras Three.js"
+              @change="${({ target }: { target: BUI.Checkbox }) => {
+                threeRenderer.shadowMap.enabled = target.value;
+                sunLight.castShadow             = target.value;
+              }}">
+            </bim-checkbox>
+            <!-- ── CAMBIO 5 en UI: valor inicial 1.0 (era 2.0) ── -->
+            <bim-number-input label="Intensidad solar" value="1.0" min="0" max="5" step="0.1"
+              @change="${({ target }: { target: BUI.NumberInput }) => { sunLight.intensity = target.value; }}">
+            </bim-number-input>
           </bim-panel-section>
 
         </bim-panel>
       `;
     });
-    console.log("✅ 10.2_Panel de mediciones creado");
+    console.log("✅ 10.2_Panel creado");
 
     measurer.list.onItemAdded.add(() => {
       const existing = panel.querySelector("bim-panel-section[label='Mediciones']");
@@ -336,274 +680,197 @@ if (container) {
       section.setAttribute("label", "Mediciones");
       const values = getAllValues();
       if (values.length === 0) {
-        const label = document.createElement("bim-label");
-        label.textContent = "No hay mediciones";
-        section.append(label);
+        const lbl = document.createElement("bim-label");
+        lbl.textContent = "No hay mediciones"; section.append(lbl);
       } else {
         values.forEach((v, i) => {
-          const label = document.createElement("bim-label");
-          label.textContent = `Medición ${i + 1}: ${v.toFixed(2)} m`;
-          section.append(label);
+          const lbl = document.createElement("bim-label");
+          lbl.textContent = `Medición ${i + 1}: ${v.toFixed(2)} m`; section.append(lbl);
         });
       }
       panel.append(section);
     });
 
     // ===============================
-    // ETAPA 1 – rightPanel con acordeón: Spatial Tree + BCF
+    // Panel derecho
     // ===============================
     const rightPanel = document.createElement("bim-panel") as BUI.Panel;
     rightPanel.label = "Panel";
 
-    // 1.2.1 – Spatial Tree
     const [spatialTree, updateSpatialTree] = CUI.tables.spatialTree({
-      components,
-      models: fragments.list.values(),
-      selectHighlighterName: "select",
+      components, models: fragments.list.values(), selectHighlighterName: "select",
     });
 
-    // 1.2.2 – Sección acordeón colapsable
-    const spatialSection = document.createElement("bim-panel-section") as BUI.PanelSection;
-    spatialSection.label = "Spatial Structures";
-    spatialSection.icon = "material-symbols:account-tree";
-    spatialSection.collapsed = true;
+    const spatialSection          = document.createElement("bim-panel-section") as BUI.PanelSection;
+    spatialSection.label          = "Spatial Structures";
+    spatialSection.icon           = "material-symbols:account-tree";
+    spatialSection.collapsed      = false;
+    // Permite que el árbol ocupe la altura disponible y sea desplazable
+    spatialTree.style.maxHeight   = "40vh";
+    spatialTree.style.overflowY   = "auto";
+    spatialTree.style.fontSize    = "11px";
     spatialSection.append(spatialTree);
     rightPanel.append(spatialSection);
 
-    // 1.2.3 – Actualizar árbol al cargar modelo
     fragments.list.onItemSet.add(() => {
       updateSpatialTree({ models: fragments.list.values() });
       spatialSection.collapsed = false;
-      console.log("✅ 1.2_SpatialTree actualizado");
+      // BUI.Table.expanded = true expands all rows at every hierarchy level
+      requestAnimationFrame(() => { spatialTree.expanded = true; });
+      console.log("✅ SpatialTree actualizado");
     });
-    console.log("✅ ETAPA 1_Spatial Structures creado");
 
     // ===============================
-    // ETAPA 2 – Quantities / Selection Information
+    // Selection Information
     // ===============================
-
-    // 2.1 – Crear la tabla itemsData (vacía al inicio)
     const [itemsDataTable, updateItemsData] = CUI.tables.itemsData({
-      components,
-      modelIdMap: {},
-      emptySelectionWarning: true,
+      components, modelIdMap: {}, emptySelectionWarning: true,
     });
 
-    // 2.2 – Sección acordeón en el rightPanel
-    const quantitiesSection = document.createElement("bim-panel-section") as BUI.PanelSection;
-    quantitiesSection.label = "Selection Information";
-    quantitiesSection.icon = "material-symbols:info";
-    quantitiesSection.collapsed = true;
+    const quantitiesSection          = document.createElement("bim-panel-section") as BUI.PanelSection;
+    quantitiesSection.label          = "Selection Information";
+    quantitiesSection.icon           = "material-symbols:info";
+    quantitiesSection.collapsed      = true;
+    (itemsDataTable as HTMLElement).style.maxHeight = "45vh";
+    (itemsDataTable as HTMLElement).style.overflowY = "auto";
+    (itemsDataTable as HTMLElement).style.fontSize  = "11px";
     quantitiesSection.append(itemsDataTable);
     rightPanel.append(quantitiesSection);
 
-    // 2.3 – VERSIÓN FINAL
     spatialTree.selectableRows = true;
-
     spatialTree.addEventListener("click", (event: Event) => {
-      const path = event.composedPath();
-      const row = path.find((el: any) => el.tagName === "BIM-TABLE-ROW") as any;
+      const path    = event.composedPath();
+      const row     = path.find((el: any) => el.tagName === "BIM-TABLE-ROW") as any;
       if (!row?.data) return;
-
       const modelId = row.data.modelId as string;
       const localId = row.data.localId as number;
       if (!modelId || localId === undefined) return;
-
-      updateItemsData({
-        modelIdMap: { [modelId]: new Set([localId]) },
-        emptySelectionWarning: false,
-      });
-
+      updateItemsData({ modelIdMap: { [modelId]: new Set([localId]) }, emptySelectionWarning: false });
       quantitiesSection.collapsed = false;
+      requestAnimationFrame(() => quantitiesSection.scrollIntoView({ behavior: "smooth", block: "nearest" }));
       console.log(`✅ Selection: ${row.data.Name} | localId=${localId}`);
     });
 
-    console.log("✅ ETAPA 2_Quantities Panel creado");
-
     // ===============================
-    // ETAPA 3 – Quantities Panel (Cómputo Métrico)
+    // Quantities Panel
     // ===============================
-
     interface ItemComputo {
-      id: string;
-      nombre: string;
-      unidad: string;
-      cantidadRef: number;
-      categorias: RegExp[];
-      metodo: "volumen" | "area" | "longitud" | "conteo" | "manual";
+      id: string; nombre: string; unidad: string; cantidadRef: number;
+      categorias: RegExp[]; metodo: "volumen" | "area" | "longitud" | "conteo" | "manual";
     }
 
     const rubroII: ItemComputo[] = [
-      { id: "3.1",  nombre: "Movimiento de suelo bajo platea",         unidad: "m³", cantidadRef: 923.59, categorias: [/IFCEARTHWORKS/i],    metodo: "volumen" },
-      { id: "4.1",  nombre: "Plateas de HºAº",                         unidad: "m³", cantidadRef: 169.29, categorias: [/IFCSLAB/i],           metodo: "volumen" },
-      { id: "4.2",  nombre: "Riostras Verticales",                     unidad: "m³", cantidadRef: 27.55,  categorias: [/IFCCOLUMN/i],         metodo: "volumen" },
-      { id: "4.3",  nombre: "Encadenado superior",                     unidad: "m³", cantidadRef: 24.51,  categorias: [/IFCBEAM/i],           metodo: "volumen" },
-      { id: "4.4",  nombre: "Viga de borde",                           unidad: "m³", cantidadRef: 3.42,   categorias: [/IFCBEAM/i],           metodo: "volumen" },
-      { id: "4.5",  nombre: "Losa Voladizo",                           unidad: "m³", cantidadRef: 3.04,   categorias: [/IFCSLAB/i],           metodo: "volumen" },
-      { id: "5.1",  nombre: "Mampostería ladrillo hueco e=0.20m",      unidad: "m²", cantidadRef: 2484.25,categorias: [/IFCWALL/i],           metodo: "area"    },
-      { id: "5.2",  nombre: "Mampostería ladrillo hueco e=0.15m",      unidad: "m²", cantidadRef: 506.35, categorias: [/IFCWALL/i],           metodo: "area"    },
-      { id: "5.3",  nombre: "Mampostería ladrillo hueco e=0.10m",      unidad: "m²", cantidadRef: 110.20, categorias: [/IFCWALL/i],           metodo: "area"    },
-      { id: "5.4",  nombre: "Mampostería ladrillo común e=0.30m",      unidad: "m³", cantidadRef: 83.22,  categorias: [/IFCWALL/i],           metodo: "volumen" },
-      { id: "6.1",  nombre: "Capa aisladora envolvente",               unidad: "m²", cantidadRef: 963.87, categorias: [/IFCCOVERING/i],       metodo: "area"    },
-      { id: "7.1",  nombre: "Cubierta chapa BWG Nº25 + estructura",    unidad: "m²", cantidadRef: 1115.30,categorias: [/IFCROOF/i, /IFCSLAB/i],metodo: "area"   },
-      { id: "9.1",  nombre: "Cielorraso Durlock con perfilería",        unidad: "m²", cantidadRef: 911.43, categorias: [/IFCCOVERING/i],       metodo: "area"    },
-      { id: "11.3", nombre: "Cerámico 30x30",                          unidad: "m²", cantidadRef: 914.09, categorias: [/IFCCOVERING/i],       metodo: "area"    },
-      { id: "14.1", nombre: "Puerta P1 (0.90x2.05) ingreso",           unidad: "un", cantidadRef: 19,     categorias: [/IFCDOOR/i],           metodo: "conteo"  },
-      { id: "14.2", nombre: "Puerta P2 (0.80x2.05) interiores",        unidad: "un", cantidadRef: 57,     categorias: [/IFCDOOR/i],           metodo: "conteo"  },
-      { id: "14.4", nombre: "Ventana V1 (0.80x0.50)",                  unidad: "un", cantidadRef: 19,     categorias: [/IFCWINDOW/i],         metodo: "conteo"  },
-      { id: "14.5", nombre: "Ventana V2 (0.30x1.50)",                  unidad: "un", cantidadRef: 57,     categorias: [/IFCWINDOW/i],         metodo: "conteo"  },
-      { id: "14.6", nombre: "Ventana V3 (1.50x1.00)",                  unidad: "un", cantidadRef: 38,     categorias: [/IFCWINDOW/i],         metodo: "conteo"  },
+      { id: "3.1",  nombre: "Movimiento de suelo bajo platea",      unidad: "m³", cantidadRef: 923.59,  categorias: [/IFCEARTHWORKS/i],      metodo: "volumen" },
+      { id: "4.1",  nombre: "Plateas de HºAº",                      unidad: "m³", cantidadRef: 169.29,  categorias: [/IFCSLAB/i],             metodo: "volumen" },
+      { id: "4.2",  nombre: "Riostras Verticales",                   unidad: "m³", cantidadRef: 27.55,   categorias: [/IFCCOLUMN/i],           metodo: "volumen" },
+      { id: "4.3",  nombre: "Encadenado superior",                   unidad: "m³", cantidadRef: 24.51,   categorias: [/IFCBEAM/i],             metodo: "volumen" },
+      { id: "4.4",  nombre: "Viga de borde",                         unidad: "m³", cantidadRef: 3.42,    categorias: [/IFCBEAM/i],             metodo: "volumen" },
+      { id: "4.5",  nombre: "Losa Voladizo",                         unidad: "m³", cantidadRef: 3.04,    categorias: [/IFCSLAB/i],             metodo: "volumen" },
+      { id: "5.1",  nombre: "Mampostería ladrillo hueco e=0.20m",    unidad: "m²", cantidadRef: 2484.25, categorias: [/IFCWALL/i],             metodo: "area"    },
+      { id: "5.2",  nombre: "Mampostería ladrillo hueco e=0.15m",    unidad: "m²", cantidadRef: 506.35,  categorias: [/IFCWALL/i],             metodo: "area"    },
+      { id: "5.3",  nombre: "Mampostería ladrillo hueco e=0.10m",    unidad: "m²", cantidadRef: 110.20,  categorias: [/IFCWALL/i],             metodo: "area"    },
+      { id: "5.4",  nombre: "Mampostería ladrillo común e=0.30m",    unidad: "m³", cantidadRef: 83.22,   categorias: [/IFCWALL/i],             metodo: "volumen" },
+      { id: "6.1",  nombre: "Capa aisladora envolvente",             unidad: "m²", cantidadRef: 963.87,  categorias: [/IFCCOVERING/i],         metodo: "area"    },
+      { id: "7.1",  nombre: "Cubierta chapa BWG Nº25 + estructura",  unidad: "m²", cantidadRef: 1115.30, categorias: [/IFCROOF/i, /IFCSLAB/i], metodo: "area"    },
+      { id: "9.1",  nombre: "Cielorraso Durlock con perfilería",      unidad: "m²", cantidadRef: 911.43,  categorias: [/IFCCOVERING/i],         metodo: "area"    },
+      { id: "11.3", nombre: "Cerámico 30x30",                        unidad: "m²", cantidadRef: 914.09,  categorias: [/IFCCOVERING/i],         metodo: "area"    },
+      { id: "14.1", nombre: "Puerta P1 (0.90x2.05) ingreso",         unidad: "un", cantidadRef: 19,      categorias: [/IFCDOOR/i],             metodo: "conteo"  },
+      { id: "14.2", nombre: "Puerta P2 (0.80x2.05) interiores",      unidad: "un", cantidadRef: 57,      categorias: [/IFCDOOR/i],             metodo: "conteo"  },
+      { id: "14.4", nombre: "Ventana V1 (0.80x0.50)",                unidad: "un", cantidadRef: 19,      categorias: [/IFCWINDOW/i],           metodo: "conteo"  },
+      { id: "14.5", nombre: "Ventana V2 (0.30x1.50)",                unidad: "un", cantidadRef: 57,      categorias: [/IFCWINDOW/i],           metodo: "conteo"  },
+      { id: "14.6", nombre: "Ventana V3 (1.50x1.00)",                unidad: "un", cantidadRef: 38,      categorias: [/IFCWINDOW/i],           metodo: "conteo"  },
     ];
 
     interface FilaQuantity {
-      item: ItemComputo;
-      cantidadModelo: number | null;
-      estado: "pendiente" | "ok" | "sin_datos";
-      localIds: number[];
+      item: ItemComputo; cantidadModelo: number | null;
+      estado: "pendiente" | "ok" | "sin_datos"; localIds: number[];
     }
 
-    let filasQuantity: FilaQuantity[] = rubroII.map(item => ({
-      item,
-      cantidadModelo: null,
-      estado: "pendiente",
-      localIds: [],
+    let filasQuantity: FilaQuantity[] = rubroII.map((item) => ({
+      item, cantidadModelo: null, estado: "pendiente", localIds: [],
     }));
 
     const extraerCantidades = async () => {
       const [model] = fragments.list.values();
       if (!model) return;
-
       for (const fila of filasQuantity) {
         try {
-          const resultados = await model.getItemsOfCategories(fila.item.categorias);
+          const resultados   = await model.getItemsOfCategories(fila.item.categorias);
           const ids: number[] = [];
-          for (const [, itemIds] of Object.entries(resultados)) {
-            ids.push(...(itemIds as number[]));
-          }
-
-          if (ids.length === 0) {
-            fila.estado = "sin_datos";
-            continue;
-          }
-
+          for (const [, itemIds] of Object.entries(resultados)) ids.push(...(itemIds as number[]));
+          if (ids.length === 0) { fila.estado = "sin_datos"; continue; }
           fila.localIds = ids;
-
           if (fila.item.metodo === "conteo") {
-            fila.cantidadModelo = ids.length;
-            fila.estado = "ok";
-          } else if (fila.item.metodo === "volumen") {
-            const vol = await model.getItemsVolume(ids);
-            fila.cantidadModelo = Math.round(vol * 100) / 100;
-            fila.estado = "ok";
+            fila.cantidadModelo = ids.length; fila.estado = "ok";
           } else {
-            const vol = await model.getItemsVolume(ids);
-            fila.cantidadModelo = Math.round(vol * 100) / 100;
+            fila.cantidadModelo = Math.round((await model.getItemsVolume(ids)) * 100) / 100;
             fila.estado = "ok";
           }
-        } catch (e) {
-          fila.estado = "sin_datos";
-          console.warn(`Error ítem ${fila.item.id}:`, e);
-        }
+        } catch { fila.estado = "sin_datos"; }
       }
-
       renderQuantitiesTable();
-      console.log("✅ 3.3_Cantidades extraídas");
+      console.log("✅ Cantidades extraídas");
     };
 
     const quantitiesContainer = document.createElement("div");
 
     const renderQuantitiesTable = () => {
       quantitiesContainer.innerHTML = "";
-
       const header = document.createElement("div");
       header.style.cssText = `
-        display: grid;
-        grid-template-columns: 45px 1fr 45px 75px 75px 30px;
-        gap: 2px;
-        margin-bottom: 4px;
-        font-size: 10px;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        padding: 4px 6px;
-        background: var(--bim-ui_bg-contrast-20, #2a2a2a);
-        border-radius: 4px;
+        display:grid;grid-template-columns:45px 1fr 45px 75px 75px 30px;
+        gap:2px;margin-bottom:4px;font-size:10px;font-weight:700;
+        text-transform:uppercase;letter-spacing:.05em;padding:4px 6px;
+        background:var(--bim-ui_bg-contrast-20,#2a2a2a);border-radius:4px;
       `;
-      header.innerHTML = `
-        <span>Ítem</span>
-        <span>Descripción</span>
-        <span>Und.</span>
-        <span style="text-align:right">Ref.</span>
-        <span style="text-align:right">Modelo</span>
-        <span>⊙</span>
-      `;
+      header.innerHTML = `<span>Ítem</span><span>Descripción</span><span>Und.</span>
+        <span style="text-align:right">Ref.</span><span style="text-align:right">Modelo</span><span>⊙</span>`;
       quantitiesContainer.append(header);
 
       for (const fila of filasQuantity) {
         const row = document.createElement("div");
         row.style.cssText = `
-          display: grid;
-          grid-template-columns: 45px 1fr 45px 75px 75px 30px;
-          gap: 2px;
-          padding: 3px 6px;
-          font-size: 11px;
-          border-bottom: 1px solid var(--bim-ui_bg-contrast-10, #222);
-          cursor: pointer;
-          align-items: center;
+          display:grid;grid-template-columns:45px 1fr 45px 75px 75px 30px;
+          gap:2px;padding:3px 6px;font-size:11px;
+          border-bottom:1px solid var(--bim-ui_bg-contrast-10,#222);
+          cursor:pointer;align-items:center;
         `;
-
-        const diff = fila.cantidadModelo !== null
-          ? fila.cantidadModelo - fila.item.cantidadRef
-          : null;
-
+        const diff        = fila.cantidadModelo !== null ? fila.cantidadModelo - fila.item.cantidadRef : null;
         const colorModelo = diff === null ? "inherit"
           : Math.abs(diff) < fila.item.cantidadRef * 0.05 ? "#22c55e"
           : diff > 0 ? "#f59e0b" : "#ef4444";
-
-        const estadoIcon = fila.estado === "ok" ? "✅"
-          : fila.estado === "sin_datos" ? "❌" : "⏳";
+        const estadoIcon  = fila.estado === "ok" ? "✅" : fila.estado === "sin_datos" ? "❌" : "⏳";
 
         row.innerHTML = `
-          <span style="opacity:0.7">${fila.item.id}</span>
-          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
-                title="${fila.item.nombre}">${fila.item.nombre}</span>
-          <span style="opacity:0.7;text-align:center">${fila.item.unidad}</span>
-          <span style="text-align:right;opacity:0.6">${fila.item.cantidadRef.toLocaleString("es-AR")}</span>
+          <span style="opacity:.7">${fila.item.id}</span>
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${fila.item.nombre}">${fila.item.nombre}</span>
+          <span style="opacity:.7;text-align:center">${fila.item.unidad}</span>
+          <span style="text-align:right;opacity:.6">${fila.item.cantidadRef.toLocaleString("es-AR")}</span>
           <span style="text-align:right;color:${colorModelo};font-weight:600">
-            ${fila.cantidadModelo !== null
-              ? fila.cantidadModelo.toLocaleString("es-AR")
-              : "–"}
-          </span>
-          <span style="text-align:center">${estadoIcon}</span>
-        `;
+            ${fila.cantidadModelo !== null ? fila.cantidadModelo.toLocaleString("es-AR") : "–"}</span>
+          <span style="text-align:center">${estadoIcon}</span>`;
 
         row.addEventListener("click", () => {
           if (fila.localIds.length === 0) return;
           const [model] = fragments.list.values();
           if (!model) return;
-
           updateItemsData({
-            modelIdMap: { [model.modelId]: new Set(fila.localIds) },
-            emptySelectionWarning: false,
+            modelIdMap: { [model.modelId]: new Set(fila.localIds) }, emptySelectionWarning: false,
           });
           quantitiesSection.collapsed = false;
-          console.log(`✅ Ítem ${fila.item.id} → ${fila.localIds.length} elementos`);
         });
-
         quantitiesContainer.append(row);
       }
     };
 
-    const quantitiesPanelSection = document.createElement("bim-panel-section") as BUI.PanelSection;
-    quantitiesPanelSection.label = "Quantities";
-    quantitiesPanelSection.icon = "material-symbols:table";
-    quantitiesPanelSection.collapsed = true;
-
-    const extractBtn = document.createElement("bim-button") as BUI.Button;
-    extractBtn.label = "Extraer Cantidades";
-    extractBtn.icon = "material-symbols:calculate";
+    const quantitiesPanelSection          = document.createElement("bim-panel-section") as BUI.PanelSection;
+    quantitiesPanelSection.label          = "Quantities";
+    quantitiesPanelSection.icon           = "material-symbols:table";
+    quantitiesPanelSection.collapsed      = true;
+    const extractBtn                       = document.createElement("bim-button") as BUI.Button;
+    extractBtn.label                       = "Extraer Cantidades";
+    extractBtn.icon                        = "material-symbols:calculate";
     extractBtn.addEventListener("click", () => extraerCantidades());
-
     quantitiesPanelSection.append(extractBtn);
     quantitiesPanelSection.append(quantitiesContainer);
     rightPanel.append(quantitiesPanelSection);
@@ -613,81 +880,69 @@ if (container) {
       quantitiesPanelSection.collapsed = false;
     });
 
-    console.log("✅ ETAPA 3_Quantities Panel creado");
+    console.log("✅ Quantities Panel creado");
 
     // ===============================
     // PASO 16 – Floating Toolbar
-    // *** NUEVO: el botón de medición usa setMode() y guarda referencia en measureBtnEl
     // ===============================
     const toolbar = BUI.Component.create<BUI.Toolbar>(() => {
       return BUI.html`
         <bim-toolbar style="justify-self: center;">
 
           <bim-toolbar-section label="Cámara">
-            <bim-button
-              tooltip-title="Perspectiva"
-              tooltip-text="Alternar entre cámara ortográfica y perspectiva"
+            <bim-button tooltip-title="Perspectiva"
+              tooltip-text="Alternar cámara ortográfica / perspectiva"
               icon="tabler:camera"
               @click=${() => world.camera.projection.toggle()}>
             </bim-button>
-            <bim-button
-              tooltip-title="Fit Model"
-              tooltip-text="Ajustar vista al modelo cargado"
+            <bim-button tooltip-title="Fit Model"
+              tooltip-text="Ajustar vista al modelo"
               icon="material-symbols:fit-screen"
               @click=${async () => {
-                const meshes = world.scene.three.children.filter(
-                  (c): c is THREE.Mesh => c instanceof THREE.Mesh
-                );
+                const meshes = world.scene.three.children.filter((c): c is THREE.Mesh => c instanceof THREE.Mesh);
                 await world.camera.fit(meshes);
               }}>
             </bim-button>
           </bim-toolbar-section>
 
           <bim-toolbar-section label="Medición">
-
-            <!-- *** NUEVO: usa setMode() y registra la referencia del botón -->
-            <bim-button
-              tooltip-title="Activar Medición"
-              tooltip-text="Activa/desactiva la herramienta de medición. Doble click para medir."
+            <bim-button tooltip-title="Activar Medición"
+              tooltip-text="Doble click para medir"
               icon="solar:ruler-bold"
               ${BUI.ref((el: Element | undefined) => { measureBtnEl = el as BUI.Button ?? null; })}
-
-              @click=${() => {
-                if (activeMode === "measure") {
-                  setMode("navigate");
-                } else {
-                  setMode("measure");
-                }
-              }}>
+              @click=${() => { if (activeMode === "measure") setMode("navigate"); else setMode("measure"); }}>
             </bim-button>
-
-            <bim-button
-              tooltip-title="Borrar mediciones"
-              tooltip-text="Elimina todas las líneas de medición"
+            <bim-button tooltip-title="Borrar mediciones"
               icon="material-symbols:delete-outline"
               @click=${() => measurer.list.clear()}>
             </bim-button>
           </bim-toolbar-section>
 
+          <bim-toolbar-section label="Sección">
+            <bim-button tooltip-title="Plano de corte"
+              tooltip-text="Doble click para crear. Muestra hatch por categoría IFC."
+              icon="material-symbols:cut"
+              ${BUI.ref((el: Element | undefined) => { sectionBtnEl = el as BUI.Button ?? null; })}
+              @click=${() => { if (activeMode === "section") setMode("navigate"); else setMode("section"); }}>
+            </bim-button>
+            <bim-button tooltip-title="Borrar planos"
+              icon="material-symbols:layers-clear"
+              @click=${() => clipper.deleteAll()}>
+            </bim-button>
+          </bim-toolbar-section>
+
           <bim-toolbar-section label="Visibilidad">
-            <bim-button
-              tooltip-title="Mostrar todo"
-              tooltip-text="Restaura la visibilidad de todos los elementos"
+            <bim-button tooltip-title="Mostrar todo"
               icon="material-symbols:visibility"
               @click=${() => {
-                for (const [, model] of fragments.list) {
-                  model.object.visible = true;
-                }
+                for (const [, model] of fragments.list) model.object.visible = true;
                 fragments.core.update(true);
-                console.log("Visibilidad: todo visible");
               }}>
             </bim-button>
           </bim-toolbar-section>
 
           <bim-toolbar-section label="BCF">
-            <bim-button
-              tooltip-title="Nuevo Topic"
-              tooltip-text="Abre el formulario para crear un nuevo BCF Topic"
+            <bim-button tooltip-title="Nuevo Topic"
               icon="material-symbols:task"
               @click=${() => topicsModal.showModal()}>
             </bim-button>
@@ -703,19 +958,12 @@ if (container) {
     // ===============================
     const grid = document.createElement("bim-grid") as BUI.Grid<["main"]>;
     document.body.append(grid);
-    await new Promise(r => setTimeout(r, 50));
+    await new Promise((r) => setTimeout(r, 50));
 
     grid.layouts = {
       main: {
-        template: `
-          "sidebar viewport right" 1fr
-          / 300px 1fr 320px
-        `,
-        elements: {
-          sidebar: panel,
-          viewport: viewport,
-          right: rightPanel,
-        },
+        template: `"sidebar viewport right" 1fr / 300px 1fr 370px`,
+        elements: { sidebar: panel, viewport, right: rightPanel },
       },
     };
 
@@ -727,102 +975,54 @@ if (container) {
     // PASO 13 – BCF Topics
     // ===============================
     const topicUsers: CUI.TopicUserStyles = {
-      "arquitecto@proyecto.com": {
-        name: "Arquitecto Principal",
-        picture: "https://i.pravatar.cc/150?img=3",
-      },
-      "ingeniero@proyecto.com": {
-        name: "Ingeniero Estructural",
-        picture: "https://i.pravatar.cc/150?img=7",
-      },
+      "arquitecto@proyecto.com": { name: "Arquitecto Principal", picture: "https://i.pravatar.cc/150?img=3" },
+      "ingeniero@proyecto.com":  { name: "Ingeniero Estructural",  picture: "https://i.pravatar.cc/150?img=7" },
     };
 
-    const [topicsList] = CUI.tables.topicsList({
-      components,
-      dataStyles: { users: topicUsers },
-    });
-
-    interface TopicPanelActions {
-      information: Partial<CUI.TopicInformationSectionActions>;
-      viewpoints: Partial<CUI.TopicViewpointsSectionActions>;
-      relatedTopics: Partial<CUI.TopicRelationsSectionActions>;
-      comments: Partial<CUI.TopicCommentsSectionActions>;
-    }
-
-    interface TopicPanelUI {
-      components: OBC.Components;
-      topic?: OBC.Topic;
-      styles?: Partial<CUI.TopicStyles>;
-      actions?: Partial<TopicPanelActions>;
-      world?: OBC.World;
-    }
-    console.log("✅ B.1_Interfaces TopicPanel definidas");
+    const [topicsList] = CUI.tables.topicsList({ components, dataStyles: { users: topicUsers } });
 
     let currentTopicPanel: HTMLElement | null = null;
 
     const showTopicPanel = (topic: OBC.Topic) => {
       if (currentTopicPanel) currentTopicPanel.remove();
 
-      const [information] = CUI.sections.topicInformation({
-        components, topic, styles: { users: topicUsers },
-      });
-      const [viewpoints] = CUI.sections.topicViewpoints({ components, topic, world });
+      const [information]   = CUI.sections.topicInformation({ components, topic, styles: { users: topicUsers } });
+      const [vpSection]     = CUI.sections.topicViewpoints({ components, topic, world });
       const [relatedTopics] = CUI.sections.topicRelations({ components, topic });
-      const [comments] = CUI.sections.topicComments({ topic, styles: topicUsers });
+      const [comments]      = CUI.sections.topicComments({ topic, styles: topicUsers });
 
-      currentTopicPanel = BUI.Component.create(() => {
-        return BUI.html`
-          <bim-panel label="${topic.title}">
-            <bim-panel-section label="Acciones" icon="material-symbols:settings">
-              <bim-button
-                label="Eliminar Topic"
-                icon="material-symbols:delete"
-                @click=${() => {
-                  topics.list.delete(topic.guid);
-                  if (currentTopicPanel) currentTopicPanel.remove();
-                  currentTopicPanel = null;
-                  console.log("✅ Topic eliminado:", topic.title);
-                }}>
-              </bim-button>
-            </bim-panel-section>
-            <bim-panel-section label="Información" icon="ph:info-bold">
-              ${information}
-            </bim-panel-section>
-            <bim-panel-section label="Comentarios" icon="majesticons:comment-line">
-              ${comments}
-            </bim-panel-section>
-            <bim-panel-section label="Viewpoints" icon="tabler:camera">
-              ${viewpoints}
-            </bim-panel-section>
-            <bim-panel-section label="Topics Relacionados" icon="tabler:link">
-              ${relatedTopics}
-            </bim-panel-section>
-          </bim-panel>
-        `;
-      });
+      currentTopicPanel = BUI.Component.create(() => BUI.html`
+        <bim-panel label="${topic.title}">
+          <bim-panel-section label="Acciones" icon="material-symbols:settings">
+            <bim-button label="Eliminar Topic" icon="material-symbols:delete"
+              @click=${() => {
+                topics.list.delete(topic.guid);
+                if (currentTopicPanel) currentTopicPanel.remove();
+                currentTopicPanel = null;
+                console.log("✅ Topic eliminado:", topic.title);
+              }}>
+            </bim-button>
+          </bim-panel-section>
+          <bim-panel-section label="Información"         icon="ph:info-bold">              ${information}   </bim-panel-section>
+          <bim-panel-section label="Comentarios"         icon="majesticons:comment-line">   ${comments}      </bim-panel-section>
+          <bim-panel-section label="Viewpoints"          icon="tabler:camera">              ${vpSection}     </bim-panel-section>
+          <bim-panel-section label="Topics Relacionados" icon="tabler:link">                ${relatedTopics} </bim-panel-section>
+        </bim-panel>
+      `);
       rightPanel.append(currentTopicPanel);
     };
-    console.log("✅ B.2_showTopicPanel definido");
 
     topicsList.selectableRows = true;
-    console.log("✅ 13.2_TopicsList creada");
 
     // @ts-ignore
-    topicsList.addEventListener(
-      "rowcreated",
+    topicsList.addEventListener("rowcreated",
       (event: CustomEvent<BUI.RowCreatedEventDetail<{ Guid: string }>>) => {
         const { row } = event.detail;
         row.style.cursor = "pointer";
         row.addEventListener("mouseover", () => {
-          row.style.backgroundColor = `color-mix(
-            in lab,
-            var(--bim-ui_bg-contrast-20) 30%,
-            var(--bim-ui_main-base) 10%
-          )`;
+          row.style.backgroundColor = `color-mix(in lab, var(--bim-ui_bg-contrast-20) 30%, var(--bim-ui_main-base) 10%)`;
         });
-        row.addEventListener("mouseout", () => {
-          row.style.removeProperty("background-color");
-        });
+        row.addEventListener("mouseout", () => { row.style.removeProperty("background-color"); });
         row.addEventListener("click", () => {
           const { Guid } = row.data;
           if (!Guid) return;
@@ -831,128 +1031,86 @@ if (container) {
           showTopicPanel(topic);
           console.log("✅ Topic seleccionado:", topic.title);
         });
-      },
+      }
     );
-    console.log("✅ A.1_Filas interactivas configuradas");
 
-    const bcfSection = document.createElement("bim-panel-section") as BUI.PanelSection;
-    bcfSection.label = "BCF Topics";
-    bcfSection.icon = "material-symbols:task";
-    bcfSection.collapsed = true;
-    bcfSection.append(topicsList);
-    rightPanel.append(bcfSection);
-    console.log("✅ 13.3_TopicsList agregada al panel derecho");
+    const bcfSection          = document.createElement("bim-panel-section") as BUI.PanelSection;
+    bcfSection.label          = "BCF Topics";
+    bcfSection.icon           = "material-symbols:task";
+    bcfSection.collapsed      = true;
 
     // ===============================
     // PASO 14 – Formulario Modal de Topics
     // ===============================
-    const [topicForm, updateTopicForm] = CUI.forms.topic({
-      components,
-      styles: { users: topicUsers },
-    });
+    const [topicForm, updateTopicForm] = CUI.forms.topic({ components, styles: { users: topicUsers } });
 
-    const assigneeDropdown = topicForm.querySelector<BUI.Dropdown>(
-      "bim-dropdown[name='assignedTo']",
-    );
-    if (assigneeDropdown) {
-      assigneeDropdown.searchBox = true;
-      console.log("✅ D_Searchbox en asignado activado");
-    }
+    const assigneeDropdown = topicForm.querySelector<BUI.Dropdown>("bim-dropdown[name='assignedTo']");
+    if (assigneeDropdown) assigneeDropdown.searchBox = true;
 
-    const topicsModal = BUI.Component.create<HTMLDialogElement>(() => {
-      return BUI.html`
-        <dialog style="
-          border: none;
-          border-radius: 8px;
-          padding: 0;
-          background: transparent;
-          box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-        ">
-          <bim-panel style="border-radius: 8px; width: 22rem;">
-            ${topicForm}
-          </bim-panel>
-        </dialog>
-      `;
-    });
+    const topicsModal = BUI.Component.create<HTMLDialogElement>(() => BUI.html`
+      <dialog style="border:none;border-radius:8px;padding:0;background:transparent;box-shadow:0 8px 32px rgba(0,0,0,.4);">
+        <bim-panel style="border-radius:8px;width:22rem;">${topicForm}</bim-panel>
+      </dialog>
+    `);
     document.body.append(topicsModal);
 
-    updateTopicForm({
-      onCancel: () => topicsModal.close(),
-      onSubmit: () => topicsModal.close(),
-    });
+    updateTopicForm({ onCancel: () => topicsModal.close(), onSubmit: () => topicsModal.close() });
 
-    const showFormBtn = BUI.Component.create(() => {
-      return BUI.html`
-        <bim-button
-          label="Crear Topic BCF"
-          icon="material-symbols:task"
-          @click=${() => topicsModal.showModal()}>
-        </bim-button>
-      `;
-    });
-    rightPanel.prepend(showFormBtn);
+    // Botones BCF integrados dentro de la sección (no en el panel raíz)
+    bcfSection.append(BUI.Component.create(() => BUI.html`
+      <bim-button label="Crear Topic BCF" icon="material-symbols:task"
+        @click=${() => topicsModal.showModal()}>
+      </bim-button>
+    `));
 
-    const downloadBtn = BUI.Component.create(() => {
+    bcfSection.append(BUI.Component.create(() => {
       const onDownload = async () => {
-        const selectedTopics = [...topicsList.selection]
-          .map(({ Guid }) => {
-            if (!(Guid && typeof Guid === "string")) return null;
-            return topics.list.get(Guid);
-          })
-          .filter((topic) => topic) as OBC.Topic[];
-
-        const topicsToExport = selectedTopics.length > 0
-          ? selectedTopics
-          : [...topics.list.values()];
-
-        if (topicsToExport.length === 0) {
-          console.warn("No hay topics para exportar");
-          return;
-        }
-
-        const bcfData = await topics.export(topicsToExport);
-        const timestamp = new Date().toISOString().slice(0, 10);
-        const bcfFile = new File([bcfData], `VisorBIM_${timestamp}.bcfzip`);
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(bcfFile);
-        a.download = bcfFile.name;
+        const selected = [...topicsList.selection]
+          .map(({ Guid }) => (Guid && typeof Guid === "string") ? topics.list.get(Guid) : null)
+          .filter(Boolean) as OBC.Topic[];
+        const toExport = selected.length > 0 ? selected : [...topics.list.values()];
+        if (toExport.length === 0) { console.warn("No hay topics para exportar"); return; }
+        const bcfData = await topics.export(toExport);
+        const ts      = new Date().toISOString().slice(0, 10);
+        const file    = new File([bcfData], `VisorBIM_${ts}.bcfzip`);
+        const a       = document.createElement("a");
+        a.href        = URL.createObjectURL(file);
+        a.download    = file.name;
         a.click();
         URL.revokeObjectURL(a.href);
         console.log("✅ BCF exportado!");
       };
       return BUI.html`
-        <bim-button label="Descargar BCF" icon="material-symbols:download" @click=${onDownload}>
-        </bim-button>
+        <bim-button label="Descargar BCF" icon="material-symbols:download" @click=${onDownload}></bim-button>
       `;
-    });
-    rightPanel.prepend(downloadBtn);
+    }));
 
-    const importBtn = BUI.Component.create(() => {
+    bcfSection.append(BUI.Component.create(() => {
       const onImport = async () => {
-        const input = document.createElement("input");
-        input.type = "file";
-        input.accept = ".bcf,.bcfzip";
+        const input    = document.createElement("input");
+        input.type     = "file";
+        input.accept   = ".bcf,.bcfzip";
         input.onchange = async () => {
           const file = input.files?.[0];
           if (!file) return;
           console.log("📂 Importando BCF:", file.name);
-          const buffer = await file.arrayBuffer();
-          await topics.load(new Uint8Array(buffer));
+          await topics.load(new Uint8Array(await file.arrayBuffer()));
           console.log("✅ BCF importado correctamente");
         };
         input.click();
       };
       return BUI.html`
-        <bim-button label="Importar BCF" icon="material-symbols:upload" @click=${onImport}>
-        </bim-button>
+        <bim-button label="Importar BCF" icon="material-symbols:upload" @click=${onImport}></bim-button>
       `;
-    });
-    rightPanel.prepend(importBtn);
-    console.log("✅ E_Botón importar BCF creado");
-    console.log("✅ 14.5_Formulario modal y botón BCF creados");
+    }));
 
-    console.log("Visor BIM activo");
-  }; // ✅ Esta llave cierra startApp
+    bcfSection.append(topicsList);
+    rightPanel.append(bcfSection);
+    console.log("✅ 13.3_TopicsList agregada al panel derecho");
+
+    console.log("✅ 14.5_Formulario modal y botones BCF creados");
+    console.log("Visor BIM activo ✅");
+  }; // fin startApp
 
   startApp();
 }
