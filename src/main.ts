@@ -292,16 +292,14 @@ if (container) {
     if (mode === "navigate") {
       highlighter.enabled = true;
       hoverer.enabled     = true;
-      if (pp.ref) pp.ref.enabled = true;
     } else if (mode === "measure") {
       measurer.enabled = true;
-      if (pp.ref) pp.ref.enabled = true;
     } else if (mode === "section") {
       clipper.enabled          = true;
       sectionFillGroup.visible = true;
-      // Desactivar postproducción: el EffectComposer no tiene stencilBuffer
-      // en sus render targets, lo que impide la técnica de stencil fill
-      if (pp.ref) pp.ref.enabled = false;
+      // Postproducción permanece activa: los render targets del EffectComposer
+      // tienen stencilBuffer habilitado (parcheado al iniciar), por lo que
+      // el relleno de sección y el estilo visual coexisten sin conflicto.
     }
 
     const activeStyle = {
@@ -404,6 +402,17 @@ if (container) {
 
   // Enlazar el wrapper pp con la instancia real de postproduction
   pp.ref = postproduction;
+
+  // Habilitar stencilBuffer en los render targets internos del EffectComposer
+  // para que el relleno de sección (técnica stencil) funcione con postproducción activa.
+  // dispose() fuerza a Three.js a recrear los FBOs con stencil en el próximo frame.
+  const ppComposer = (postproduction as any).composer;
+  if (ppComposer?.renderTarget1) {
+    ppComposer.renderTarget1.stencilBuffer = true;
+    ppComposer.renderTarget1.dispose();
+    ppComposer.renderTarget2.stencilBuffer = true;
+    ppComposer.renderTarget2.dispose();
+  }
 
   console.log("✅ 6.2_Postproducción activada");
 
@@ -701,11 +710,121 @@ if (container) {
       components, models: fragments.list.values(), selectHighlighterName: "select",
     });
 
+    // ── Etiqueta limpia por tipo de elemento IFC ──────────────────────────
+    const IFC_LABEL: Record<string, string> = {
+      IFCWALL: "Wall",                IFCWALLSTANDARDCASE: "Wall",
+      IFCSLAB: "Slab",               IFCCOLUMN: "Column",
+      IFCBEAM: "Beam",               IFCDOOR: "Door",
+      IFCWINDOW: "Window",           IFCSTAIR: "Stair",
+      IFCROOF: "Roof",               IFCOPENINGELEMENT: "Opening",
+      IFCFOOTING: "Footing",         IFCPILE: "Pile",
+      IFCFURNISHINGELEMENT: "Furniture", IFCPLATE: "Plate",
+      IFCMEMBER: "Member",           IFCSPACE: "Space",
+      IFCPIPESEGMENT: "Pipe",        IFCPIPEFITTING: "Pipe Fitting",
+      IFCDUCTSEGMENT: "Duct",        IFCDUCTFITTING: "Duct Fitting",
+      IFCFLOWSEGMENT: "Flow Segment",IFCFLOWTERMINAL: "Terminal",
+      IFCFLOWFITTING: "Flow Fitting",IFCCURTAINWALL: "Curtain Wall",
+      IFCCOVERING: "Covering",       IFCRAILING: "Railing",
+    };
+
+    // ── Icono Material Symbols por clase IFC ──────────────────────────────
+    const IFC_ICON: Record<string, string> = {
+      model:               "material-symbols:folder",
+      IFCSITE:             "material-symbols:location-on",
+      IFCBUILDING:         "material-symbols:apartment",
+      IFCBUILDINGSTOREY:   "material-symbols:layers",
+      IFCWALL:             "mdi:wall",
+      IFCWALLSTANDARDCASE: "mdi:wall",
+      IFCCOLUMN:           "material-symbols:view-column",
+      IFCBEAM:             "material-symbols:horizontal-rule",
+      IFCSLAB:             "material-symbols:table-rows-narrow",
+      IFCDOOR:             "material-symbols:door-front",
+      IFCWINDOW:           "material-symbols:window",
+      IFCSTAIR:            "material-symbols:stairs",
+      IFCROOF:             "material-symbols:roofing",
+      IFCOPENINGELEMENT:   "material-symbols:border-outer",
+      IFCFURNISHINGELEMENT:"material-symbols:chair",
+      IFCSPACE:            "material-symbols:space-dashboard",
+      IFCPIPESEGMENT:      "material-symbols:plumbing",
+      IFCDUCTSEGMENT:      "material-symbols:air",
+      IFCFOOTING:          "material-symbols:foundation",
+      IFCMEMBER:           "material-symbols:horizontal-distribute",
+      IFCCURTAINWALL:      "material-symbols:grid-view",
+    };
+
+    // SKIP_FULL: salta clase IFC *y* su instancia directa → va a los nietos.
+    // Se usa para IfcProject cuya instancia (número de proyecto) no aporta
+    // al usuario y duplica un nivel respecto a BIMcollab Zoom.
+    const SKIP_FULL = new Set(["IFCPROJECT"]);
+
+    // SKIP_CLASS: salta el nodo de clase pero conserva el nodo de instancia
+    // (con el nombre real) y le asigna el icono de su clase IFC.
+    const SKIP_CLASS = new Set(["IFCSITE", "IFCBUILDING", "IFCBUILDINGSTOREY"]);
+
+    /**
+     * Crea el valor de la celda Name como TemplateResult de Lit (BUI.html).
+     * CellRenderValue = string | HTMLElement | TemplateResult, por lo que
+     * Lit renderiza el template directamente sin escapar el HTML.
+     * El icono se embebe dentro del valor Name en lugar de ser un campo
+     * separado, evitando que computeMissingColumns lo añada como columna extra.
+     */
+    const nameCell = (label: string, icon?: string): any =>
+      icon
+        ? BUI.html`<span style="display:inline-flex;align-items:center;gap:5px;overflow:hidden">
+            <bim-icon .icon="${icon}" style="font-size:14px;flex-shrink:0;opacity:0.75"></bim-icon>
+            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${label}</span>
+          </span>`
+        : label;
+
+    /**
+     * Transforma el árbol IFC estándar al estilo BIMcollab Zoom:
+     * - IfcProject (clase+instancia) → suprimido, se sube un nivel
+     * - IfcSite / IfcBuilding / IfcBuildingStorey → clase suprimida,
+     *   instancia conservada con nombre real e icono en la celda Name
+     * - Grupos de tipo (IfcWall, IfcSlab…) → etiqueta limpia + icono
+     * - Nodo raíz del modelo (.ifc) → icono de carpeta en la celda Name
+     */
+    const toCompactTree = (nodes: any[]): any[] =>
+      nodes.flatMap((node: any) => {
+        const name: string = node.data?.Name ?? "";
+        const upperName    = name.toUpperCase();
+        const isIfcClass   = /^IFC[A-Z]+$/.test(upperName);
+        const hasLocalId   = node.data?.localId !== undefined;
+
+        if (!isIfcClass) {
+          // Nodo raíz del modelo (no IFC class, sin localId): icono carpeta
+          const cellName = !hasLocalId ? nameCell(name, IFC_ICON.model) : node.data.Name;
+          return [{ data: { ...node.data, Name: cellName }, children: toCompactTree(node.children ?? []) }];
+        }
+
+        if (SKIP_FULL.has(upperName)) {
+          // Saltar clase E instancia → promover hijos de la instancia
+          return (node.children ?? []).flatMap((inst: any) =>
+            toCompactTree(inst.children ?? [])
+          );
+        }
+
+        if (SKIP_CLASS.has(upperName)) {
+          // Saltar clase, conservar instancia con icono de la clase en Name
+          const icon = IFC_ICON[upperName];
+          return (node.children ?? []).map((child: any) => ({
+            data: { ...child.data, Name: nameCell(child.data?.Name ?? "", icon) },
+            children: toCompactTree(child.children ?? []),
+          }));
+        }
+
+        // Grupo de tipo (IFCWALL, IFCSLAB…): etiqueta limpia + icono en Name
+        const cleanLabel = IFC_LABEL[upperName] ?? upperName.replace(/^IFC/, "");
+        return [{
+          data: { ...node.data, Name: nameCell(cleanLabel, IFC_ICON[upperName]) },
+          children: node.children ?? [],
+        }];
+      });
+
     const spatialSection          = document.createElement("bim-panel-section") as BUI.PanelSection;
     spatialSection.label          = "Spatial Structures";
     spatialSection.icon           = "material-symbols:account-tree";
     spatialSection.collapsed      = false;
-    // Permite que el árbol ocupe la altura disponible y sea desplazable
     spatialTree.style.maxHeight   = "40vh";
     spatialTree.style.overflowY   = "auto";
     spatialTree.style.fontSize    = "11px";
@@ -715,9 +834,20 @@ if (container) {
     fragments.list.onItemSet.add(() => {
       updateSpatialTree({ models: fragments.list.values() });
       spatialSection.collapsed = false;
-      // BUI.Table.expanded = true expands all rows at every hierarchy level
-      requestAnimationFrame(() => { spatialTree.expanded = true; });
-      console.log("✅ SpatialTree actualizado");
+
+      // Esperar a que updateSpatialTree llene los datos del BUI.Table
+      // (operación asíncrona) y luego aplicar la transformación compacta.
+      const applyCompact = () => {
+        const tbl = spatialTree as any;
+        if (Array.isArray(tbl.data) && tbl.data.length > 0) {
+          tbl.data = toCompactTree(tbl.data);
+          requestAnimationFrame(() => { spatialTree.expanded = true; });
+          console.log("✅ SpatialTree compactado (BIMcollab style)");
+        } else {
+          requestAnimationFrame(applyCompact); // reintentar en el próximo frame
+        }
+      };
+      requestAnimationFrame(applyCompact);
     });
 
     // ===============================
