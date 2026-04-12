@@ -438,28 +438,14 @@ if (container) {
   fragments.init("/workers/worker.mjs");
   console.log("✅ 7.1_FragmentsManager configurado");
 
+  // Ref para el ViewCube – se inicializa dentro de startApp() una vez que
+  // CUI.Manager.init() registra el custom element "bim-view-cube".
+  const vcRef = { el: null as any };
+
   world.camera.controls.addEventListener("update", () => {
     fragments.core.update();
-    (viewCube as any).updateOrientation();
+    if (vcRef.el) vcRef.el.updateOrientation();
   });
-
-  // ===============================
-  // ViewCube – cubo de navegación
-  // ===============================
-  const viewCube = document.createElement("bim-view-cube");
-  (viewCube as any).camera = world.camera.three;
-
-  // Vistas estándar al hacer clic en cada cara del cubo
-  const _D = 80; // distancia desde el origen para las vistas ortogonales
-  viewCube.addEventListener("frontclick",  () => world.camera.controls.setLookAt( 0,  0,  _D, 0, 0, 0, true));
-  viewCube.addEventListener("backclick",   () => world.camera.controls.setLookAt( 0,  0, -_D, 0, 0, 0, true));
-  viewCube.addEventListener("rightclick",  () => world.camera.controls.setLookAt( _D, 0,  0,  0, 0, 0, true));
-  viewCube.addEventListener("leftclick",   () => world.camera.controls.setLookAt(-_D, 0,  0,  0, 0, 0, true));
-  viewCube.addEventListener("topclick",    () => world.camera.controls.setLookAt( 0,  _D, 0,  0, 0, 0, true));
-  viewCube.addEventListener("bottomclick", () => world.camera.controls.setLookAt( 0, -_D, 0,  0, 0, 0, true));
-
-  viewport.append(viewCube);
-  console.log("✅ ViewCube agregado");
 
   // ===============================
   // PASO 7.3 – Modelo cargado: Phong + colores + Hatch Stencil
@@ -551,6 +537,26 @@ if (container) {
     BUI.Manager.init();
     CUI.Manager.init();
     console.log("✅ 9.1_BUI y CUI Managers inicializados");
+
+    // ===============================
+    // ViewCube – cubo de navegación
+    // Creado aquí, después de CUI.Manager.init(), para que "bim-view-cube"
+    // esté registrado como custom element antes de instanciarlo.
+    // ===============================
+    const viewCube = document.createElement("bim-view-cube");
+    (viewCube as any).camera = world.camera.three;
+    vcRef.el = viewCube;
+
+    const _D = 80;
+    viewCube.addEventListener("frontclick",  () => world.camera.controls.setLookAt( 0,  0,  _D, 0, 0, 0, true));
+    viewCube.addEventListener("backclick",   () => world.camera.controls.setLookAt( 0,  0, -_D, 0, 0, 0, true));
+    viewCube.addEventListener("rightclick",  () => world.camera.controls.setLookAt( _D, 0,  0,  0, 0, 0, true));
+    viewCube.addEventListener("leftclick",   () => world.camera.controls.setLookAt(-_D, 0,  0,  0, 0, 0, true));
+    viewCube.addEventListener("topclick",    () => world.camera.controls.setLookAt( 0,  _D, 0,  0, 0, 0, true));
+    viewCube.addEventListener("bottomclick", () => world.camera.controls.setLookAt( 0, -_D, 0,  0, 0, 0, true));
+
+    viewport.append(viewCube);
+    console.log("✅ ViewCube agregado");
 
     const downloadFragments = async () => {
       const [model] = fragments.list.values();
