@@ -440,7 +440,26 @@ if (container) {
 
   world.camera.controls.addEventListener("update", () => {
     fragments.core.update();
+    (viewCube as any).updateOrientation();
   });
+
+  // ===============================
+  // ViewCube – cubo de navegación
+  // ===============================
+  const viewCube = document.createElement("bim-view-cube");
+  (viewCube as any).camera = world.camera.three;
+
+  // Vistas estándar al hacer clic en cada cara del cubo
+  const _D = 80; // distancia desde el origen para las vistas ortogonales
+  viewCube.addEventListener("frontclick",  () => world.camera.controls.setLookAt( 0,  0,  _D, 0, 0, 0, true));
+  viewCube.addEventListener("backclick",   () => world.camera.controls.setLookAt( 0,  0, -_D, 0, 0, 0, true));
+  viewCube.addEventListener("rightclick",  () => world.camera.controls.setLookAt( _D, 0,  0,  0, 0, 0, true));
+  viewCube.addEventListener("leftclick",   () => world.camera.controls.setLookAt(-_D, 0,  0,  0, 0, 0, true));
+  viewCube.addEventListener("topclick",    () => world.camera.controls.setLookAt( 0,  _D, 0,  0, 0, 0, true));
+  viewCube.addEventListener("bottomclick", () => world.camera.controls.setLookAt( 0, -_D, 0,  0, 0, 0, true));
+
+  viewport.append(viewCube);
+  console.log("✅ ViewCube agregado");
 
   // ===============================
   // PASO 7.3 – Modelo cargado: Phong + colores + Hatch Stencil
@@ -881,136 +900,6 @@ if (container) {
       console.log(`✅ Selection: ${row.data.Name} | localId=${localId}`);
     });
 
-    // ===============================
-    // Quantities Panel
-    // ===============================
-    interface ItemComputo {
-      id: string; nombre: string; unidad: string; cantidadRef: number;
-      categorias: RegExp[]; metodo: "volumen" | "area" | "longitud" | "conteo" | "manual";
-    }
-
-    const rubroII: ItemComputo[] = [
-      { id: "3.1",  nombre: "Movimiento de suelo bajo platea",      unidad: "m³", cantidadRef: 923.59,  categorias: [/IFCEARTHWORKS/i],      metodo: "volumen" },
-      { id: "4.1",  nombre: "Plateas de HºAº",                      unidad: "m³", cantidadRef: 169.29,  categorias: [/IFCSLAB/i],             metodo: "volumen" },
-      { id: "4.2",  nombre: "Riostras Verticales",                   unidad: "m³", cantidadRef: 27.55,   categorias: [/IFCCOLUMN/i],           metodo: "volumen" },
-      { id: "4.3",  nombre: "Encadenado superior",                   unidad: "m³", cantidadRef: 24.51,   categorias: [/IFCBEAM/i],             metodo: "volumen" },
-      { id: "4.4",  nombre: "Viga de borde",                         unidad: "m³", cantidadRef: 3.42,    categorias: [/IFCBEAM/i],             metodo: "volumen" },
-      { id: "4.5",  nombre: "Losa Voladizo",                         unidad: "m³", cantidadRef: 3.04,    categorias: [/IFCSLAB/i],             metodo: "volumen" },
-      { id: "5.1",  nombre: "Mampostería ladrillo hueco e=0.20m",    unidad: "m²", cantidadRef: 2484.25, categorias: [/IFCWALL/i],             metodo: "area"    },
-      { id: "5.2",  nombre: "Mampostería ladrillo hueco e=0.15m",    unidad: "m²", cantidadRef: 506.35,  categorias: [/IFCWALL/i],             metodo: "area"    },
-      { id: "5.3",  nombre: "Mampostería ladrillo hueco e=0.10m",    unidad: "m²", cantidadRef: 110.20,  categorias: [/IFCWALL/i],             metodo: "area"    },
-      { id: "5.4",  nombre: "Mampostería ladrillo común e=0.30m",    unidad: "m³", cantidadRef: 83.22,   categorias: [/IFCWALL/i],             metodo: "volumen" },
-      { id: "6.1",  nombre: "Capa aisladora envolvente",             unidad: "m²", cantidadRef: 963.87,  categorias: [/IFCCOVERING/i],         metodo: "area"    },
-      { id: "7.1",  nombre: "Cubierta chapa BWG Nº25 + estructura",  unidad: "m²", cantidadRef: 1115.30, categorias: [/IFCROOF/i, /IFCSLAB/i], metodo: "area"    },
-      { id: "9.1",  nombre: "Cielorraso Durlock con perfilería",      unidad: "m²", cantidadRef: 911.43,  categorias: [/IFCCOVERING/i],         metodo: "area"    },
-      { id: "11.3", nombre: "Cerámico 30x30",                        unidad: "m²", cantidadRef: 914.09,  categorias: [/IFCCOVERING/i],         metodo: "area"    },
-      { id: "14.1", nombre: "Puerta P1 (0.90x2.05) ingreso",         unidad: "un", cantidadRef: 19,      categorias: [/IFCDOOR/i],             metodo: "conteo"  },
-      { id: "14.2", nombre: "Puerta P2 (0.80x2.05) interiores",      unidad: "un", cantidadRef: 57,      categorias: [/IFCDOOR/i],             metodo: "conteo"  },
-      { id: "14.4", nombre: "Ventana V1 (0.80x0.50)",                unidad: "un", cantidadRef: 19,      categorias: [/IFCWINDOW/i],           metodo: "conteo"  },
-      { id: "14.5", nombre: "Ventana V2 (0.30x1.50)",                unidad: "un", cantidadRef: 57,      categorias: [/IFCWINDOW/i],           metodo: "conteo"  },
-      { id: "14.6", nombre: "Ventana V3 (1.50x1.00)",                unidad: "un", cantidadRef: 38,      categorias: [/IFCWINDOW/i],           metodo: "conteo"  },
-    ];
-
-    interface FilaQuantity {
-      item: ItemComputo; cantidadModelo: number | null;
-      estado: "pendiente" | "ok" | "sin_datos"; localIds: number[];
-    }
-
-    let filasQuantity: FilaQuantity[] = rubroII.map((item) => ({
-      item, cantidadModelo: null, estado: "pendiente", localIds: [],
-    }));
-
-    const extraerCantidades = async () => {
-      const [model] = fragments.list.values();
-      if (!model) return;
-      for (const fila of filasQuantity) {
-        try {
-          const resultados   = await model.getItemsOfCategories(fila.item.categorias);
-          const ids: number[] = [];
-          for (const [, itemIds] of Object.entries(resultados)) ids.push(...(itemIds as number[]));
-          if (ids.length === 0) { fila.estado = "sin_datos"; continue; }
-          fila.localIds = ids;
-          if (fila.item.metodo === "conteo") {
-            fila.cantidadModelo = ids.length; fila.estado = "ok";
-          } else {
-            fila.cantidadModelo = Math.round((await model.getItemsVolume(ids)) * 100) / 100;
-            fila.estado = "ok";
-          }
-        } catch { fila.estado = "sin_datos"; }
-      }
-      renderQuantitiesTable();
-      console.log("✅ Cantidades extraídas");
-    };
-
-    const quantitiesContainer = document.createElement("div");
-
-    const renderQuantitiesTable = () => {
-      quantitiesContainer.innerHTML = "";
-      const header = document.createElement("div");
-      header.style.cssText = `
-        display:grid;grid-template-columns:45px 1fr 45px 75px 75px 30px;
-        gap:2px;margin-bottom:4px;font-size:10px;font-weight:700;
-        text-transform:uppercase;letter-spacing:.05em;padding:4px 6px;
-        background:var(--bim-ui_bg-contrast-20,#2a2a2a);border-radius:4px;
-      `;
-      header.innerHTML = `<span>Ítem</span><span>Descripción</span><span>Und.</span>
-        <span style="text-align:right">Ref.</span><span style="text-align:right">Modelo</span><span>⊙</span>`;
-      quantitiesContainer.append(header);
-
-      for (const fila of filasQuantity) {
-        const row = document.createElement("div");
-        row.style.cssText = `
-          display:grid;grid-template-columns:45px 1fr 45px 75px 75px 30px;
-          gap:2px;padding:3px 6px;font-size:11px;
-          border-bottom:1px solid var(--bim-ui_bg-contrast-10,#222);
-          cursor:pointer;align-items:center;
-        `;
-        const diff        = fila.cantidadModelo !== null ? fila.cantidadModelo - fila.item.cantidadRef : null;
-        const colorModelo = diff === null ? "inherit"
-          : Math.abs(diff) < fila.item.cantidadRef * 0.05 ? "#22c55e"
-          : diff > 0 ? "#f59e0b" : "#ef4444";
-        const estadoIcon  = fila.estado === "ok" ? "✅" : fila.estado === "sin_datos" ? "❌" : "⏳";
-
-        row.innerHTML = `
-          <span style="opacity:.7">${fila.item.id}</span>
-          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${fila.item.nombre}">${fila.item.nombre}</span>
-          <span style="opacity:.7;text-align:center">${fila.item.unidad}</span>
-          <span style="text-align:right;opacity:.6">${fila.item.cantidadRef.toLocaleString("es-AR")}</span>
-          <span style="text-align:right;color:${colorModelo};font-weight:600">
-            ${fila.cantidadModelo !== null ? fila.cantidadModelo.toLocaleString("es-AR") : "–"}</span>
-          <span style="text-align:center">${estadoIcon}</span>`;
-
-        row.addEventListener("click", () => {
-          if (fila.localIds.length === 0) return;
-          const [model] = fragments.list.values();
-          if (!model) return;
-          updateItemsData({
-            modelIdMap: { [model.modelId]: new Set(fila.localIds) }, emptySelectionWarning: false,
-          });
-          quantitiesSection.collapsed = false;
-        });
-        quantitiesContainer.append(row);
-      }
-    };
-
-    const quantitiesPanelSection          = document.createElement("bim-panel-section") as BUI.PanelSection;
-    quantitiesPanelSection.label          = "Quantities";
-    quantitiesPanelSection.icon           = "material-symbols:table";
-    quantitiesPanelSection.collapsed      = true;
-    const extractBtn                       = document.createElement("bim-button") as BUI.Button;
-    extractBtn.label                       = "Extraer Cantidades";
-    extractBtn.icon                        = "material-symbols:calculate";
-    extractBtn.addEventListener("click", () => extraerCantidades());
-    quantitiesPanelSection.append(extractBtn);
-    quantitiesPanelSection.append(quantitiesContainer);
-    rightPanel.append(quantitiesPanelSection);
-
-    fragments.list.onItemSet.add(async () => {
-      await extraerCantidades();
-      quantitiesPanelSection.collapsed = false;
-    });
-
-    console.log("✅ Quantities Panel creado");
 
     // ===============================
     // PASO 16 – Floating Toolbar
