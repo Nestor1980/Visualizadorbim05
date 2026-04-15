@@ -555,6 +555,37 @@ if (container) {
     viewCube.addEventListener("topclick",    () => world.camera.controls.setLookAt( 0,  _D, 0,  0, 0, 0, true));
     viewCube.addEventListener("bottomclick", () => world.camera.controls.setLookAt( 0, -_D, 0,  0, 0, 0, true));
 
+    // Drag sobre el ViewCube → orbitar la cámara
+    let vcDragging = false;
+    let vcLastX = 0;
+    let vcLastY = 0;
+    const ORBIT_SPEED = 0.01; // radianes por pixel
+
+    viewCube.addEventListener("pointerdown", (e: PointerEvent) => {
+      vcDragging = true;
+      vcLastX = e.clientX;
+      vcLastY = e.clientY;
+      viewCube.setPointerCapture(e.pointerId);
+      e.stopPropagation();
+    });
+
+    viewCube.addEventListener("pointermove", (e: PointerEvent) => {
+      if (!vcDragging) return;
+      const dx = e.clientX - vcLastX;
+      const dy = e.clientY - vcLastY;
+      vcLastX = e.clientX;
+      vcLastY = e.clientY;
+      world.camera.controls.rotate(-dx * ORBIT_SPEED, -dy * ORBIT_SPEED, false);
+      e.stopPropagation();
+    });
+
+    viewCube.addEventListener("pointerup", (e: PointerEvent) => {
+      if (!vcDragging) return;
+      vcDragging = false;
+      viewCube.releasePointerCapture(e.pointerId);
+      e.stopPropagation();
+    });
+
     viewport.append(viewCube);
     console.log("✅ ViewCube agregado");
 
@@ -876,22 +907,208 @@ if (container) {
     });
 
     // ===============================
-    // Selection Information
+    // Selection Information (tabbed)
     // ===============================
     const [itemsDataTable, updateItemsData] = CUI.tables.itemsData({
       components, modelIdMap: {}, emptySelectionWarning: true,
     });
-
-    const quantitiesSection          = document.createElement("bim-panel-section") as BUI.PanelSection;
-    quantitiesSection.label          = "Selection Information";
-    quantitiesSection.icon           = "material-symbols:info";
-    quantitiesSection.collapsed      = true;
-    (itemsDataTable as HTMLElement).style.maxHeight = "45vh";
+    (itemsDataTable as HTMLElement).style.maxHeight = "40vh";
     (itemsDataTable as HTMLElement).style.overflowY = "auto";
     (itemsDataTable as HTMLElement).style.fontSize  = "11px";
-    quantitiesSection.append(itemsDataTable);
-    rightPanel.append(quantitiesSection);
 
+    // ── Tab state ──────────────────────────────────────────────────────────
+    let activeSelTab: "general" | "espec" = "general";
+    let lastModelIdMap: OBC.ModelIdMap = {};
+
+    // ── Section container ──────────────────────────────────────────────────
+    const selInfoSection = document.createElement("bim-panel-section") as BUI.PanelSection;
+    selInfoSection.label     = "Selection Information";
+    selInfoSection.icon      = "material-symbols:info";
+    selInfoSection.collapsed = true;
+
+    // ── Tab bar ────────────────────────────────────────────────────────────
+    const tabBar = document.createElement("div");
+    tabBar.style.cssText = [
+      "display:flex", "gap:2px", "padding:6px 0 0",
+      "border-bottom:1px solid rgba(255,255,255,0.1)", "margin-bottom:6px",
+    ].join(";");
+
+    const makeTabBtn = (label: string, key: "general" | "espec") => {
+      const btn = document.createElement("button");
+      btn.textContent = label;
+      btn.dataset.tab = key;
+      Object.assign(btn.style, {
+        flex: "1", padding: "5px 10px", border: "none", cursor: "pointer",
+        borderRadius: "4px 4px 0 0", fontSize: "11px", fontWeight: "600",
+        letterSpacing: "0.3px", transition: "all 0.15s",
+        background: "var(--bim-ui_bg-contrast-10)",
+        color: "var(--bim-ui_bg-contrast-80)",
+        borderBottom: "2px solid transparent", fontFamily: "inherit",
+      });
+      return btn;
+    };
+
+    const tabGenBtn  = makeTabBtn("General",          "general");
+    const tabEspecBtn = makeTabBtn("Especificaciones", "espec");
+    tabBar.append(tabGenBtn, tabEspecBtn);
+
+    // ── Content panels ─────────────────────────────────────────────────────
+    const generalPanel = document.createElement("div");
+    generalPanel.append(itemsDataTable);
+
+    const especPanel = document.createElement("div");
+    especPanel.style.cssText = "padding:4px 2px;font-family:inherit;";
+
+    const renderEspecPlaceholder = () => {
+      especPanel.innerHTML = `
+        <div style="color:var(--bim-ui_bg-contrast-40);font-size:11px;
+          text-align:center;padding:20px 8px;line-height:1.5;">
+          Seleccione un elemento para ver<br>las especificaciones técnicas
+        </div>`;
+    };
+    renderEspecPlaceholder();
+
+    // ── IFC property reader for Especificaciones ───────────────────────────
+    const getEspecProps = (modelId: string, localId: number): Record<string, string> => {
+      const model = [...fragments.list.values()].find(m => m.uuid === modelId);
+      const props = (model as any)?.properties as Record<number, any> | undefined;
+      if (!props) return {};
+
+      const el = props[localId];
+      if (!el) return {};
+
+      const result: Record<string, string> = {
+        ITEM:        el.Name?.value ?? el.ObjectType?.value ?? "—",
+        Material:    "—",
+        Terminación: "—",
+        Norma:       "—",
+        Local:       "—",
+      };
+
+      // Traverse IsDefinedBy → Psets
+      const isDefinedBy: any[] = el.IsDefinedBy ?? [];
+      for (const relRef of isDefinedBy) {
+        const rel = relRef?.value !== undefined ? props[relRef.value] : relRef;
+        if (!rel) continue;
+        const hasProps: any[] = rel.HasProperties ?? [];
+        for (const pRef of hasProps) {
+          const p = pRef?.value !== undefined ? props[pRef.value] : pRef;
+          if (!p) continue;
+          const pName: string = p.Name?.value ?? "";
+          const pVal: string  = p.NominalValue?.value?.toString() ?? p.Value?.value?.toString() ?? "—";
+          const matchKey = Object.keys(result).find(
+            k => k.toLowerCase() === pName.toLowerCase()
+          );
+          if (matchKey) result[matchKey] = pVal;
+        }
+      }
+
+      // HasAssociations → Material
+      const hasAssoc: any[] = el.HasAssociations ?? [];
+      for (const aRef of hasAssoc) {
+        const a = aRef?.value !== undefined ? props[aRef.value] : aRef;
+        if (!a?.RelatingMaterial) continue;
+        const matRef = a.RelatingMaterial;
+        const mat    = matRef?.value !== undefined ? props[matRef.value] : matRef;
+        if (mat?.Name?.value) { result.Material = mat.Name.value; break; }
+      }
+
+      return result;
+    };
+
+    const especFieldLabels: Record<string, string> = {
+      ITEM:        "ITEM",
+      Material:    "Material",
+      Terminación: "Terminación",
+      Norma:       "Norma",
+      Local:       "Local",
+    };
+
+    const renderEspecificaciones = (modelIdMap: OBC.ModelIdMap) => {
+      const entries = Object.entries(modelIdMap);
+      if (!entries.length) { renderEspecPlaceholder(); return; }
+      const [modelId, ids] = entries[0];
+      const localId = [...ids][0];
+      if (localId === undefined) { renderEspecPlaceholder(); return; }
+
+      const eProps = getEspecProps(modelId, localId);
+
+      const rows = Object.entries(especFieldLabels).map(([key, label]) => {
+        const val = eProps[key] ?? "—";
+        const isEmpty = val === "—";
+        return `
+          <tr>
+            <td style="
+              padding:6px 10px; font-size:10.5px; font-weight:600;
+              color:var(--bim-ui_bg-contrast-60); width:38%;
+              border-bottom:1px solid var(--bim-ui_bg-contrast-20);
+              vertical-align:top; white-space:nowrap;
+            ">${label}</td>
+            <td style="
+              padding:6px 10px; font-size:11px;
+              color:${isEmpty ? "var(--bim-ui_bg-contrast-40)" : "var(--bim-ui_bg-contrast-100)"};
+              border-bottom:1px solid var(--bim-ui_bg-contrast-20);
+              word-break:break-word; line-height:1.45;
+            ">${val}</td>
+          </tr>`;
+      }).join("");
+
+      especPanel.innerHTML = `
+        <table style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr style="background:rgba(101,40,215,0.18);">
+              <th colspan="2" style="
+                padding:6px 10px; font-size:9.5px; font-weight:700;
+                color:var(--bim-ui_bg-contrast-80); text-align:left;
+                letter-spacing:1px; text-transform:uppercase;
+                border-bottom:2px solid var(--bim-ui_accent-base, #6528d7);
+              ">Especificaciones Técnicas</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+    };
+
+    // ── Tab switching ──────────────────────────────────────────────────────
+    const activateTab = (tab: "general" | "espec") => {
+      activeSelTab = tab;
+
+      [tabGenBtn, tabEspecBtn].forEach(btn => {
+        const isActive = btn.dataset.tab === tab;
+        Object.assign(btn.style, {
+          background:   isActive ? "var(--bim-ui_bg-contrast-20)" : "var(--bim-ui_bg-contrast-10)",
+          color:        isActive ? "var(--bim-ui_bg-contrast-100)" : "var(--bim-ui_bg-contrast-80)",
+          borderBottom: isActive ? "2px solid #6528d7"      : "2px solid transparent",
+        });
+      });
+
+      generalPanel.style.display = tab === "general" ? "" : "none";
+      especPanel.style.display   = tab === "espec"   ? "" : "none";
+
+      if (tab === "espec") renderEspecificaciones(lastModelIdMap);
+    };
+
+    tabGenBtn.addEventListener("click",  () => activateTab("general"));
+    tabEspecBtn.addEventListener("click", () => activateTab("espec"));
+
+    // Initial active state
+    activateTab("general");
+
+    selInfoSection.append(tabBar, generalPanel, especPanel);
+    rightPanel.append(selInfoSection);
+
+    // ── Central selection handler ──────────────────────────────────────────
+    const applySelection = (modelIdMap: OBC.ModelIdMap) => {
+      lastModelIdMap = modelIdMap;
+      updateItemsData({ modelIdMap, emptySelectionWarning: false });
+      if (activeSelTab === "espec") renderEspecificaciones(modelIdMap);
+      selInfoSection.collapsed = false;
+      requestAnimationFrame(() =>
+        selInfoSection.scrollIntoView({ behavior: "smooth", block: "nearest" })
+      );
+    };
+
+    // ── Spatial Tree click ─────────────────────────────────────────────────
     spatialTree.selectableRows = true;
     spatialTree.addEventListener("click", (event: Event) => {
       const path    = event.composedPath();
@@ -900,10 +1117,14 @@ if (container) {
       const modelId = row.data.modelId as string;
       const localId = row.data.localId as number;
       if (!modelId || localId === undefined) return;
-      updateItemsData({ modelIdMap: { [modelId]: new Set([localId]) }, emptySelectionWarning: false });
-      quantitiesSection.collapsed = false;
-      requestAnimationFrame(() => quantitiesSection.scrollIntoView({ behavior: "smooth", block: "nearest" }));
+      applySelection({ [modelId]: new Set([localId]) });
       console.log(`✅ Selection: ${row.data.Name} | localId=${localId}`);
+    });
+
+    // ── 3D click via Highlighter ───────────────────────────────────────────
+    highlighter.events["select"].onHighlight.add((modelIdMap) => {
+      if (!Object.keys(modelIdMap).length) return;
+      applySelection(modelIdMap);
     });
 
 
