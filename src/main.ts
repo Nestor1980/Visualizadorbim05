@@ -818,19 +818,23 @@ if (container) {
     const SKIP_CLASS = new Set(["IFCSITE", "IFCBUILDING", "IFCBUILDINGSTOREY"]);
 
     /**
-     * Crea el valor de la celda Name como TemplateResult de Lit (BUI.html).
-     * CellRenderValue = string | HTMLElement | TemplateResult, por lo que
-     * Lit renderiza el template directamente sin escapar el HTML.
-     * El icono se embebe dentro del valor Name en lugar de ser un campo
-     * separado, evitando que computeMissingColumns lo añada como columna extra.
+     * Crea el valor de la celda Name como HTMLElement nativo.
+     * Se evita BUI.html/TemplateResult porque bim-table-cell puede tener
+     * una instancia de Lit distinta y serializa el template como string.
      */
-    const nameCell = (label: string, icon?: string): any =>
-      icon
-        ? BUI.html`<span style="display:inline-flex;align-items:center;gap:5px;overflow:hidden">
-            <bim-icon .icon="${icon}" style="font-size:14px;flex-shrink:0;opacity:0.75"></bim-icon>
-            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${label}</span>
-          </span>`
-        : label;
+    const nameCell = (label: string, icon?: string): any => {
+      if (!icon) return label;
+      const wrap = document.createElement("span");
+      wrap.style.cssText = "display:inline-flex;align-items:center;gap:5px;overflow:hidden;width:100%";
+      const ico = document.createElement("bim-icon") as any;
+      ico.icon = icon;
+      ico.style.cssText = "font-size:14px;flex-shrink:0;opacity:0.75";
+      const txt = document.createElement("span");
+      txt.textContent = label;
+      txt.style.cssText = "overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
+      wrap.append(ico, txt);
+      return wrap;
+    };
 
     /**
      * Transforma el árbol IFC estándar al estilo BIMcollab Zoom:
@@ -917,8 +921,9 @@ if (container) {
     (itemsDataTable as HTMLElement).style.fontSize  = "11px";
 
     // ── Tab state ──────────────────────────────────────────────────────────
-    let activeSelTab: "general" | "espec" = "general";
+    let activeSelTab: string = "general";
     let lastModelIdMap: OBC.ModelIdMap = {};
+    let renderGeneration = 0;   // cancela renders en vuelo al cambiar selección
 
     // ── Section container ──────────────────────────────────────────────────
     const selInfoSection = document.createElement("bim-panel-section") as BUI.PanelSection;
@@ -926,182 +931,397 @@ if (container) {
     selInfoSection.icon      = "material-symbols:info";
     selInfoSection.collapsed = true;
 
-    // ── Tab bar ────────────────────────────────────────────────────────────
-    const tabBar = document.createElement("div");
-    tabBar.style.cssText = [
-      "display:flex", "gap:2px", "padding:6px 0 0",
-      "border-bottom:1px solid rgba(255,255,255,0.1)", "margin-bottom:6px",
+    // ── Tab bar con flechas de navegación ─────────────────────────────────
+    const tabBarStyle = document.createElement("style");
+    tabBarStyle.textContent = `
+      .sel-tab-bar::-webkit-scrollbar { display:none }
+      .sel-tab-nav-btn {
+        flex-shrink:0; width:24px; border:none; cursor:pointer;
+        background:var(--bim-ui_bg-contrast-20);
+        color:var(--bim-ui_bg-contrast-80);
+        font-size:13px; line-height:1; display:flex;
+        align-items:center; justify-content:center;
+        transition:background 0.15s, opacity 0.15s;
+        border-radius:3px; margin-bottom:2px;
+      }
+      .sel-tab-nav-btn:hover { background:var(--bim-ui_bg-contrast-30); }
+      .sel-tab-nav-btn:disabled { opacity:0.25; cursor:default; }
+    `;
+    document.head.append(tabBarStyle);
+
+    // Contenedor externo que agrupa flechas + tabBar
+    const tabBarWrapper = document.createElement("div");
+    tabBarWrapper.style.cssText = [
+      "display:flex", "align-items:stretch", "gap:2px",
+      "border-bottom:2px solid var(--bim-ui_bg-contrast-20)",
+      "margin-bottom:4px", "padding-top:4px",
     ].join(";");
 
-    const makeTabBtn = (label: string, key: "general" | "espec") => {
+    const btnPrev = document.createElement("button");
+    btnPrev.className = "sel-tab-nav-btn";
+    btnPrev.innerHTML = "&#8249;";   // ‹
+    btnPrev.title = "Anterior";
+
+    const btnNext = document.createElement("button");
+    btnNext.className = "sel-tab-nav-btn";
+    btnNext.innerHTML = "&#8250;";   // ›
+    btnNext.title = "Siguiente";
+
+    const tabBar = document.createElement("div");
+    tabBar.classList.add("sel-tab-bar");
+    tabBar.style.cssText = [
+      "display:flex", "gap:2px", "flex:1",
+      "overflow-x:auto", "scroll-behavior:smooth",
+      "scrollbar-width:none",
+    ].join(";");
+
+    // Scroll por paso al hacer click en las flechas
+    const TAB_SCROLL_STEP = 120;
+    btnPrev.addEventListener("click", () => {
+      tabBar.scrollBy({ left: -TAB_SCROLL_STEP, behavior: "smooth" });
+    });
+    btnNext.addEventListener("click", () => {
+      tabBar.scrollBy({ left: TAB_SCROLL_STEP, behavior: "smooth" });
+    });
+
+    // Actualizar estado disabled de las flechas según posición del scroll
+    const updateNavBtns = () => {
+      btnPrev.disabled = tabBar.scrollLeft <= 0;
+      btnNext.disabled = tabBar.scrollLeft + tabBar.clientWidth >= tabBar.scrollWidth - 1;
+      // Ocultar todo el wrapper de flechas si no hay overflow
+      const hasOverflow = tabBar.scrollWidth > tabBar.clientWidth + 2;
+      btnPrev.style.display = hasOverflow ? "" : "none";
+      btnNext.style.display = hasOverflow ? "" : "none";
+    };
+    tabBar.addEventListener("scroll", updateNavBtns);
+
+    tabBarWrapper.append(btnPrev, tabBar, btnNext);
+
+    const tabContent = document.createElement("div");
+    tabContent.style.cssText = "overflow-y:auto;max-height:45vh;";
+
+    const makeTabBtn = (label: string, key: string) => {
       const btn = document.createElement("button");
       btn.textContent = label;
       btn.dataset.tab = key;
       Object.assign(btn.style, {
-        flex: "1", padding: "5px 10px", border: "none", cursor: "pointer",
+        flexShrink: "0",               // no comprimir — scroll horizontal
+        padding: "5px 12px", border: "none", cursor: "pointer",
         borderRadius: "4px 4px 0 0", fontSize: "11px", fontWeight: "600",
-        letterSpacing: "0.3px", transition: "all 0.15s",
+        letterSpacing: "0.3px", transition: "background 0.15s, color 0.15s, border-color 0.15s",
         background: "var(--bim-ui_bg-contrast-10)",
         color: "var(--bim-ui_bg-contrast-80)",
-        borderBottom: "2px solid transparent", fontFamily: "inherit",
+        borderBottom: "2px solid transparent",
+        marginBottom: "-2px",          // solapa el border-bottom del tabBar
+        fontFamily: "inherit", whiteSpace: "nowrap",
       });
+      btn.addEventListener("click", () => activateTab(key));
       return btn;
     };
 
-    const tabGenBtn  = makeTabBtn("General",          "general");
-    const tabEspecBtn = makeTabBtn("Especificaciones", "espec");
-    tabBar.append(tabGenBtn, tabEspecBtn);
+    const tabButtons = new Map<string, HTMLButtonElement>();
+    const tabPanels = new Map<string, HTMLElement>();
 
-    // ── Content panels ─────────────────────────────────────────────────────
-    const generalPanel = document.createElement("div");
+    const createPanel = () => {
+      const panel = document.createElement("div");
+      panel.style.cssText = "padding:4px 2px;font-family:inherit;display:none;";
+      return panel;
+    };
+
+    const generalPanel = createPanel();
     generalPanel.append(itemsDataTable);
+    tabPanels.set("general", generalPanel);
 
-    const especPanel = document.createElement("div");
-    especPanel.style.cssText = "padding:4px 2px;font-family:inherit;";
-
-    const renderEspecPlaceholder = () => {
-      especPanel.innerHTML = `
+    const renderPlaceholder = (panel: HTMLElement, message: string) => {
+      panel.innerHTML = `
         <div style="color:var(--bim-ui_bg-contrast-40);font-size:11px;
           text-align:center;padding:20px 8px;line-height:1.5;">
-          Seleccione un elemento para ver<br>las especificaciones técnicas
+          ${message}
         </div>`;
     };
-    renderEspecPlaceholder();
 
-    // ── IFC property reader for Especificaciones ───────────────────────────
-    const getEspecProps = (modelId: string, localId: number): Record<string, string> => {
-      const model = [...fragments.list.values()].find(m => m.uuid === modelId);
-      const props = (model as any)?.properties as Record<number, any> | undefined;
-      if (!props) return {};
-
-      const el = props[localId];
-      if (!el) return {};
-
-      const result: Record<string, string> = {
-        ITEM:        el.Name?.value ?? el.ObjectType?.value ?? "—",
-        Material:    "—",
-        Terminación: "—",
-        Norma:       "—",
-        Local:       "—",
-      };
-
-      // Traverse IsDefinedBy → Psets
-      const isDefinedBy: any[] = el.IsDefinedBy ?? [];
-      for (const relRef of isDefinedBy) {
-        const rel = relRef?.value !== undefined ? props[relRef.value] : relRef;
-        if (!rel) continue;
-        const hasProps: any[] = rel.HasProperties ?? [];
-        for (const pRef of hasProps) {
-          const p = pRef?.value !== undefined ? props[pRef.value] : pRef;
-          if (!p) continue;
-          const pName: string = p.Name?.value ?? "";
-          const pVal: string  = p.NominalValue?.value?.toString() ?? p.Value?.value?.toString() ?? "—";
-          const matchKey = Object.keys(result).find(
-            k => k.toLowerCase() === pName.toLowerCase()
-          );
-          if (matchKey) result[matchKey] = pVal;
-        }
-      }
-
-      // HasAssociations → Material
-      const hasAssoc: any[] = el.HasAssociations ?? [];
-      for (const aRef of hasAssoc) {
-        const a = aRef?.value !== undefined ? props[aRef.value] : aRef;
-        if (!a?.RelatingMaterial) continue;
-        const matRef = a.RelatingMaterial;
-        const mat    = matRef?.value !== undefined ? props[matRef.value] : matRef;
-        if (mat?.Name?.value) { result.Material = mat.Name.value; break; }
-      }
-
-      return result;
-    };
-
-    const especFieldLabels: Record<string, string> = {
-      ITEM:        "ITEM",
-      Material:    "Material",
-      Terminación: "Terminación",
-      Norma:       "Norma",
-      Local:       "Local",
-    };
-
-    const renderEspecificaciones = (modelIdMap: OBC.ModelIdMap) => {
-      const entries = Object.entries(modelIdMap);
-      if (!entries.length) { renderEspecPlaceholder(); return; }
-      const [modelId, ids] = entries[0];
-      const localId = [...ids][0];
-      if (localId === undefined) { renderEspecPlaceholder(); return; }
-
-      const eProps = getEspecProps(modelId, localId);
-
-      const rows = Object.entries(especFieldLabels).map(([key, label]) => {
-        const val = eProps[key] ?? "—";
-        const isEmpty = val === "—";
+    const renderPropertiesTable = (properties: Record<string, string>) => {
+      const rows = Object.entries(properties).map(([label, value]) => {
+        const isEmpty = value === "" || value === "—";
         return `
           <tr>
             <td style="
               padding:6px 10px; font-size:10.5px; font-weight:600;
               color:var(--bim-ui_bg-contrast-60); width:38%;
               border-bottom:1px solid var(--bim-ui_bg-contrast-20);
-              vertical-align:top; white-space:nowrap;
+              vertical-align:top; word-break:break-word;
             ">${label}</td>
             <td style="
               padding:6px 10px; font-size:11px;
               color:${isEmpty ? "var(--bim-ui_bg-contrast-40)" : "var(--bim-ui_bg-contrast-100)"};
               border-bottom:1px solid var(--bim-ui_bg-contrast-20);
               word-break:break-word; line-height:1.45;
-            ">${val}</td>
+            ">${value}</td>
           </tr>`;
       }).join("");
 
-      especPanel.innerHTML = `
+      return `
         <table style="width:100%;border-collapse:collapse;">
-          <thead>
-            <tr style="background:rgba(101,40,215,0.18);">
-              <th colspan="2" style="
-                padding:6px 10px; font-size:9.5px; font-weight:700;
-                color:var(--bim-ui_bg-contrast-80); text-align:left;
-                letter-spacing:1px; text-transform:uppercase;
-                border-bottom:2px solid var(--bim-ui_accent-base, #6528d7);
-              ">Especificaciones Técnicas</th>
-            </tr>
-          </thead>
           <tbody>${rows}</tbody>
         </table>`;
     };
 
-    // ── Tab switching ──────────────────────────────────────────────────────
-    const activateTab = (tab: "general" | "espec") => {
-      activeSelTab = tab;
+    const resolveRef = (ref: any, props: Record<number, any>) =>
+      ref?.value !== undefined ? props[ref.value] : ref;
 
-      [tabGenBtn, tabEspecBtn].forEach(btn => {
-        const isActive = btn.dataset.tab === tab;
+    const isItemAttribute = (value: any) =>
+      value && typeof value === "object" && "value" in value && Object.keys(value).length <= 2;
+
+    const normalizeAttributeValue = (value: any) => {
+      if (value === null || value === undefined) return "—";
+      if (typeof value === "object") {
+        return value.value !== undefined ? String(value.value) : JSON.stringify(value);
+      }
+      return String(value);
+    };
+
+    const parsePropertySet = (pset: any) => {
+      if (!pset || typeof pset !== "object") return null;
+      const name = pset.Name?.value ?? pset.Name ?? "Sin nombre";
+      const rawProps: any[] = Array.isArray(pset.HasProperties) ? pset.HasProperties : [];
+      if (rawProps.length === 0) return null;
+
+      const propertyMap: Record<string, string> = {};
+      for (const pRef of rawProps) {
+        const prop = pRef && typeof pRef === "object" && pRef.value !== undefined ? pRef : pRef;
+        if (!prop || typeof prop !== "object") continue;
+        const propName = prop.Name?.value ?? prop.Name ?? "Propiedad";
+        const propValue = normalizeAttributeValue(
+          prop.NominalValue?.value ?? prop.Value?.value ?? prop.NominalValue ?? prop.Value
+        );
+        propertyMap[propName] = propValue;
+      }
+      return Object.keys(propertyMap).length ? { name, properties: propertyMap } : null;
+    };
+
+    const parsePropertySetsFromData = (data: any, visited = new Set<any>()) => {
+      if (!data || typeof data !== "object" || visited.has(data)) return [];
+      visited.add(data);
+
+      const sets: Array<{ name: string; properties: Record<string, string> }> = [];
+      const directSet = parsePropertySet(data);
+      if (directSet) sets.push(directSet);
+
+      for (const [key, value] of Object.entries(data)) {
+        if (key === "Name" || key === "HasProperties" || isItemAttribute(value)) continue;
+        if (Array.isArray(value)) {
+          for (const item of value) {
+            sets.push(...parsePropertySetsFromData(item, visited));
+          }
+        } else if (value && typeof value === "object") {
+          sets.push(...parsePropertySetsFromData(value, visited));
+        }
+      }
+      return sets;
+    };
+
+    const getItemData = async (model: any, id: number) => {
+      if (!Number.isFinite(id)) return null;
+
+      if (typeof model.getItemsData === "function") {
+        try {
+          const result = (model as any).getItemsData([id], {
+            attributesDefault: true,
+            relationsDefault: { attributes: true, relations: true },
+          });
+          if (result && typeof result.then === "function") {
+            const awaited = await result;
+            return Array.isArray(awaited) ? awaited[0] : awaited;
+          }
+          return Array.isArray(result) ? result[0] : result;
+        } catch {
+          // ignore
+        }
+      }
+
+      if (typeof model.getItemData === "function") {
+        try {
+          return model.getItemData(id);
+        } catch {
+          // ignore
+        }
+      }
+
+      if (model?.properties?.getItemData) {
+        try {
+          return model.properties.getItemData(id);
+        } catch {
+          // ignore
+        }
+      }
+
+      return model?.properties?.[id] ?? null;
+    };
+
+    const getPropertySets = async (modelId: string, localId: number) => {
+      const model = fragments.list.get(modelId);
+      if (!model) return [];
+
+      const setsByName = new Map<string, { name: string; properties: Record<string, string> }>();
+      const collectSet = (set: any) => {
+        if (!set || !set.name) return;
+        if (!setsByName.has(set.name)) setsByName.set(set.name, set);
+      };
+
+      const itemData = await getItemData(model, localId);
+      if (itemData) {
+        for (const set of parsePropertySetsFromData(itemData)) collectSet(set);
+      }
+
+      const relations = typeof (model as any).getItemRelations === "function"
+        ? (model as any).getItemRelations(localId)
+        : typeof model.getRelations === "function"
+          ? (model as any).getRelations([localId])
+          : null;
+
+      if (relations) {
+        const relIds = Object.values(relations).flatMap((ids: any) => Array.isArray(ids) ? ids : [ids]);
+        for (const relId of relIds) {
+          const relationData = await getItemData(model, relId);
+          if (!relationData) continue;
+
+          const relating = relationData.RelatingPropertyDefinition ?? relationData.RelatingPropertyDefinition?.value ?? relationData.RelatingPropertyDefinition;
+          if (relating) {
+            if (Array.isArray(relating)) {
+              for (const rel of relating) {
+                if (typeof rel === "object") {
+                  for (const set of parsePropertySetsFromData(rel)) collectSet(set);
+                } else if (Number.isFinite(rel)) {
+                  const psetData = await getItemData(model, rel);
+                  if (psetData) for (const set of parsePropertySetsFromData(psetData)) collectSet(set);
+                }
+              }
+            } else if (typeof relating === "object") {
+              for (const set of parsePropertySetsFromData(relating)) collectSet(set);
+            } else if (Number.isFinite(relating)) {
+              const psetData = await getItemData(model, relating);
+              if (psetData) for (const set of parsePropertySetsFromData(psetData)) collectSet(set);
+            }
+          }
+
+          for (const set of parsePropertySetsFromData(relationData)) collectSet(set);
+        }
+      }
+
+      return Array.from(setsByName.values());
+    };
+
+    const activateTab = (key: string) => {
+      activeSelTab = key;
+
+      tabButtons.forEach((btn, tabKey) => {
+        const isActive = tabKey === key;
         Object.assign(btn.style, {
           background:   isActive ? "var(--bim-ui_bg-contrast-20)" : "var(--bim-ui_bg-contrast-10)",
           color:        isActive ? "var(--bim-ui_bg-contrast-100)" : "var(--bim-ui_bg-contrast-80)",
-          borderBottom: isActive ? "2px solid #6528d7"      : "2px solid transparent",
+          borderBottom: isActive ? "2px solid var(--bim-ui_accent-base, #6528d7)" : "2px solid transparent",
+          fontWeight:   isActive ? "700" : "600",
         });
+        // Desplazar la barra para que el tab activo quede visible
+        if (isActive) {
+          btn.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" });
+        }
       });
 
-      generalPanel.style.display = tab === "general" ? "" : "none";
-      especPanel.style.display   = tab === "espec"   ? "" : "none";
-
-      if (tab === "espec") renderEspecificaciones(lastModelIdMap);
+      tabPanels.forEach((panel, panelKey) => {
+        const isActive = panelKey === key;
+        panel.style.display = isActive ? "" : "none";
+        if (isActive) panel.scrollTop = 0;   // siempre arriba al activar
+      });
     };
 
-    tabGenBtn.addEventListener("click",  () => activateTab("general"));
-    tabEspecBtn.addEventListener("click", () => activateTab("espec"));
+    const renderSelectionTabs = async (modelIdMap: OBC.ModelIdMap) => {
+      // Token de generación: si llega una nueva selección mientras ésta corre,
+      // la generación habrá aumentado y abortamos el render viejo.
+      const myGen = ++renderGeneration;
 
-    // Initial active state
-    activateTab("general");
+      const entries = Object.entries(modelIdMap);
+      const [modelId, ids] = entries[0] ?? [];
+      const localId = ids ? [...ids][0] : undefined;
 
-    selInfoSection.append(tabBar, generalPanel, especPanel);
+      // ── Limpiar estado anterior ──────────────────────────────────────────
+      tabBar.innerHTML = "";
+      tabButtons.clear();
+      tabPanels.forEach((panel) => panel.remove());
+      tabPanels.clear();
+      tabContent.innerHTML = "";
+
+      // ── General tab (síncrono, siempre primero) ──────────────────────────
+      const genBtn = makeTabBtn("General", "general");
+      tabBar.append(genBtn);
+      tabButtons.set("general", genBtn);
+      generalPanel.style.display = "";       // visible mientras carga el resto
+      generalPanel.scrollTop = 0;
+      tabContent.append(generalPanel);
+      tabPanels.set("general", generalPanel);
+      activateTab("general");                // mostrar General inmediatamente
+
+      if (!modelId || localId === undefined) return;
+
+      // ── Cargar psets de forma asíncrona ─────────────────────────────────
+      const propertySets = await getPropertySets(modelId, localId);
+
+      // Si llegó otra selección mientras esperábamos, descartar este render
+      if (myGen !== renderGeneration) return;
+
+      if (propertySets.length > 0) {
+        propertySets.forEach((set, index) => {
+          const key = `pset-${index}-${set.name.replace(/\s+/g, "-")}`;
+          const panel = createPanel();
+          panel.innerHTML = renderPropertiesTable(set.properties);
+          tabContent.append(panel);
+          tabPanels.set(key, panel);
+
+          const btn = makeTabBtn(set.name, key);
+          tabBar.append(btn);
+          tabButtons.set(key, btn);
+        });
+      } else {
+        const placeholderPanel = createPanel();
+        renderPlaceholder(placeholderPanel, "Este elemento no tiene Property Sets definidos.");
+        tabContent.append(placeholderPanel);
+        tabPanels.set("no-psets", placeholderPanel);
+        const btn = makeTabBtn("Sin Psets", "no-psets");
+        tabBar.append(btn);
+        tabButtons.set("no-psets", btn);
+      }
+
+      // Mantener "general" como tab activa (ya está activada arriba)
+      // Asegurar que el panel general siga visible y los pset ocultos
+      tabPanels.forEach((panel, panelKey) => {
+        panel.style.display = panelKey === "general" ? "" : "none";
+      });
+
+      // Recalcular flechas de navegación tras agregar todas las tabs
+      requestAnimationFrame(updateNavBtns);
+    };
+
+    // Inicializar con la tab General
+    tabBar.append(makeTabBtn("General", "general"));
+    tabButtons.set("general", tabBar.lastElementChild as HTMLButtonElement);
+    tabContent.append(generalPanel);
+    selInfoSection.append(tabBarWrapper, tabContent);
     rightPanel.append(selInfoSection);
 
     // ── Central selection handler ──────────────────────────────────────────
-    const applySelection = (modelIdMap: OBC.ModelIdMap) => {
+    const applySelection = async (modelIdMap: OBC.ModelIdMap) => {
+      // Siempre volver a General al cambiar selección
+      activeSelTab = "general";
+
       lastModelIdMap = modelIdMap;
       updateItemsData({ modelIdMap, emptySelectionWarning: false });
-      if (activeSelTab === "espec") renderEspecificaciones(modelIdMap);
+      await renderSelectionTabs(modelIdMap);  // activa "general" al final
+
+      // Scroll to top en todos los contenedores de contenido
+      (itemsDataTable as HTMLElement).scrollTop = 0;
+      tabContent.scrollTop = 0;
+      generalPanel.scrollTop = 0;
+
       selInfoSection.collapsed = false;
       requestAnimationFrame(() =>
         selInfoSection.scrollIntoView({ behavior: "smooth", block: "nearest" })
@@ -1117,14 +1337,14 @@ if (container) {
       const modelId = row.data.modelId as string;
       const localId = row.data.localId as number;
       if (!modelId || localId === undefined) return;
-      applySelection({ [modelId]: new Set([localId]) });
+      applySelection({ [modelId]: new Set([localId]) }).catch(console.error);
       console.log(`✅ Selection: ${row.data.Name} | localId=${localId}`);
     });
 
     // ── 3D click via Highlighter ───────────────────────────────────────────
     highlighter.events["select"].onHighlight.add((modelIdMap) => {
       if (!Object.keys(modelIdMap).length) return;
-      applySelection(modelIdMap);
+      applySelection(modelIdMap).catch(console.error);
     });
 
 
