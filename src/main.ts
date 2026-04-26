@@ -148,10 +148,19 @@ if (container) {
 
   const viewpoints = components.get(OBC.Viewpoints);
   topics.list.onItemSet.add(({ value: topic }) => {
-    const vp   = viewpoints.create();
-    vp.world   = world;
-    vp.updateCamera();
-    topic.viewpoints.add(vp.guid);
+    if (topic.viewpoints.size > 0) {
+      // Topic importado de BCF: ya tiene viewpoints → solo asignar world
+      for (const vpGuid of topic.viewpoints) {
+        const vp = viewpoints.list.get(vpGuid);
+        if (vp && !vp.world) vp.world = world;
+      }
+    } else {
+      // Topic nuevo creado en el visor → capturar cámara actual
+      const vp = viewpoints.create();
+      vp.world  = world;
+      vp.updateCamera();
+      topic.viewpoints.add(vp.guid);
+    }
   });
   console.log("✅ 3_BCFTopics + Viewpoints configurados");
 
@@ -168,6 +177,15 @@ if (container) {
 
   const highlighter = components.get(OBF.Highlighter);
   highlighter.setup({ world });
+
+  // Aumentar opacidad del relleno de selección para mejor contraste
+  highlighter.styles.set("select", {
+    color: new THREE.Color(0x6528d7),
+    opacity: 0.55,
+    transparent: true,
+    renderedFaces: FRAGS.RenderedFaces.TWO,
+  });
+
   console.log("✅ 4.2_Highlighter configurado");
 
   // ===============================
@@ -372,6 +390,19 @@ if (container) {
   const grids     = components.get(OBC.Grids);
   const worldGrid = grids.create(world);
   await world.camera.controls.setLookAt(10, 10, 10, 0, 0, 0);
+
+  // ── Configuración precisa de controles de cámara ──────────────────────
+  const cc = world.camera.controls;
+  cc.dollyToCursor   = true;
+  cc.infinityDolly   = true;
+  cc.truckSpeed      = 2.0;
+  cc.smoothTime          = 0.15;
+  cc.draggingSmoothTime  = 0.05;
+
+  // Forzar aspect ratio correcto al inicio y en cada resize
+  world.camera.updateAspect();
+  world.renderer.onResize.add(() => world.camera.updateAspect());
+
   console.log("✅ 6.1_Escena configurada con iluminación mejorada");
 
   // ===============================
@@ -379,6 +410,38 @@ if (container) {
   // ===============================
   const postproduction = (world.renderer as OBF.PostproductionRenderer).postproduction;
   postproduction.enabled = true;
+
+  // Al cambiar proyección: desactivar postproducción temporalmente,
+  // limpiar los buffers del renderer y reactivar. Esto evita que el
+  // EffectComposer mezcle frames de la cámara anterior con la nueva.
+  world.camera.projection.onChanged.add((newCam: any) => {
+    const pp  = postproduction as any;
+    const rdr = (world.renderer as OBF.PostproductionRenderer).three;
+
+    // 1. Actualizar cámara en todos los passes del composer
+    if (pp._basePass) pp._basePass.camera = newCam;
+    if (pp._aoPass)   pp._aoPass.camera   = newCam;
+    if (pp.composer?.passes) {
+      for (const pass of pp.composer.passes) {
+        if (pass.camera !== undefined) pass.camera = newCam;
+      }
+    }
+
+    // 2. Limpiar render targets del composer para eliminar el frame viejo
+    if (pp.composer) {
+      rdr.setRenderTarget(pp.composer.renderTarget1); rdr.clear();
+      rdr.setRenderTarget(pp.composer.renderTarget2); rdr.clear();
+      rdr.setRenderTarget(null);
+    }
+
+    // 3. Limpiar el framebuffer principal
+    const prev = rdr.autoClear;
+    rdr.autoClear = true;
+    rdr.clear();
+    rdr.autoClear = prev;
+
+    world.camera.updateAspect();
+  });
 
   postproduction.basePass.isolatedMaterials.push(worldGrid.material);
   postproduction.outlinesEnabled           = true;
@@ -414,7 +477,20 @@ if (container) {
     ppComposer.renderTarget2.dispose();
   }
 
-  console.log("✅ 6.2_Postproducción activada");
+  // Efecto de contorno (outline) al seleccionar.
+  // Debe configurarse DESPUÉS de postproduction.enabled = true porque los
+  // setters color/thickness/fillColor/fillOpacity acceden a outlinePass, que
+  // solo existe una vez que el EffectComposer está inicializado.
+  const outliner = components.get(OBF.Outliner);
+  outliner.world = world;
+  outliner.enabled = true;
+  outliner.color = new THREE.Color(0x39ff14);  // verde fluor
+  outliner.thickness = 3;         // pixels in the outline shader (default=2)
+  outliner.fillColor = new THREE.Color(0x6528d7);
+  outliner.fillOpacity = 0.35;    // additional tint on top of highlighter fill
+  outliner.styles.add("select");
+
+  console.log("✅ 6.2_Postproducción + Outliner activados");
 
   // ===============================
   // PASO 6.3 – Ajustar grilla al piso
@@ -445,6 +521,32 @@ if (container) {
   world.camera.controls.addEventListener("update", () => {
     fragments.core.update();
     if (vcRef.el) vcRef.el.updateOrientation();
+  });
+
+  // ── Raycaster para pivot preciso al hacer pan / orbit ─────────────────
+  // Actualiza el target de camera-controls al punto del modelo bajo el
+  // cursor en cada pointerdown con botón derecho (pan) o medio (orbit),
+  // de modo que el pivot siempre queda sobre la superficie del modelo.
+  const _pivotRaycaster = new THREE.Raycaster();
+  viewport.addEventListener("pointerdown", (e: PointerEvent) => {
+    if (e.button !== 2 && e.button !== 1) return; // derecho o rueda
+    const rect = viewport.getBoundingClientRect();
+    const ndc  = new THREE.Vector2(
+      ((e.clientX - rect.left) / rect.width)  * 2 - 1,
+      -((e.clientY - rect.top)  / rect.height) * 2 + 1,
+    );
+    _pivotRaycaster.setFromCamera(ndc, world.camera.three);
+    const meshes: THREE.Mesh[] = [];
+    for (const model of fragments.list.values()) {
+      model.object?.traverse(o => { if (o instanceof THREE.Mesh) meshes.push(o); });
+    }
+    const hits = _pivotRaycaster.intersectObjects(meshes, false);
+    if (hits.length === 0) return;
+    const pt  = hits[0].point;
+    const pos = new THREE.Vector3();
+    world.camera.three.getWorldPosition(pos);
+    // Reposicionar target sin mover la cámara — el siguiente drag orbita aquí
+    world.camera.controls.setLookAt(pos.x, pos.y, pos.z, pt.x, pt.y, pt.z, false);
   });
 
   // ===============================
@@ -547,19 +649,58 @@ if (container) {
     (viewCube as any).camera = world.camera.three;
     vcRef.el = viewCube;
 
-    const _D = 80;
-    viewCube.addEventListener("frontclick",  () => world.camera.controls.setLookAt( 0,  0,  _D, 0, 0, 0, true));
-    viewCube.addEventListener("backclick",   () => world.camera.controls.setLookAt( 0,  0, -_D, 0, 0, 0, true));
-    viewCube.addEventListener("rightclick",  () => world.camera.controls.setLookAt( _D, 0,  0,  0, 0, 0, true));
-    viewCube.addEventListener("leftclick",   () => world.camera.controls.setLookAt(-_D, 0,  0,  0, 0, 0, true));
-    viewCube.addEventListener("topclick",    () => world.camera.controls.setLookAt( 0,  _D, 0,  0, 0, 0, true));
-    viewCube.addEventListener("bottomclick", () => world.camera.controls.setLookAt( 0, -_D, 0,  0, 0, 0, true));
+    // Calcula el centro del bounding box de todos los modelos cargados.
+    // Si no hay modelos, devuelve (0,0,0) como fallback.
+    const getModelCenter = (): THREE.Vector3 => {
+      const box = new THREE.Box3();
+      let hasContent = false;
+      for (const model of fragments.list.values()) {
+        if (model.object) {
+          box.expandByObject(model.object);
+          hasContent = true;
+        }
+      }
+      return hasContent ? box.getCenter(new THREE.Vector3()) : new THREE.Vector3();
+    };
 
-    // Drag sobre el ViewCube → orbitar la cámara
+    // Distancia de cámara adaptada al tamaño del modelo
+    const getViewDistance = (): number => {
+      const box = new THREE.Box3();
+      let hasContent = false;
+      for (const model of fragments.list.values()) {
+        if (model.object) { box.expandByObject(model.object); hasContent = true; }
+      }
+      if (!hasContent) return 80;
+      const size = new THREE.Vector3();
+      box.getSize(size);
+      return Math.max(size.x, size.y, size.z) * 2;
+    };
+
+    const vcGoTo = (dx: number, dy: number, dz: number) => {
+      const c = getModelCenter();
+      const d = getViewDistance();
+      // Normalizar dirección y escalar
+      const len = Math.sqrt(dx*dx + dy*dy + dz*dz);
+      const f   = d / len;
+      world.camera.controls.setLookAt(
+        c.x + dx * f, c.y + dy * f, c.z + dz * f,
+        c.x, c.y, c.z,
+        true
+      );
+    };
+
+    viewCube.addEventListener("frontclick",  () => vcGoTo( 0,  0,  1));
+    viewCube.addEventListener("backclick",   () => vcGoTo( 0,  0, -1));
+    viewCube.addEventListener("rightclick",  () => vcGoTo( 1,  0,  0));
+    viewCube.addEventListener("leftclick",   () => vcGoTo(-1,  0,  0));
+    viewCube.addEventListener("topclick",    () => vcGoTo( 0,  1,  0));
+    viewCube.addEventListener("bottomclick", () => vcGoTo( 0, -1,  0));
+
+    // Drag sobre el ViewCube → orbitar alrededor del target actual
     let vcDragging = false;
     let vcLastX = 0;
     let vcLastY = 0;
-    const ORBIT_SPEED = 0.01; // radianes por pixel
+    const ORBIT_SPEED = 0.008;
 
     viewCube.addEventListener("pointerdown", (e: PointerEvent) => {
       vcDragging = true;
@@ -882,33 +1023,381 @@ if (container) {
       });
 
     const spatialSection          = document.createElement("bim-panel-section") as BUI.PanelSection;
-    spatialSection.label          = "Spatial Structures";
+    spatialSection.label          = "Estructuras";
     spatialSection.icon           = "material-symbols:account-tree";
     spatialSection.collapsed      = false;
+
+    // ── View switcher (Spatial / Types) ───────────────────────────────────
+    const makeTreeViewBtn = (iconName: string, label: string): HTMLButtonElement => {
+      const btn = document.createElement("button");
+      btn.style.cssText = [
+        "flex:1","display:flex","align-items:center","justify-content:center",
+        "gap:4px","padding:4px 8px","border:none","cursor:pointer",
+        "border-radius:4px","font-size:11px","font-weight:600",
+        "background:var(--bim-ui_bg-contrast-10)",
+        "color:var(--bim-ui_bg-contrast-60)",
+        "transition:background 0.15s,color 0.15s","font-family:inherit",
+      ].join(";");
+      const ico = document.createElement("bim-icon") as any;
+      ico.icon = iconName;
+      ico.style.fontSize = "13px";
+      const lbl = document.createElement("span");
+      lbl.textContent = label;
+      btn.append(ico, lbl);
+      return btn;
+    };
+
+    const treeSwitcherBar = document.createElement("div");
+    treeSwitcherBar.style.cssText = "display:flex;gap:4px;margin-bottom:6px;";
+    const btnSpatialTree = makeTreeViewBtn("material-symbols:account-tree", "Spatial");
+    const btnTypesTree   = makeTreeViewBtn("material-symbols:category", "Types");
+    treeSwitcherBar.append(btnSpatialTree, btnTypesTree);
+
     spatialTree.style.maxHeight   = "40vh";
     spatialTree.style.overflowY   = "auto";
     spatialTree.style.fontSize    = "11px";
-    spatialSection.append(spatialTree);
+
+    const typesContainer = document.createElement("div");
+    typesContainer.style.cssText = "max-height:40vh;overflow-y:auto;display:none;";
+
+    let currentTreeView: "spatial" | "types" = "spatial";
+
+    const switchTreeView = (view: "spatial" | "types") => {
+      currentTreeView = view;
+      (spatialTree as HTMLElement).style.display = view === "spatial" ? "" : "none";
+      typesContainer.style.display = view === "types" ? "" : "none";
+      [btnSpatialTree, btnTypesTree].forEach(btn => {
+        const isActive = (view === "spatial" ? btnSpatialTree : btnTypesTree) === btn;
+        btn.style.background = isActive ? "var(--bim-ui_bg-contrast-20)" : "var(--bim-ui_bg-contrast-10)";
+        btn.style.color      = isActive ? "var(--bim-ui_bg-contrast-100)" : "var(--bim-ui_bg-contrast-60)";
+      });
+    };
+
+    btnSpatialTree.addEventListener("click", () => switchTreeView("spatial"));
+    btnTypesTree.addEventListener("click",   () => switchTreeView("types"));
+    switchTreeView("spatial");
+
+    spatialSection.append(treeSwitcherBar, spatialTree, typesContainer);
     rightPanel.append(spatialSection);
+
+    // Interceptar el setter data de bim-table para aplicar toCompactTree
+    // SIEMPRE que CUI asigne datos nuevos, incluso en re-renders internos de Lit.
+    const tbl = spatialTree as any;
+    const tblProto = Object.getPrototypeOf(tbl);
+    const originalDescriptor = Object.getOwnPropertyDescriptor(tblProto, "data")
+      ?? Object.getOwnPropertyDescriptor(Object.getPrototypeOf(tblProto), "data");
+
+    if (originalDescriptor?.set) {
+      Object.defineProperty(tbl, "data", {
+        get() { return originalDescriptor.get!.call(this); },
+        set(rawData: any[]) {
+          // Solo transformar si los datos son del árbol IFC (tienen nodos IFC crudos)
+          const needsTransform = Array.isArray(rawData) && rawData.length > 0
+            && rawData.some((n: any) => {
+              const name: string = n?.data?.Name ?? "";
+              return /^IFC[A-Z]+$/i.test(name) || name.endsWith(".ifc");
+            });
+          const finalData = needsTransform ? toCompactTree(rawData) : rawData;
+          originalDescriptor.set!.call(this, finalData);
+          if (needsTransform) {
+            requestAnimationFrame(() => { spatialTree.expanded = true; });
+            // Rebuild Types tree from the raw (pre-transform) data
+            buildTypesTree(rawData);
+          }
+        },
+        configurable: true,
+      });
+      console.log("✅ SpatialTree: setter interceptado para toCompactTree");
+    }
 
     fragments.list.onItemSet.add(() => {
       updateSpatialTree({ models: fragments.list.values() });
       spatialSection.collapsed = false;
+    });
 
-      // Esperar a que updateSpatialTree llene los datos del BUI.Table
-      // (operación asíncrona) y luego aplicar la transformación compacta.
-      const applyCompact = () => {
-        const tbl = spatialTree as any;
-        if (Array.isArray(tbl.data) && tbl.data.length > 0) {
-          tbl.data = toCompactTree(tbl.data);
-          requestAnimationFrame(() => { spatialTree.expanded = true; });
-          console.log("✅ SpatialTree compactado (BIMcollab style)");
-        } else {
-          requestAnimationFrame(applyCompact); // reintentar en el próximo frame
+    // ── Types tree: data & build ───────────────────────────────────────────
+    // Populated from the raw IFC spatial tree data set by CUI.
+    /** category → list of all instances across all models */
+    const typesData = new Map<string, { localId: number; modelId: string; name: string }[]>();
+
+    // ── Types-tree row selection state ────────────────────────────────────
+    let selectedTypesRow: HTMLElement | null = null;
+
+    const selectTypesRow = (row: HTMLElement | null) => {
+      if (selectedTypesRow && selectedTypesRow !== row) {
+        selectedTypesRow.style.background  = "";
+        selectedTypesRow.style.outline     = "";
+        selectedTypesRow.style.borderLeft  = "";
+        selectedTypesRow.style.paddingLeft = "";
+        delete (selectedTypesRow as any)._typSel;
+      }
+      selectedTypesRow = row;
+      if (row) {
+        row.style.background  = "rgba(101,40,215,0.18)";
+        row.style.outline     = "none";
+        row.style.borderLeft  = "3px solid rgba(101,40,215,0.85)";
+        row.style.paddingLeft = "5px";    // compensate border so text doesn't shift much
+        (row as any)._typSel = true;
+      }
+    };
+
+    // ── 3D highlight helper: passes ModelIdMap directly to highlighter ────
+    const highlightTypesInModel = (modelIdMap: OBC.ModelIdMap): void => {
+      highlighter.highlightByID("select", modelIdMap, true, false).catch(console.error);
+    };
+
+    const buildTypesTree = (rawNodes: any[]): void => {
+      typesData.clear();
+
+      const walkTree = (nodes: any[]) => {
+        for (const node of nodes) {
+          const nodeName: string = node.data?.Name ?? "";
+          const upper = nodeName.toUpperCase();
+          const isIfcClass = /^IFC[A-Z]+$/i.test(upper);
+
+          if (isIfcClass) {
+            if (!typesData.has(upper)) typesData.set(upper, []);
+            const bucket = typesData.get(upper)!;
+            for (const child of node.children ?? []) {
+              const localId = child.data?.localId;
+              const modelId = child.data?.modelId;
+              if (localId === undefined || !modelId) continue;
+              // child.data.Name may already be an HTMLElement if toCompactTree ran first
+              const childName =
+                typeof child.data.Name === "string"
+                  ? child.data.Name
+                  : (child.data.Name as HTMLElement)?.textContent ?? `#${localId}`;
+              bucket.push({ localId, modelId, name: childName });
+            }
+          }
+
+          // Always recurse: category nodes may be nested under storeys
+          walkTree(node.children ?? []);
         }
       };
-      requestAnimationFrame(applyCompact);
-    });
+
+      walkTree(rawNodes);
+      renderTypesTree();
+    };
+
+    const renderTypesTree = (): void => {
+      typesContainer.innerHTML = "";
+
+      if (typesData.size === 0) {
+        typesContainer.innerHTML = `<div style="color:var(--bim-ui_bg-contrast-40);
+          font-size:11px;text-align:center;padding:20px 8px;">
+          Cargue un modelo IFC para ver los tipos.</div>`;
+        return;
+      }
+
+      // Only show categories with at least one instance, sorted alphabetically by label
+      const entries = [...typesData.entries()]
+        .filter(([, insts]) => insts.length > 0)
+        .sort(([a], [b]) => {
+          const la = IFC_LABEL[a] ?? a.replace(/^IFC/, "");
+          const lb = IFC_LABEL[b] ?? b.replace(/^IFC/, "");
+          return la.localeCompare(lb);
+        });
+
+      for (const [category, instances] of entries) {
+        const label   = IFC_LABEL[category] ?? category.replace(/^IFC/, "");
+        const iconStr = IFC_ICON[category]  ?? "material-symbols:category";
+
+        // ── Category row ──────────────────────────────────────────────────
+        const catRow = document.createElement("div");
+        catRow.style.cssText = [
+          "display:flex","align-items:center","gap:5px",
+          "padding:5px 8px","cursor:pointer","user-select:none",
+          "border-bottom:1px solid var(--bim-ui_bg-contrast-10)",
+          "color:var(--bim-ui_bg-contrast-80)",
+        ].join(";");
+        catRow.addEventListener("mouseenter", () => {
+          if (!(catRow as any)._typSel) catRow.style.background = "var(--bim-ui_bg-contrast-10)";
+        });
+        catRow.addEventListener("mouseleave", () => {
+          catRow.style.background = (catRow as any)._typSel ? "rgba(101,40,215,0.18)" : "";
+        });
+
+        const arrow = document.createElement("span");
+        arrow.textContent = "▶";
+        arrow.style.cssText = "font-size:8px;flex-shrink:0;opacity:0.55;transition:transform 0.15s;width:10px;";
+
+        const catIcon = document.createElement("bim-icon") as any;
+        catIcon.icon = iconStr;
+        catIcon.style.cssText = "font-size:14px;flex-shrink:0;opacity:0.75;";
+
+        const catLabel = document.createElement("span");
+        catLabel.style.cssText = "flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+        catLabel.textContent = label;
+
+        const catCount = document.createElement("span");
+        catCount.style.cssText = "font-size:10px;opacity:0.45;flex-shrink:0;";
+        catCount.textContent = String(instances.length);
+
+        catRow.append(arrow, catIcon, catLabel, catCount);
+
+        // ── Instances container (collapsed by default) ─────────────────────
+        const instsContainer = document.createElement("div");
+        instsContainer.style.display = "none";
+
+        let expanded = false;
+
+        arrow.addEventListener("click", (e: Event) => {
+          e.stopPropagation();
+          expanded = !expanded;
+          arrow.style.transform = expanded ? "rotate(90deg)" : "";
+          instsContainer.style.display = expanded ? "" : "none";
+        });
+
+        // Click on category row body → select ALL instances of this type
+        catRow.addEventListener("click", (e: MouseEvent) => {
+          if ((e.target as HTMLElement) === arrow) return;
+
+          const modelIdMap: OBC.ModelIdMap = {};
+          for (const inst of instances) {
+            if (!modelIdMap[inst.modelId]) modelIdMap[inst.modelId] = new Set();
+            modelIdMap[inst.modelId].add(inst.localId);
+          }
+
+          selectTypesRow(catRow);
+          highlightTypesInModel(modelIdMap);
+          applyTypeSelection(modelIdMap, label, instances.length).catch(console.error);
+        });
+
+        // ── Instance rows ──────────────────────────────────────────────────
+        for (const inst of instances) {
+          const instRow = document.createElement("div");
+          instRow.style.cssText = [
+            "display:flex","align-items:center","gap:5px",
+            "padding:3px 8px 3px 30px","cursor:pointer",
+            "color:var(--bim-ui_bg-contrast-70)",
+            "border-bottom:1px solid var(--bim-ui_bg-contrast-05)",
+          ].join(";");
+          instRow.addEventListener("mouseenter", () => {
+            if (!(instRow as any)._typSel) instRow.style.background = "var(--bim-ui_bg-contrast-10)";
+          });
+          instRow.addEventListener("mouseleave", () => {
+            instRow.style.background = (instRow as any)._typSel ? "rgba(101,40,215,0.18)" : "";
+          });
+
+          const instLbl = document.createElement("span");
+          instLbl.style.cssText = "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+          instLbl.textContent = inst.name;
+          instRow.append(instLbl);
+
+          instRow.addEventListener("click", () => {
+            const map: OBC.ModelIdMap = { [inst.modelId]: new Set([inst.localId]) };
+            selectTypesRow(instRow);
+            highlightTypesInModel(map);
+            applySelection(map).catch(console.error);
+          });
+
+          instsContainer.append(instRow);
+        }
+
+        typesContainer.append(catRow, instsContainer);
+      }
+    };
+
+    // ── Shared Psets for multi-item type selection ─────────────────────────
+    const getSharedPropertySets = async (
+      modelId: string,
+      localIds: number[],
+    ): Promise<{ name: string; properties: Record<string, string> }[]> => {
+      if (localIds.length === 0) return [];
+      if (localIds.length === 1) return getPropertySets(modelId, localIds[0]);
+
+      const SAMPLE = Math.min(localIds.length, 8);
+      const sample = localIds.slice(0, SAMPLE);
+      const allPsets = await Promise.all(sample.map(id => getPropertySets(modelId, id)));
+
+      const firstPsets = allPsets[0] ?? [];
+      // Keep only psets whose name appears in every sampled item
+      const shared = firstPsets.filter(pset =>
+        allPsets.every(itemPsets => itemPsets.some(p => p.name === pset.name))
+      );
+
+      // Merge: show common values, mark differing ones as "(varies)"
+      return shared.map(pset => {
+        const merged: Record<string, string> = {};
+        const matchingAll = allPsets.map(
+          itemPsets => itemPsets.find(p => p.name === pset.name)
+        );
+        for (const [propName, propValue] of Object.entries(pset.properties)) {
+          const allVals = matchingAll.map(p => p?.properties[propName] ?? "—");
+          merged[propName] = allVals.every(v => v === allVals[0]) ? propValue : "(varies)";
+        }
+        return { name: pset.name, properties: merged };
+      });
+    };
+
+    // ── Type-group selection handler ───────────────────────────────────────
+    const applyTypeSelection = async (
+      modelIdMap: OBC.ModelIdMap,
+      typeLabel: string,
+      count: number,
+    ) => {
+      activeSelTab = "general";
+      lastModelIdMap = modelIdMap;
+
+      // Show a summary in the General tab via the existing itemsData table
+      updateItemsData({ modelIdMap, emptySelectionWarning: false });
+
+      // Render tabs with shared Psets
+      const myGen = ++renderGeneration;
+
+      tabBar.innerHTML = "";
+      tabButtons.clear();
+      tabPanels.forEach(p => p.remove());
+      tabPanels.clear();
+      tabContent.innerHTML = "";
+
+      // General tab: show a count summary
+      const summaryPanel = createPanel();
+      summaryPanel.innerHTML = `
+        <div style="color:var(--bim-ui_bg-contrast-60);font-size:11px;
+          padding:10px 8px;line-height:1.6;">
+          <strong style="color:var(--bim-ui_bg-contrast-100);">${count} ${typeLabel}</strong>
+          elements selected.<br>
+          <span style="opacity:0.7;">Shared property sets are shown in the tabs below.</span>
+        </div>`;
+      tabContent.append(summaryPanel);
+      tabPanels.set("general", summaryPanel);
+      const genBtn = makeTabBtn("General", "general");
+      tabBar.append(genBtn);
+      tabButtons.set("general", genBtn);
+      activateTab("general");
+
+      selInfoSection.collapsed = false;
+      requestAnimationFrame(() =>
+        selInfoSection.scrollIntoView({ behavior: "smooth", block: "nearest" })
+      );
+
+      // Load shared Psets async
+      const entries = Object.entries(modelIdMap);
+      if (!entries.length || myGen !== renderGeneration) return;
+      const [modelId, ids] = entries[0];
+      const localIds = [...ids];
+
+      const sharedPsets = await getSharedPropertySets(modelId, localIds);
+      if (myGen !== renderGeneration) return;
+
+      if (sharedPsets.length > 0) {
+        sharedPsets.forEach((set, index) => {
+          const key = `pset-${index}-${set.name.replace(/\s+/g, "-")}`;
+          const panel = createPanel();
+          panel.innerHTML = renderPropertiesTable(set.properties);
+          tabContent.append(panel);
+          tabPanels.set(key, panel);
+          tabBar.append(makeTabBtn(set.name, key));
+          tabButtons.set(key, tabBar.lastElementChild as HTMLButtonElement);
+        });
+      }
+
+      // Keep General visible, rest hidden
+      tabPanels.forEach((panel, key) => { panel.style.display = key === "general" ? "" : "none"; });
+      requestAnimationFrame(updateNavBtns);
+    };
 
     // ===============================
     // Selection Information (tabbed)
@@ -924,6 +1413,7 @@ if (container) {
     let activeSelTab: string = "general";
     let lastModelIdMap: OBC.ModelIdMap = {};
     let renderGeneration = 0;   // cancela renders en vuelo al cambiar selección
+    let isIsolated = false;
 
     // ── Section container ──────────────────────────────────────────────────
     const selInfoSection = document.createElement("bim-panel-section") as BUI.PanelSection;
@@ -1066,149 +1556,302 @@ if (container) {
         </table>`;
     };
 
-    const resolveRef = (ref: any, props: Record<number, any>) =>
-      ref?.value !== undefined ? props[ref.value] : ref;
+    // ── IFC property extraction helpers ───────────────────────────────────
 
-    const isItemAttribute = (value: any) =>
-      value && typeof value === "object" && "value" in value && Object.keys(value).length <= 2;
-
-    const normalizeAttributeValue = (value: any) => {
-      if (value === null || value === undefined) return "—";
-      if (typeof value === "object") {
-        return value.value !== undefined ? String(value.value) : JSON.stringify(value);
-      }
-      return String(value);
-    };
-
-    const parsePropertySet = (pset: any) => {
-      if (!pset || typeof pset !== "object") return null;
-      const name = pset.Name?.value ?? pset.Name ?? "Sin nombre";
-      const rawProps: any[] = Array.isArray(pset.HasProperties) ? pset.HasProperties : [];
-      if (rawProps.length === 0) return null;
-
-      const propertyMap: Record<string, string> = {};
-      for (const pRef of rawProps) {
-        const prop = pRef && typeof pRef === "object" && pRef.value !== undefined ? pRef : pRef;
-        if (!prop || typeof prop !== "object") continue;
-        const propName = prop.Name?.value ?? prop.Name ?? "Propiedad";
-        const propValue = normalizeAttributeValue(
-          prop.NominalValue?.value ?? prop.Value?.value ?? prop.NominalValue ?? prop.Value
-        );
-        propertyMap[propName] = propValue;
-      }
-      return Object.keys(propertyMap).length ? { name, properties: propertyMap } : null;
-    };
-
-    const parsePropertySetsFromData = (data: any, visited = new Set<any>()) => {
-      if (!data || typeof data !== "object" || visited.has(data)) return [];
-      visited.add(data);
-
-      const sets: Array<{ name: string; properties: Record<string, string> }> = [];
-      const directSet = parsePropertySet(data);
-      if (directSet) sets.push(directSet);
-
-      for (const [key, value] of Object.entries(data)) {
-        if (key === "Name" || key === "HasProperties" || isItemAttribute(value)) continue;
-        if (Array.isArray(value)) {
-          for (const item of value) {
-            sets.push(...parsePropertySetsFromData(item, visited));
-          }
-        } else if (value && typeof value === "object") {
-          sets.push(...parsePropertySetsFromData(value, visited));
-        }
-      }
-      return sets;
-    };
-
-    const getItemData = async (model: any, id: number) => {
+    /**
+     * Fetches full item data from the model for a given express ID.
+     * Tries getItemsData (fragments v2), getItemData, and raw properties.
+     */
+    const getItemData = async (model: any, id: number, deep = true): Promise<any> => {
       if (!Number.isFinite(id)) return null;
-
       if (typeof model.getItemsData === "function") {
         try {
-          const result = (model as any).getItemsData([id], {
-            attributesDefault: true,
-            relationsDefault: { attributes: true, relations: true },
-          });
-          if (result && typeof result.then === "function") {
-            const awaited = await result;
-            return Array.isArray(awaited) ? awaited[0] : awaited;
-          }
-          return Array.isArray(result) ? result[0] : result;
-        } catch {
-          // ignore
-        }
+          const cfg = deep
+            ? { attributesDefault: true, relationsDefault: { attributes: true, relations: true } }
+            : { attributesDefault: true };
+          const result = model.getItemsData([id], cfg);
+          const awaited = result?.then ? await result : result;
+          return Array.isArray(awaited) ? awaited[0] : awaited;
+        } catch { /* try next */ }
       }
-
       if (typeof model.getItemData === "function") {
-        try {
-          return model.getItemData(id);
-        } catch {
-          // ignore
-        }
+        try { return await model.getItemData(id); } catch { /* try next */ }
       }
-
       if (model?.properties?.getItemData) {
-        try {
-          return model.properties.getItemData(id);
-        } catch {
-          // ignore
-        }
+        try { return model.properties.getItemData(id); } catch { /* try next */ }
       }
-
       return model?.properties?.[id] ?? null;
     };
 
-    const getPropertySets = async (modelId: string, localId: number) => {
-      const model = fragments.list.get(modelId);
-      if (!model) return [];
+    /**
+     * Extracts the express ID from an inlined ThatOpen object.
+     * _localId may be a plain number or a {value: N} wrapper.
+     */
+    const getExpressId = (obj: any): number | null => {
+      if (!obj || typeof obj !== "object") return null;
+      if (typeof obj._localId === "number")       return obj._localId;
+      if (typeof obj._localId?.value === "number") return obj._localId.value;
+      if (typeof obj.expressID === "number")       return obj.expressID;
+      return null;
+    };
 
-      const setsByName = new Map<string, { name: string; properties: Record<string, string> }>();
-      const collectSet = (set: any) => {
-        if (!set || !set.name) return;
-        if (!setsByName.has(set.name)) setsByName.set(set.name, set);
-      };
+    /**
+     * Extracts a display string from an IFC property value.
+     * Handles NominalValue / Value, both plain scalars and {value} wrappers.
+     */
+    const extractPropValue = (prop: any): string => {
+      if (!prop || typeof prop !== "object") return "—";
+      const raw = prop.NominalValue ?? prop.Value;
+      if (raw === null || raw === undefined) return "—";
+      if (typeof raw === "object" && raw.value !== undefined) return String(raw.value);
+      if (typeof raw === "object") return JSON.stringify(raw);
+      return String(raw);
+    };
 
-      const itemData = await getItemData(model, localId);
-      if (itemData) {
-        for (const set of parsePropertySetsFromData(itemData)) collectSet(set);
+    /**
+     * Builds a {name, properties} entry from an IfcPropertySet-like object.
+     *
+     * Re-fetches the pset by its own express ID (shallow — attributes only)
+     * so that HasProperties items come fully inlined rather than as {value:id}
+     * references. Individual properties that remain as references are fetched
+     * individually via getItemData.
+     */
+    const processPset = async (
+      psetObj: any,
+      model: any,
+      out: Map<string, { name: string; properties: Record<string, string> }>,
+    ): Promise<void> => {
+      if (!psetObj || typeof psetObj !== "object") return;
+
+      const rawName = psetObj.Name;
+      const name: string =
+        typeof rawName === "string"             ? rawName
+        : rawName?.value !== undefined          ? String(rawName.value)
+        : "";
+      if (!name) return;
+
+      // Re-fetch pset by its own ID with attributes-only config.
+      // This makes the fragments engine inline HasProperties items directly.
+      let workingPset = psetObj;
+      const psetId = getExpressId(psetObj);
+      if (psetId !== null && typeof model.getItemsData === "function") {
+        try {
+          const res = model.getItemsData([psetId], { attributesDefault: true });
+          const fetched = Array.isArray(res?.then ? await res : res)
+            ? (res?.then ? await res : res)[0]
+            : (res?.then ? await res : res);
+          const hp = fetched?.HasProperties ?? fetched?.Properties ?? fetched?.Quantities;
+          if (fetched && Array.isArray(hp)) workingPset = fetched;
+        } catch { /* fall through to inline version */ }
       }
 
-      const relations = typeof (model as any).getItemRelations === "function"
-        ? (model as any).getItemRelations(localId)
-        : typeof model.getRelations === "function"
-          ? (model as any).getRelations([localId])
-          : null;
+      const rawProps = workingPset.HasProperties ?? workingPset.Properties ?? workingPset.Quantities;
+      if (!Array.isArray(rawProps) || rawProps.length === 0) return;
 
-      if (relations) {
-        const relIds = Object.values(relations).flatMap((ids: any) => Array.isArray(ids) ? ids : [ids]);
-        for (const relId of relIds) {
-          const relationData = await getItemData(model, relId);
-          if (!relationData) continue;
+      const propertyMap: Record<string, string> = {};
+      for (const pRef of rawProps) {
+        if (pRef === null || pRef === undefined) continue;
 
-          const relating = relationData.RelatingPropertyDefinition ?? relationData.RelatingPropertyDefinition?.value ?? relationData.RelatingPropertyDefinition;
-          if (relating) {
-            if (Array.isArray(relating)) {
-              for (const rel of relating) {
-                if (typeof rel === "object") {
-                  for (const set of parsePropertySetsFromData(rel)) collectSet(set);
-                } else if (Number.isFinite(rel)) {
-                  const psetData = await getItemData(model, rel);
-                  if (psetData) for (const set of parsePropertySetsFromData(psetData)) collectSet(set);
-                }
-              }
-            } else if (typeof relating === "object") {
-              for (const set of parsePropertySetsFromData(relating)) collectSet(set);
-            } else if (Number.isFinite(relating)) {
-              const psetData = await getItemData(model, relating);
-              if (psetData) for (const set of parsePropertySetsFromData(psetData)) collectSet(set);
-            }
+        let prop: any = null;
+        if (typeof pRef === "number") {
+          prop = await getItemData(model, pRef, false);
+        } else if (typeof pRef === "object" && typeof pRef.value === "number") {
+          prop = await getItemData(model, pRef.value, false);
+        } else if (typeof pRef === "object") {
+          prop = pRef;   // already inlined
+        }
+        if (!prop || typeof prop !== "object") continue;
+
+        const rawPropName = prop.Name;
+        const propName: string =
+          typeof rawPropName === "string"            ? rawPropName
+          : rawPropName?.value !== undefined         ? String(rawPropName.value)
+          : "Propiedad";
+        propertyMap[propName] = extractPropValue(prop);
+      }
+
+      if (Object.keys(propertyMap).length === 0) return;
+
+      // Keep whichever version has more properties
+      const existing = out.get(name);
+      if (!existing || Object.keys(propertyMap).length > Object.keys(existing.properties).length) {
+        out.set(name, { name, properties: propertyMap });
+      }
+    };
+
+    /**
+     * Returns all IfcPropertySets for a given element.
+     *
+     * Reads ONLY from IsDefinedBy to avoid picking up psets that belong
+     * to related structural elements (storeys, types, etc.), which is the
+     * cause of cross-category contamination (e.g. Pset_ColumnCommon on walls).
+     *
+     * ThatOpen's getItemsData flattens IfcRelDefinesByProperties into the
+     * IsDefinedBy array, so each entry may be either:
+     *   A) A pset object directly (Name + HasProperties) — ThatOpen flattened it
+     *   B) A relation object with RelatingPropertyDefinition → follow to pset
+     */
+
+    /**
+     * Extracts Psets from the IfcElementType linked via IsTypedBy.
+     * IFC type objects (IfcWallType, IfcDoorType…) carry default property sets
+     * in their own IsDefinedBy / HasPropertySets. This function walks:
+     *   itemData.IsTypedBy → IfcRelDefinesByType → RelatingType → IsDefinedBy / HasPropertySets
+     */
+    const getTypePsets = async (
+      model: any,
+      itemData: any,
+    ): Promise<{ name: string; properties: Record<string, string> }[]> => {
+      const out = new Map<string, { name: string; properties: Record<string, string> }>();
+      const isTypedBy = itemData.IsTypedBy;
+      if (!Array.isArray(isTypedBy) || isTypedBy.length === 0) return [];
+
+      for (const relRef of isTypedBy) {
+        if (relRef === null || relRef === undefined) continue;
+
+        // Resolve IfcRelDefinesByType reference
+        let relObj: any;
+        if (typeof relRef === "number") {
+          relObj = await getItemData(model, relRef, false);
+        } else if (typeof relRef === "object" && typeof relRef.value === "number") {
+          relObj = await getItemData(model, relRef.value, false);
+        } else {
+          relObj = relRef;
+        }
+        if (!relObj || typeof relObj !== "object") continue;
+
+        // Get RelatingType (the IfcElementType object)
+        const relatingTypeRef = relObj.RelatingType;
+        if (!relatingTypeRef) continue;
+
+        let typeObj: any;
+        if (typeof relatingTypeRef === "number") {
+          typeObj = await getItemData(model, relatingTypeRef, true);
+        } else if (typeof relatingTypeRef === "object" && typeof relatingTypeRef.value === "number") {
+          typeObj = await getItemData(model, relatingTypeRef.value, true);
+        } else {
+          typeObj = relatingTypeRef;
+        }
+        if (!typeObj || typeof typeObj !== "object") continue;
+
+        // Walk IsDefinedBy and HasPropertySets of the type object
+        const typePsetSources = [
+          ...(Array.isArray(typeObj.IsDefinedBy)     ? typeObj.IsDefinedBy     : []),
+          ...(Array.isArray(typeObj.HasPropertySets) ? typeObj.HasPropertySets : []),
+        ];
+
+        for (const entry of typePsetSources) {
+          if (entry === null || entry === undefined) continue;
+
+          let obj: any;
+          if (typeof entry === "number") {
+            obj = await getItemData(model, entry, false);
+          } else if (typeof entry === "object" && typeof entry.value === "number") {
+            obj = await getItemData(model, entry.value, false);
+          } else {
+            obj = entry;
+          }
+          if (!obj || typeof obj !== "object") continue;
+
+          // Case A: direct pset (Name + HasProperties)
+          const hasProps = obj.HasProperties ?? obj.Properties ?? obj.Quantities;
+          if (obj.Name && Array.isArray(hasProps)) {
+            await processPset(obj, model, out);
+            continue;
           }
 
-          for (const set of parsePropertySetsFromData(relationData)) collectSet(set);
+          // Case B: relation → follow RelatingPropertyDefinition
+          const relPropDef = obj.RelatingPropertyDefinition;
+          if (!relPropDef) continue;
+          const defs = Array.isArray(relPropDef) ? relPropDef : [relPropDef];
+          for (const defRef of defs) {
+            let psetObj: any = null;
+            if (typeof defRef === "number") {
+              psetObj = await getItemData(model, defRef, false);
+            } else if (typeof defRef === "object" && typeof defRef.value === "number") {
+              psetObj = await getItemData(model, defRef.value, false);
+            } else if (typeof defRef === "object") {
+              psetObj = defRef;
+            }
+            if (psetObj) await processPset(psetObj, model, out);
+          }
         }
       }
 
-      return Array.from(setsByName.values());
+      return Array.from(out.values());
+    };
+
+    const getPropertySets = async (
+      modelId: string,
+      localId: number,
+    ): Promise<{ name: string; properties: Record<string, string> }[]> => {
+      const model = fragments.list.get(modelId);
+      if (!model) return [];
+
+      const out = new Map<string, { name: string; properties: Record<string, string> }>();
+
+      const itemData = await getItemData(model, localId);
+      if (!itemData) return [];
+
+      const isDefinedBy = itemData.IsDefinedBy;
+      if (Array.isArray(isDefinedBy)) {
+        for (const entry of isDefinedBy) {
+          if (entry === null || entry === undefined) continue;
+
+          // Resolve reference if needed
+          let obj: any;
+          if (typeof entry === "number") {
+            obj = await getItemData(model, entry, false);
+          } else if (typeof entry === "object" && typeof entry.value === "number") {
+            obj = await getItemData(model, entry.value, false);
+          } else {
+            obj = entry;
+          }
+          if (!obj || typeof obj !== "object") continue;
+
+          // Case A: ThatOpen flattened the relation → obj IS the pset
+          const hasProps = obj.HasProperties ?? obj.Properties ?? obj.Quantities;
+          if (obj.Name && Array.isArray(hasProps)) {
+            await processPset(obj, model, out);
+            continue;
+          }
+
+          // Case B: obj is an IfcRelDefinesByProperties → follow RelatingPropertyDefinition
+          const relPropDef = obj.RelatingPropertyDefinition;
+          if (!relPropDef) continue;
+          const defs = Array.isArray(relPropDef) ? relPropDef : [relPropDef];
+          for (const defRef of defs) {
+            let psetObj: any = null;
+            if (typeof defRef === "number") {
+              psetObj = await getItemData(model, defRef, false);
+            } else if (typeof defRef === "object" && typeof defRef.value === "number") {
+              psetObj = await getItemData(model, defRef.value, false);
+            } else if (typeof defRef === "object") {
+              psetObj = defRef;
+            }
+            if (psetObj) await processPset(psetObj, model, out);
+          }
+        }
+      }
+
+      // Merge Psets from the linked IfcElementType (IsTypedBy → RelatingType)
+      // Instance values take precedence: if the same Pset name exists in both,
+      // we keep instance properties and only fill missing ones from the type.
+      const typePsets = await getTypePsets(model, itemData);
+      for (const tPset of typePsets) {
+        const existing = out.get(tPset.name);
+        if (existing) {
+          // Merge: type props as base, instance props override
+          out.set(tPset.name, {
+            name: tPset.name,
+            properties: { ...tPset.properties, ...existing.properties },
+          });
+        } else {
+          out.set(tPset.name, tPset);
+        }
+      }
+
+      return Array.from(out.values());
     };
 
     const activateTab = (key: string) => {
@@ -1313,6 +1956,20 @@ if (container) {
       // Siempre volver a General al cambiar selección
       activeSelTab = "general";
 
+      // ── Debug: expose raw item data for console inspection ─────────────
+      const _dbgEntry = Object.entries(modelIdMap)[0];
+      if (_dbgEntry) {
+        const [_dbgModelId, _dbgIds] = _dbgEntry;
+        const _dbgLocalId = [..._dbgIds][0];
+        const _dbgModel = fragments.list.get(_dbgModelId);
+        if (_dbgModel && _dbgLocalId !== undefined) {
+          getItemData(_dbgModel, _dbgLocalId).then(raw => {
+            (window as any)._debugSelection = { modelId: _dbgModelId, localId: _dbgLocalId, raw };
+            console.log("[DEBUG] window._debugSelection =", (window as any)._debugSelection);
+          });
+        }
+      }
+
       lastModelIdMap = modelIdMap;
       updateItemsData({ modelIdMap, emptySelectionWarning: false });
       await renderSelectionTabs(modelIdMap);  // activa "general" al final
@@ -1337,6 +1994,7 @@ if (container) {
       const modelId = row.data.modelId as string;
       const localId = row.data.localId as number;
       if (!modelId || localId === undefined) return;
+      selectTypesRow(null);   // clear Types-tree row highlight on spatial tree click
       applySelection({ [modelId]: new Set([localId]) }).catch(console.error);
       console.log(`✅ Selection: ${row.data.Name} | localId=${localId}`);
     });
@@ -1344,6 +2002,7 @@ if (container) {
     // ── 3D click via Highlighter ───────────────────────────────────────────
     highlighter.events["select"].onHighlight.add((modelIdMap) => {
       if (!Object.keys(modelIdMap).length) return;
+      selectTypesRow(null);   // clear Types-tree row highlight on external selection
       applySelection(modelIdMap).catch(console.error);
     });
 
@@ -1365,8 +2024,13 @@ if (container) {
               tooltip-text="Ajustar vista al modelo"
               icon="material-symbols:fit-screen"
               @click=${async () => {
-                const meshes = world.scene.three.children.filter((c): c is THREE.Mesh => c instanceof THREE.Mesh);
-                await world.camera.fit(meshes);
+                const meshes: THREE.Mesh[] = [];
+                for (const model of fragments.list.values()) {
+                  model.object?.traverse((obj) => {
+                    if (obj instanceof THREE.Mesh) meshes.push(obj);
+                  });
+                }
+                if (meshes.length > 0) await world.camera.fit(meshes);
               }}>
             </bim-button>
           </bim-toolbar-section>
@@ -1398,10 +2062,43 @@ if (container) {
           </bim-toolbar-section>
 
           <bim-toolbar-section label="Visibilidad">
+            <bim-button tooltip-title="Aislar selección"
+              tooltip-text="Oculta todo excepto los elementos seleccionados"
+              icon="material-symbols:filter-center-focus"
+              @click=${async () => {
+                if (isIsolated) {
+                  // Restaurar visibilidad de todos los elementos
+                  for (const [, model] of fragments.list) {
+                    await model.setVisible(undefined, true);
+                  }
+                  isIsolated = false;
+                } else {
+                  const selectedKeys = Object.keys(lastModelIdMap);
+                  if (!selectedKeys.length) return;
+                  // Ocultar todos los elementos de todos los modelos
+                  for (const [modelUuid, model] of fragments.list) {
+                    const selectedIds = lastModelIdMap[modelUuid];
+                    if (selectedIds && selectedIds.size > 0) {
+                      // En este modelo hay seleccionados: ocultar todos, luego mostrar solo los seleccionados
+                      await model.setVisible(undefined, false);
+                      await model.setVisible(Array.from(selectedIds), true);
+                    } else {
+                      // Modelo sin seleccionados: ocultar todo
+                      await model.setVisible(undefined, false);
+                    }
+                  }
+                  isIsolated = true;
+                }
+                fragments.core.update(true);
+              }}>
+            </bim-button>
             <bim-button tooltip-title="Mostrar todo"
               icon="material-symbols:visibility"
-              @click=${() => {
-                for (const [, model] of fragments.list) model.object.visible = true;
+              @click=${async () => {
+                for (const [, model] of fragments.list) {
+                  await model.setVisible(undefined, true);
+                }
+                isIsolated = false;
                 fragments.core.update(true);
               }}>
             </bim-button>
@@ -1489,14 +2186,55 @@ if (container) {
           row.style.backgroundColor = `color-mix(in lab, var(--bim-ui_bg-contrast-20) 30%, var(--bim-ui_main-base) 10%)`;
         });
         row.addEventListener("mouseout", () => { row.style.removeProperty("background-color"); });
-        row.addEventListener("click", () => {
+        row.addEventListener("click", (e: MouseEvent) => {
+          // Ignorar clicks en botones internos de la fila (borrar)
+          if ((e.target as HTMLElement).closest("bim-button, button")) return;
           const { Guid } = row.data;
           if (!Guid) return;
           const topic = topics.list.get(Guid);
           if (!topic) return;
           showTopicPanel(topic);
+
+          // Navegar automáticamente al primer viewpoint del topic
+          const firstVpGuid = [...topic.viewpoints][0];
+          if (firstVpGuid) {
+            const vp = viewpoints.list.get(firstVpGuid);
+            if (vp) {
+              if (!vp.world) vp.world = world;  // asegurar world antes de navegar
+              vp.go({ transition: true }).catch(console.error);
+              console.log("📷 Navegando al viewpoint:", firstVpGuid);
+            }
+          }
           console.log("✅ Topic seleccionado:", topic.title);
         });
+
+        // Botón borrar inline en cada fila
+        const deleteBtn = document.createElement("bim-button") as any;
+        deleteBtn.icon    = "material-symbols:delete-outline";
+        deleteBtn.label   = "";
+        deleteBtn.title   = "Eliminar topic";
+        Object.assign(deleteBtn.style, {
+          position: "absolute", right: "4px", top: "50%",
+          transform: "translateY(-50%)", zIndex: "10",
+          opacity: "0", transition: "opacity 0.15s",
+          "--bim-button--bgc": "transparent",
+          "--bim-button--c": "var(--bim-ui_bg-contrast-60)",
+        });
+        deleteBtn.addEventListener("click", (e: Event) => {
+          e.stopPropagation();
+          const { Guid } = row.data;
+          if (!Guid) return;
+          const topic = topics.list.get(Guid);
+          if (!topic) return;
+          if (!confirm(`¿Eliminar topic "${topic.title}"?`)) return;
+          topics.list.delete(topic.guid);
+          if (currentTopicPanel) { currentTopicPanel.remove(); currentTopicPanel = null; }
+          console.log("✅ Topic eliminado:", topic.title);
+        });
+        row.style.position = "relative";
+        row.addEventListener("mouseover", () => { deleteBtn.style.opacity = "1"; });
+        row.addEventListener("mouseout",  () => { deleteBtn.style.opacity = "0"; });
+        row.append(deleteBtn);
       }
     );
 
@@ -1561,6 +2299,10 @@ if (container) {
           if (!file) return;
           console.log("📂 Importando BCF:", file.name);
           await topics.load(new Uint8Array(await file.arrayBuffer()));
+          // Asignar world a todos los viewpoints importados que no lo tengan
+          for (const vp of viewpoints.list.values()) {
+            if (!vp.world) vp.world = world;
+          }
           console.log("✅ BCF importado correctamente");
         };
         input.click();
