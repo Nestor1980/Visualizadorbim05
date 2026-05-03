@@ -1854,6 +1854,96 @@ if (container) {
       return Array.from(out.values());
     };
 
+    /**
+     * Extrae los 9 campos específicos solicitados para la pestaña General.
+     */
+    const getTypeName = async (model: any, itemData: any): Promise<string> => {
+      const typeRefs = itemData?.IsTypedBy;
+      if (!Array.isArray(typeRefs)) return "Sin nombre";
+
+      for (const typeRef of typeRefs) {
+        let relObj: any = null;
+        if (typeof typeRef === "number") {
+          relObj = await getItemData(model, typeRef, false);
+        } else if (typeof typeRef === "object" && typeof typeRef.value === "number") {
+          relObj = await getItemData(model, typeRef.value, false);
+        } else {
+          relObj = typeRef;
+        }
+        if (!relObj || typeof relObj !== "object") continue;
+
+        const relatingType = relObj.RelatingType || relObj.RelatingObject || relObj?.TypeObject;
+        let typeObj: any = null;
+        if (typeof relatingType === "number") {
+          typeObj = await getItemData(model, relatingType, true);
+        } else if (typeof relatingType === "object" && typeof relatingType.value === "number") {
+          typeObj = await getItemData(model, relatingType.value, true);
+        } else {
+          typeObj = relatingType;
+        }
+        if (!typeObj || typeof typeObj !== "object") continue;
+
+        const typeName = typeof typeObj.Name === "string"
+          ? typeObj.Name
+          : typeObj.Name?.value !== undefined ? String(typeObj.Name.value)
+          : null;
+        if (typeName) return typeName;
+      }
+      return "Sin nombre";
+    };
+
+    const extractGeneralInfo = async (
+      model: any,
+      itemData: any,
+      allPsets: { name: string; properties: Record<string, string> }[]
+    ): Promise<Record<string, string>> => {
+      const info: Record<string, string> = {};
+      const typeName = await getTypeName(model, itemData);
+      info["Nombre"] = typeName || "Sin nombre";
+      const allProps: Record<string, string> = {};
+      for (const pset of allPsets) {
+        Object.assign(allProps, pset.properties);
+      }
+      const especificaciones = allPsets.find((pset) => pset.name === "Especificaciones");
+      info["Item del Pliego"] = especificaciones?.properties["IAPV_Item"] || "—";
+      info["Link a Planilla"] = allProps["Link a Planilla"] || allProps["URL"] || allProps["Link"] || "—";
+      info["Item del Cómputo"] = allProps["Item del Cómputo"] || allProps["Cómputo"] || "—";
+      info["Norma Aplicable"] = allProps["Norma Aplicable"] || allProps["Norma"] || allProps["IAPV_Norma"] || "—";
+      info["Material Principal"] = allProps["Material Principal"] || allProps["Material"] || allProps["IAPV_Material"] || "—";
+      info["Terminación"] = allProps["Terminación"] || allProps["Acabado"] || allProps["IAPV_Terminacion"] || "—";
+      let area = "—";
+      let volume = "—";
+      for (const pset of allPsets) {
+        if (pset.name.startsWith("Qto_")) {
+          if (!area || area === "—") {
+            area = pset.properties["GrossArea"] || pset.properties["NetArea"] || pset.properties["Area"] || "—";
+          }
+          if (!volume || volume === "—") {
+            volume = pset.properties["GrossVolume"] || pset.properties["NetVolume"] || pset.properties["Volume"] || "—";
+          }
+        }
+      }
+      info["Área"] = area;
+      info["Volumen"] = volume;
+      return info;
+    };
+
+    /**
+     * Renderiza la tabla del panel General con los 9 campos personalizados.
+     */
+    const renderGeneralInfoTable = (info: Record<string, string>) => {
+      const rows = Object.entries(info).map(([label, value]) => {
+        const isEmpty = value === "—" || value === "";
+        const isLink = label === "Link a Planilla" && value !== "—" && value.match(/^https?:|\.pdf$|\.xlsx?$/i);
+        let displayValue = value;
+        if (isLink && value.match(/^https?:/)) {
+          displayValue = `<a href="${value}" target="_blank" style="color:#6528d7;text-decoration:underline;cursor:pointer;">${value}</a>`;
+        }
+        return `<tr><td style="padding:6px 10px;font-size:10.5px;font-weight:600;color:var(--bim-ui_bg-contrast-60);width:40%;border-bottom:1px solid var(--bim-ui_bg-contrast-20);vertical-align:top;word-break:break-word;">${label}</td><td style="padding:6px 10px;font-size:11px;color:${isEmpty ? "var(--bim-ui_bg-contrast-40)" : "var(--bim-ui_bg-contrast-100)"};border-bottom:1px solid var(--bim-ui_bg-contrast-20);word-break:break-word;line-height:1.45;">${displayValue}</td></tr>`;
+      }).join("");
+      return `<table style="width:100%;border-collapse:collapse;margin:8px 0;"><tbody>${rows}</tbody></table>`;
+    };
+
     const activateTab = (key: string) => {
       activeSelTab = key;
 
@@ -1898,19 +1988,24 @@ if (container) {
       const genBtn = makeTabBtn("General", "general");
       tabBar.append(genBtn);
       tabButtons.set("general", genBtn);
-      generalPanel.style.display = "";       // visible mientras carga el resto
-      generalPanel.scrollTop = 0;
-      tabContent.append(generalPanel);
-      tabPanels.set("general", generalPanel);
-      activateTab("general");                // mostrar General inmediatamente
+      const tempPanel = createPanel();
+      tempPanel.innerHTML = `<div style="color:var(--bim-ui_bg-contrast-40);font-size:11px;padding:10px 8px;">Cargando información...</div>`;
+      tempPanel.style.display = "";
+      tempPanel.scrollTop = 0;
+      tabContent.append(tempPanel);
+      tabPanels.set("general", tempPanel);
+      activateTab("general");
 
       if (!modelId || localId === undefined) return;
 
-      // ── Cargar psets de forma asíncrona ─────────────────────────────────
+      const model = fragments.list.get(modelId);
+      const itemData = await getItemData(model, localId);
       const propertySets = await getPropertySets(modelId, localId);
 
-      // Si llegó otra selección mientras esperábamos, descartar este render
       if (myGen !== renderGeneration) return;
+
+      const generalInfo = await extractGeneralInfo(model, itemData, propertySets);
+      tempPanel.innerHTML = renderGeneralInfoTable(generalInfo);
 
       if (propertySets.length > 0) {
         propertySets.forEach((set, index) => {
@@ -1919,7 +2014,6 @@ if (container) {
           panel.innerHTML = renderPropertiesTable(set.properties);
           tabContent.append(panel);
           tabPanels.set(key, panel);
-
           const btn = makeTabBtn(set.name, key);
           tabBar.append(btn);
           tabButtons.set(key, btn);
@@ -1934,13 +2028,10 @@ if (container) {
         tabButtons.set("no-psets", btn);
       }
 
-      // Mantener "general" como tab activa (ya está activada arriba)
-      // Asegurar que el panel general siga visible y los pset ocultos
       tabPanels.forEach((panel, panelKey) => {
         panel.style.display = panelKey === "general" ? "" : "none";
       });
 
-      // Recalcular flechas de navegación tras agregar todas las tabs
       requestAnimationFrame(updateNavBtns);
     };
 
@@ -2006,6 +2097,352 @@ if (container) {
       applySelection(modelIdMap).catch(console.error);
     });
 
+
+    // ===============================
+    // Discord Integration – multi-canal
+    // ===============================
+
+    // Estructura: { name, url, isForumChannel }
+    // Se persiste en localStorage como JSON array.
+    interface DiscordChannel { name: string; url: string; isForumChannel: boolean; }
+    const DISCORD_STORAGE_KEY = "discord_channels_v2";
+
+    const loadChannels = (): DiscordChannel[] => {
+      try { return JSON.parse(localStorage.getItem(DISCORD_STORAGE_KEY) ?? "[]"); }
+      catch { return []; }
+    };
+    const saveChannels = (ch: DiscordChannel[]) =>
+      localStorage.setItem(DISCORD_STORAGE_KEY, JSON.stringify(ch));
+
+    let discordChannels: DiscordChannel[] = loadChannels();
+
+    const captureScreenshot = (): Promise<Blob> => {
+      return new Promise((resolve, reject) => {
+        const renderer = (world.renderer as OBF.PostproductionRenderer).three;
+        renderer.render(world.scene.three, world.camera.three);
+        renderer.domElement.toBlob((blob) => {
+          if (blob) resolve(blob);
+          else reject(new Error("No se pudo capturar la pantalla"));
+        }, "image/png");
+      });
+    };
+
+    // ── Estilos compartidos ────────────────────────────────────────────────
+    const labelStyle = "font-size:11px;font-weight:600;color:var(--bim-ui_bg-contrast-60, #aaa);margin-bottom:2px;";
+    const inputStyle = [
+      "width:100%","padding:8px 10px","border-radius:6px","font-size:12px",
+      "background:var(--bim-ui_bg-contrast-10, #2a2a2a)",
+      "color:var(--bim-ui_bg-contrast-100, #fff)",
+      "border:1px solid var(--bim-ui_bg-contrast-20, #444)",
+      "outline:none","box-sizing:border-box","font-family:inherit",
+    ].join(";");
+    const btnSecStyle = [
+      "padding:7px 14px","border-radius:6px","border:none","cursor:pointer","font-size:12px",
+      "background:var(--bim-ui_bg-contrast-10, #333)",
+      "color:var(--bim-ui_bg-contrast-80, #ccc)","font-family:inherit",
+    ].join(";");
+    const btnPrimaryStyle = [
+      "padding:7px 16px","border-radius:6px","border:none","cursor:pointer",
+      "font-size:12px","font-weight:700","background:#5865F2","color:#fff","font-family:inherit",
+    ].join(";");
+    const discordSvg = `<svg width="18" height="18" viewBox="0 0 24 24" fill="#5865F2" style="flex-shrink:0">
+      <path d="M20.317 4.492c-1.53-.69-3.17-1.2-4.885-1.49a.075.075 0 0 0-.079.036c-.21.369-.444.85-.608 1.23a18.566 18.566 0 0 0-5.487 0 12.36 12.36 0 0 0-.617-1.23A.077.077 0 0 0 8.562 3c-1.714.29-3.354.8-4.885 1.491a.07.07 0 0 0-.032.027C.533 9.093-.32 13.555.099 17.961a.08.08 0 0 0 .031.055 20.03 20.03 0 0 0 5.993 2.98.078.078 0 0 0 .084-.026c.462-.62.874-1.275 1.226-1.963.021-.04.001-.088-.041-.104a13.201 13.201 0 0 1-1.872-.878.075.075 0 0 1-.008-.125c.126-.093.252-.19.372-.287a.075.075 0 0 1 .078-.01c3.927 1.764 8.18 1.764 12.061 0a.075.075 0 0 1 .079.009c.12.098.245.195.372.288a.075.075 0 0 1-.006.125c-.598.344-1.22.635-1.873.877a.075.075 0 0 0-.041.105c.36.687.772 1.341 1.225 1.962a.077.077 0 0 0 .084.028 19.963 19.963 0 0 0 6.002-2.981.076.076 0 0 0 .032-.054c.5-5.094-.838-9.52-3.549-13.442a.06.06 0 0 0-.031-.028z"/>
+    </svg>`;
+
+    const makeLabel = (text: string) => {
+      const el = document.createElement("div");
+      el.style.cssText = labelStyle;
+      el.textContent = text;
+      return el;
+    };
+
+    // ── Panel base del modal ───────────────────────────────────────────────
+    const discordModal = document.createElement("dialog");
+    discordModal.style.cssText = [
+      "border:none","border-radius:12px","padding:0","background:transparent",
+      "box-shadow:0 8px 32px rgba(0,0,0,.6)","min-width:380px","max-width:520px","width:92vw",
+    ].join(";");
+    discordModal.addEventListener("click", (e) => { if (e.target === discordModal) discordModal.close(); });
+
+    const discordPanel = document.createElement("div");
+    discordPanel.style.cssText = [
+      "background:var(--bim-ui_bg-base, #1a1a1a)","border-radius:12px",
+      "padding:20px","display:flex","flex-direction:column","gap:0",
+      "font-family:inherit","color:var(--bim-ui_bg-contrast-100, #fff)",
+      "max-height:90vh","overflow:hidden",
+    ].join(";");
+    discordModal.append(discordPanel);
+    document.body.append(discordModal);
+
+    // ── VISTA: Enviar mensaje ──────────────────────────────────────────────
+    const sendView = document.createElement("div");
+    sendView.style.cssText = "display:flex;flex-direction:column;gap:12px;";
+
+    const sendTitle = document.createElement("div");
+    sendTitle.style.cssText = "display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;";
+    sendTitle.innerHTML = `<div style="display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px;">${discordSvg} Enviar a Discord</div>`;
+
+    const btnManageChannels = document.createElement("button");
+    btnManageChannels.title = "Gestionar canales";
+    btnManageChannels.style.cssText = [
+      "background:none","border:none","cursor:pointer","padding:4px","border-radius:4px",
+      "color:var(--bim-ui_bg-contrast-60, #aaa)","font-size:18px","line-height:1",
+    ].join(";");
+    btnManageChannels.innerHTML = "⚙";
+    sendTitle.append(btnManageChannels);
+
+    // Canal dropdown
+    const channelSelectLabel = makeLabel("Canal de Discord");
+    const channelSelect = document.createElement("select");
+    channelSelect.style.cssText = inputStyle;
+
+    const rebuildChannelDropdown = () => {
+      channelSelect.innerHTML = "";
+      if (discordChannels.length === 0) {
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.textContent = "— Sin canales configurados —";
+        opt.disabled = true;
+        opt.selected = true;
+        channelSelect.append(opt);
+      } else {
+        discordChannels.forEach((ch, i) => {
+          const opt = document.createElement("option");
+          opt.value = String(i);
+          opt.textContent = ch.name;
+          channelSelect.append(opt);
+        });
+      }
+    };
+
+    // Mensaje
+    const sendMsgLabel = makeLabel("Mensaje (opcional)");
+    const discordMessageInput = document.createElement("textarea");
+    discordMessageInput.placeholder = "Describe el problema, observación o nota...";
+    discordMessageInput.rows = 3;
+    discordMessageInput.style.cssText = inputStyle + ";resize:vertical;";
+
+    // Checkbox captura
+    const sendCheckLabel = document.createElement("label");
+    sendCheckLabel.style.cssText = "display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;";
+    const screenshotCheckbox = document.createElement("input");
+    screenshotCheckbox.type = "checkbox";
+    screenshotCheckbox.checked = true;
+    screenshotCheckbox.style.accentColor = "#5865F2";
+    sendCheckLabel.append(screenshotCheckbox, document.createTextNode("Incluir captura de pantalla"));
+
+    const discordStatusLabel = document.createElement("div");
+    discordStatusLabel.style.cssText = "font-size:11px;min-height:16px;color:var(--bim-ui_bg-contrast-60, #aaa);text-align:center;";
+
+    const sendBtnRow = document.createElement("div");
+    sendBtnRow.style.cssText = "display:flex;gap:8px;justify-content:flex-end;";
+
+    const btnCancelSend = document.createElement("button");
+    btnCancelSend.textContent = "Cancelar";
+    btnCancelSend.style.cssText = btnSecStyle;
+    btnCancelSend.addEventListener("click", () => discordModal.close());
+
+    const btnSendDiscord = document.createElement("button");
+    btnSendDiscord.textContent = "Enviar";
+    btnSendDiscord.style.cssText = btnPrimaryStyle;
+
+    const sendToDiscord = async () => {
+      const idx = parseInt(channelSelect.value, 10);
+      if (isNaN(idx) || !discordChannels[idx]) {
+        discordStatusLabel.style.color = "#ff6b6b";
+        discordStatusLabel.textContent = "⚠️ Selecciona un canal. Configúralos con ⚙";
+        return;
+      }
+      const channel = discordChannels[idx];
+      const msg = discordMessageInput.value.trim();
+
+      btnSendDiscord.disabled = true;
+      discordStatusLabel.style.color = "var(--bim-ui_bg-contrast-60, #aaa)";
+
+      try {
+        const formData = new FormData();
+        const content = msg || "📐 Captura del Visualizador BIM";
+        const payloadJson: Record<string, any> = { content };
+        // Forum channels require thread_name; generate one automatically with timestamp
+        if (channel.isForumChannel) {
+          const ts = new Date().toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" });
+          payloadJson.thread_name = msg ? msg.slice(0, 80) : `Reporte BIM – ${ts}`;
+        }
+        formData.append("payload_json", JSON.stringify(payloadJson));
+
+        if (screenshotCheckbox.checked) {
+          discordStatusLabel.textContent = "📸 Capturando pantalla...";
+          const blob = await captureScreenshot();
+          formData.append("files[0]", blob, "captura-bim.png");
+        }
+
+        discordStatusLabel.textContent = "📤 Enviando...";
+        const response = await fetch(channel.url, { method: "POST", body: formData });
+
+        if (response.ok) {
+          discordStatusLabel.style.color = "#43b581";
+          discordStatusLabel.textContent = `✅ Enviado a #${channel.name}`;
+          setTimeout(() => discordModal.close(), 1800);
+        } else {
+          const errText = await response.text();
+          discordStatusLabel.style.color = "#ff6b6b";
+          discordStatusLabel.textContent = `❌ Error ${response.status}: ${errText.slice(0, 100)}`;
+        }
+      } catch (e: any) {
+        discordStatusLabel.style.color = "#ff6b6b";
+        discordStatusLabel.textContent = `❌ ${e.message}`;
+      } finally {
+        btnSendDiscord.disabled = false;
+      }
+    };
+
+    btnSendDiscord.addEventListener("click", sendToDiscord);
+    sendBtnRow.append(btnCancelSend, btnSendDiscord);
+    sendView.append(
+      sendTitle, channelSelectLabel, channelSelect,
+      sendMsgLabel, discordMessageInput,
+      sendCheckLabel, discordStatusLabel, sendBtnRow,
+    );
+
+    // ── VISTA: Gestionar canales ───────────────────────────────────────────
+    const manageView = document.createElement("div");
+    manageView.style.cssText = "display:none;flex-direction:column;gap:12px;";
+
+    const manageTitle = document.createElement("div");
+    manageTitle.style.cssText = "display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;";
+    manageTitle.innerHTML = `<div style="display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px;">${discordSvg} Gestionar canales</div>`;
+
+    const btnBackToSend = document.createElement("button");
+    btnBackToSend.textContent = "← Volver";
+    btnBackToSend.style.cssText = btnSecStyle + ";font-size:11px;padding:4px 10px;";
+
+    const channelListEl = document.createElement("div");
+    channelListEl.style.cssText = "display:flex;flex-direction:column;gap:6px;max-height:220px;overflow-y:auto;";
+
+    // ── Formulario agregar canal ───────────────────────────────────────────
+    const addSep = document.createElement("div");
+    addSep.style.cssText = "border-top:1px solid var(--bim-ui_bg-contrast-20,#333);margin:4px 0;";
+
+    const addTitle = document.createElement("div");
+    addTitle.style.cssText = labelStyle + "font-size:12px;font-weight:700;margin-bottom:4px;";
+    addTitle.textContent = "Agregar canal";
+
+    const newChNameLabel = makeLabel("Nombre del canal");
+    const newChNameInput = document.createElement("input");
+    newChNameInput.type = "text";
+    newChNameInput.placeholder = "ej. IM Team, Coordinación...";
+    newChNameInput.style.cssText = inputStyle;
+
+    const newChUrlLabel = makeLabel("Webhook URL");
+    const newChUrlInput = document.createElement("input");
+    newChUrlInput.type = "text";
+    newChUrlInput.placeholder = "https://discord.com/api/webhooks/...";
+    newChUrlInput.style.cssText = inputStyle;
+
+    const newChForumLabel = document.createElement("label");
+    newChForumLabel.style.cssText = "display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;";
+    const newChForumCheck = document.createElement("input");
+    newChForumCheck.type = "checkbox";
+    newChForumCheck.style.accentColor = "#5865F2";
+    newChForumLabel.append(newChForumCheck, document.createTextNode("Canal de foro (genera hilo automáticamente)"));
+
+    const addStatusLabel = document.createElement("div");
+    addStatusLabel.style.cssText = "font-size:11px;min-height:14px;color:#ff6b6b;";
+
+    const addBtnRow = document.createElement("div");
+    addBtnRow.style.cssText = "display:flex;justify-content:flex-end;";
+    const btnAddChannel = document.createElement("button");
+    btnAddChannel.textContent = "Agregar canal";
+    btnAddChannel.style.cssText = btnPrimaryStyle;
+    addBtnRow.append(btnAddChannel);
+
+    const renderChannelList = () => {
+      channelListEl.innerHTML = "";
+      if (discordChannels.length === 0) {
+        channelListEl.innerHTML = `<div style="color:var(--bim-ui_bg-contrast-40,#666);font-size:12px;text-align:center;padding:12px 0;">
+          Sin canales. Agrega uno abajo.</div>`;
+        return;
+      }
+      discordChannels.forEach((ch, i) => {
+        const row = document.createElement("div");
+        row.style.cssText = [
+          "display:flex","align-items:center","gap:8px","padding:8px 10px",
+          "border-radius:6px","background:var(--bim-ui_bg-contrast-10,#2a2a2a)",
+          "border:1px solid var(--bim-ui_bg-contrast-20,#444)",
+        ].join(";");
+
+        const rowName = document.createElement("div");
+        rowName.style.cssText = "flex:1;font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+        rowName.textContent = ch.name;
+
+        const rowTag = document.createElement("div");
+        rowTag.style.cssText = "font-size:10px;padding:2px 6px;border-radius:10px;background:#5865F220;color:#5865F2;flex-shrink:0;";
+        rowTag.textContent = ch.isForumChannel ? "foro" : "texto";
+
+        const btnDel = document.createElement("button");
+        btnDel.innerHTML = "✕";
+        btnDel.title = "Eliminar canal";
+        btnDel.style.cssText = [
+          "background:none","border:none","cursor:pointer","color:#ff6b6b",
+          "font-size:14px","padding:0 2px","line-height:1","flex-shrink:0",
+        ].join(";");
+        btnDel.addEventListener("click", () => {
+          discordChannels.splice(i, 1);
+          saveChannels(discordChannels);
+          rebuildChannelDropdown();
+          renderChannelList();
+        });
+
+        row.append(rowName, rowTag, btnDel);
+        channelListEl.append(row);
+      });
+    };
+
+    btnAddChannel.addEventListener("click", () => {
+      const name = newChNameInput.value.trim();
+      const url  = newChUrlInput.value.trim();
+      if (!name) { addStatusLabel.textContent = "Escribe un nombre para el canal."; return; }
+      if (!url.startsWith("https://discord.com/api/webhooks/")) {
+        addStatusLabel.textContent = "URL de webhook inválida."; return;
+      }
+      addStatusLabel.textContent = "";
+      discordChannels.push({ name, url, isForumChannel: newChForumCheck.checked });
+      saveChannels(discordChannels);
+      rebuildChannelDropdown();
+      renderChannelList();
+      newChNameInput.value = "";
+      newChUrlInput.value  = "";
+      newChForumCheck.checked = false;
+    });
+
+    manageTitle.append(btnBackToSend);
+    manageView.append(
+      manageTitle, channelListEl,
+      addSep, addTitle,
+      newChNameLabel, newChNameInput,
+      newChUrlLabel, newChUrlInput,
+      newChForumLabel, addStatusLabel, addBtnRow,
+    );
+
+    // ── Navegación entre vistas ────────────────────────────────────────────
+    const showSendView = () => {
+      sendView.style.display = "flex";
+      manageView.style.display = "none";
+      discordStatusLabel.textContent = "";
+      discordStatusLabel.style.color = "var(--bim-ui_bg-contrast-60, #aaa)";
+    };
+    const showManageView = () => {
+      sendView.style.display = "none";
+      manageView.style.display = "flex";
+      renderChannelList();
+    };
+    btnManageChannels.addEventListener("click", showManageView);
+    btnBackToSend.addEventListener("click", showSendView);
+
+    discordPanel.append(sendView, manageView);
+
+    rebuildChannelDropdown();
+    console.log("✅ Discord Integration multi-canal creado");
 
     // ===============================
     // PASO 16 – Floating Toolbar
@@ -2108,6 +2545,18 @@ if (container) {
             <bim-button tooltip-title="Nuevo Topic"
               icon="material-symbols:task"
               @click=${() => topicsModal.showModal()}>
+            </bim-button>
+          </bim-toolbar-section>
+
+          <bim-toolbar-section label="Comunicación">
+            <bim-button tooltip-title="Enviar a Discord"
+              tooltip-text="Captura la vista actual y la envía a un canal de Discord"
+              icon="ic:baseline-discord"
+              @click=${() => {
+                discordMessageInput.value = "";
+                showSendView();
+                discordModal.showModal();
+              }}>
             </bim-button>
           </bim-toolbar-section>
 
