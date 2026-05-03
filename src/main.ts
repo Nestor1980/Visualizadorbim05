@@ -2,6 +2,7 @@
 // IMPORTACIONES
 // ===============================
 import * as THREE from "three";
+import { getTypeInfo } from "./ifcTypeProperties";
 import * as OBC from "@thatopen/components";
 import * as BUI from "@thatopen/ui";
 import * as FRAGS from "@thatopen/fragments";
@@ -2000,13 +2001,19 @@ if (container) {
 
       const model = fragments.list.get(modelId);
       const itemData = await getItemData(model, localId);
-      const propertySets = await getPropertySets(modelId, localId);
+
+      // Lanzar extracción de Psets e info de tipo en paralelo
+      const [propertySets, typeInfo] = await Promise.all([
+        getPropertySets(modelId, localId),
+        getTypeInfo(model, localId),
+      ]);
 
       if (myGen !== renderGeneration) return;
 
       const generalInfo = await extractGeneralInfo(model, itemData, propertySets);
       tempPanel.innerHTML = renderGeneralInfoTable(generalInfo);
 
+      // ── Pestañas de Property Sets de instancia ──────────────────────────
       if (propertySets.length > 0) {
         propertySets.forEach((set, index) => {
           const key = `pset-${index}-${set.name.replace(/\s+/g, "-")}`;
@@ -2026,6 +2033,59 @@ if (container) {
         const btn = makeTabBtn("Sin Psets", "no-psets");
         tabBar.append(btn);
         tabButtons.set("no-psets", btn);
+      }
+
+      // ── Pestaña Type Properties ─────────────────────────────────────────
+      if (typeInfo) {
+        const typePanel = createPanel();
+
+        // Cabecera con nombre y clase del tipo
+        const typeHeader = document.createElement("div");
+        typeHeader.style.cssText = [
+          "display:flex","align-items:center","gap:6px",
+          "padding:8px 10px 6px","border-bottom:1px solid var(--bim-ui_bg-contrast-20)",
+          "margin-bottom:4px",
+        ].join(";");
+        typeHeader.innerHTML = `
+          <span style="font-size:10px;padding:2px 7px;border-radius:10px;
+            background:rgba(101,40,215,0.18);color:#9b5dff;font-weight:700;flex-shrink:0;">
+            ${typeInfo.typeClass}
+          </span>
+          <span style="font-size:12px;font-weight:600;overflow:hidden;
+            text-overflow:ellipsis;white-space:nowrap;
+            color:var(--bim-ui_bg-contrast-100);">
+            ${typeInfo.typeName}
+          </span>`;
+        typePanel.append(typeHeader);
+
+        if (typeInfo.propertySets.length === 0) {
+          const noProps = document.createElement("div");
+          noProps.style.cssText = "color:var(--bim-ui_bg-contrast-40);font-size:11px;text-align:center;padding:16px 8px;";
+          noProps.textContent = "El tipo no tiene Property Sets propios.";
+          typePanel.append(noProps);
+        } else {
+          // Un bloque por cada Pset del tipo, con su nombre como separador
+          for (const pset of typeInfo.propertySets) {
+            const psetHeader = document.createElement("div");
+            psetHeader.style.cssText = [
+              "font-size:10px","font-weight:700","letter-spacing:0.5px",
+              "color:var(--bim-ui_bg-contrast-50)","text-transform:uppercase",
+              "padding:8px 10px 4px","margin-top:4px",
+            ].join(";");
+            psetHeader.textContent = pset.name;
+            typePanel.append(psetHeader);
+
+            const tableWrapper = document.createElement("div");
+            tableWrapper.innerHTML = renderPropertiesTable(pset.properties);
+            typePanel.append(tableWrapper);
+          }
+        }
+
+        tabContent.append(typePanel);
+        tabPanels.set("type-props", typePanel);
+        const typeBtn = makeTabBtn("Type Properties", "type-props");
+        tabBar.append(typeBtn);
+        tabButtons.set("type-props", typeBtn);
       }
 
       tabPanels.forEach((panel, panelKey) => {
