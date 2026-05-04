@@ -108,6 +108,117 @@ const SECTION_FILL_CATEGORIES: RegExp[] = [
 }
 
 // ===============================
+// BRANDING — Gobierno de Entre Ríos
+// Sobrescribe los tokens de color de @thatopen/ui para que toda
+// la interfaz adopte la paleta institucional sin tocar la lógica.
+// ===============================
+{
+  const erStyle = document.createElement("style");
+  erStyle.textContent = `
+    /* ── Tokens globales ThatOpen UI → paleta ER ── */
+    :root, bim-grid {
+      --bim-ui_bg-base:          #0e1828;
+      --bim-ui_bg-contrast-10:   rgba(0, 74, 143, 0.18);
+      --bim-ui_bg-contrast-20:   rgba(0, 74, 143, 0.30);
+      --bim-ui_bg-contrast-40:   rgba(180, 200, 220, 0.45);
+      --bim-ui_bg-contrast-60:   rgba(180, 210, 240, 0.70);
+      --bim-ui_bg-contrast-80:   rgba(210, 230, 250, 0.88);
+      --bim-ui_bg-contrast-100:  #e8f0f8;
+
+      --bim-ui_main-base:        #0f2540;
+      --bim-ui_main-contrast:    #e8f0f8;
+
+      --bim-ui_accent-base:      #004A8F;
+      --bim-ui_accent-contrast:  #ffffff;
+
+      font-family: 'Montserrat', 'Segoe UI', Arial, sans-serif !important;
+    }
+
+    /* ── Encabezado de cada panel: banda azul ER ── */
+    bim-panel::part(header),
+    bim-panel [slot="header"] {
+      background: linear-gradient(135deg, #003366 0%, #004A8F 100%) !important;
+      border-bottom: 2px solid #C9A84C !important;
+      color: #ffffff !important;
+      font-family: 'Montserrat', 'Segoe UI', Arial, sans-serif !important;
+      font-weight: 700 !important;
+      letter-spacing: 0.4px;
+    }
+
+    /* ── Secciones del panel: borde izquierdo azul ── */
+    bim-panel-section::part(header):hover {
+      background: rgba(0, 74, 143, 0.25) !important;
+    }
+
+    /* ── Botones primarios con color ER ── */
+    bim-button::part(button):hover {
+      background: rgba(0, 74, 143, 0.35) !important;
+    }
+
+    /* ── Barra de herramientas flotante ── */
+    bim-toolbar {
+      background: #0d1f38 !important;
+      border: 1px solid rgba(0, 74, 143, 0.5) !important;
+      border-top: 2px solid #C9A84C !important;
+    }
+    bim-toolbar-section::part(header) {
+      color: rgba(201, 168, 76, 0.85) !important;
+      font-family: 'Montserrat', 'Segoe UI', Arial, sans-serif !important;
+      font-size: 9px !important;
+      font-weight: 700 !important;
+      letter-spacing: 0.8px !important;
+      text-transform: uppercase;
+    }
+
+    /* ── Tabs de Selection Information ── */
+    .sel-tab-nav-btn {
+      background: rgba(0, 74, 143, 0.25) !important;
+      color: #a8c8e8 !important;
+    }
+    .sel-tab-nav-btn:hover {
+      background: rgba(0, 74, 143, 0.45) !important;
+    }
+
+    /* ── Botón de carga IFC: color ER ── */
+    bim-button[label="Cargar IFC"]::part(button) {
+      background: linear-gradient(135deg, #004A8F, #0070C0) !important;
+      color: #fff !important;
+      font-weight: 700 !important;
+    }
+
+    /* ── Línea dorada en el viewport ── */
+    bim-viewport {
+      border-top: 0 !important;
+    }
+
+    /* ── Tipografía general ── */
+    bim-panel, bim-panel-section, bim-toolbar-section,
+    bim-button, bim-label, bim-checkbox, bim-number-input,
+    bim-dropdown, bim-table, bim-color-input {
+      font-family: 'Montserrat', 'Segoe UI', Arial, sans-serif !important;
+    }
+
+    /* ── Pie de marca en panel izquierdo ── */
+    #er-panel-footer {
+      padding: 10px 12px;
+      border-top: 1px solid rgba(0, 74, 143, 0.3);
+      margin-top: auto;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      opacity: 0.65;
+    }
+    #er-panel-footer span {
+      font-size: 9px;
+      color: #7a9ab8;
+      line-height: 1.3;
+      font-family: 'Montserrat', 'Segoe UI', Arial, sans-serif;
+    }
+  `;
+  document.head.appendChild(erStyle);
+}
+
+// ===============================
 // BOOTSTRAP
 // ===============================
 
@@ -776,7 +887,7 @@ if (container) {
 
     const panel = BUI.Component.create<BUI.PanelSection>(() => {
       return BUI.html`
-        <bim-panel active label="Visualizador BIM" class="options-menu">
+        <bim-panel active label="Visualizador BIM · Entre Ríos" class="options-menu">
 
           <bim-panel-section label="Modelos IFC" icon="mage:box-3d-fill">
             ${loadIfcBtn}
@@ -874,6 +985,18 @@ if (container) {
               @change="${({ target }: { target: BUI.NumberInput }) => { sunLight.intensity = target.value; }}">
             </bim-number-input>
           </bim-panel-section>
+
+          <!-- ── Pie de marca institucional ── -->
+          <div id="er-panel-footer">
+            <svg width="22" height="27" viewBox="0 0 60 72" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M30 2 L58 14 L58 44 Q58 62 30 70 Q2 62 2 44 L2 14 Z" fill="#004A8F" stroke="#C9A84C" stroke-width="2"/>
+              <path d="M30 2 L2 14 L2 44 Q2 58 16 65 L30 36 Z" fill="#0070C0" opacity="0.85"/>
+              <path d="M30 2 L58 14 L58 44 Q58 58 44 65 L30 36 Z" fill="#ffffff" opacity="0.90"/>
+              <path d="M16 65 Q24 69 30 70 Q36 69 44 65 L30 36 Z" fill="#2E7D32" opacity="0.9"/>
+              <polygon points="30,22 32.5,29 39.5,29 34,33.5 36.5,40.5 30,36 23.5,40.5 26,33.5 20.5,29 27.5,29" fill="#C9A84C" opacity="0.95"/>
+            </svg>
+            <span>Gobierno de Entre Ríos<br/>Ministerio de Planeamiento · Demo BIM</span>
+          </div>
 
         </bim-panel>
       `;
@@ -1899,33 +2022,92 @@ if (container) {
       allPsets: { name: string; properties: Record<string, string> }[]
     ): Promise<Record<string, string>> => {
       const info: Record<string, string> = {};
-      const typeName = await getTypeName(model, itemData);
-      info["Nombre"] = typeName || "Sin nombre";
+
+      // Mapa plano de TODAS las propiedades de todos los psets disponibles.
+      // Los psets se combinan en orden, por lo que los últimos sobreescriben
+      // a los anteriores si hay claves repetidas (el nombre del pset no importa).
       const allProps: Record<string, string> = {};
       for (const pset of allPsets) {
         Object.assign(allProps, pset.properties);
       }
-      const especificaciones = allPsets.find((pset) => pset.name === "Especificaciones");
-      info["Item del Pliego"] = especificaciones?.properties["IAPV_Item"] || "—";
-      info["Link a Planilla"] = allProps["Link a Planilla"] || allProps["URL"] || allProps["Link"] || "—";
-      info["Item del Cómputo"] = allProps["Item del Cómputo"] || allProps["Cómputo"] || "—";
-      info["Norma Aplicable"] = allProps["Norma Aplicable"] || allProps["Norma"] || allProps["IAPV_Norma"] || "—";
-      info["Material Principal"] = allProps["Material Principal"] || allProps["Material"] || allProps["IAPV_Material"] || "—";
-      info["Terminación"] = allProps["Terminación"] || allProps["Acabado"] || allProps["IAPV_Terminacion"] || "—";
-      let area = "—";
+
+      // ── Nombre del tipo ────────────────────────────────────────────────
+      // Preferencia: nombre resuelto desde IsTypedBy → RelatingType.
+      // Fallback: campos de Revit frecuentes en los psets.
+      const typeName = await getTypeName(model, itemData);
+      info["Nombre"] =
+        (typeName && typeName !== "Sin nombre" ? typeName : "") ||
+        allProps["Family and Type"] ||
+        allProps["Type"] ||
+        allProps["Nombre"] ||
+        "Sin nombre";
+
+      // ── Item del Pliego ────────────────────────────────────────────────
+      // Buscar en cualquier pset, sin importar el nombre del pset.
+      info["Item del Pliego"] =
+        allProps["IAPV_Item"] ||
+        allProps["URL"] ||
+        allProps["IAPV_URL_Pliego"] ||
+        allProps["Item del Pliego"] ||
+        "—";
+
+      // ── Otros campos de uso habitual ───────────────────────────────────
+      info["Link a Planilla"] =
+        allProps["Link a Planilla"] ||
+        allProps["IAPV_Link"] ||
+        allProps["Link"] ||
+        "—";
+
+      info["Item del Cómputo"] =
+        allProps["Item del Cómputo"] ||
+        allProps["IAPV_Computo"] ||
+        allProps["Cómputo"] ||
+        "—";
+
+      info["Norma Aplicable"] =
+        allProps["Norma Aplicable"] ||
+        allProps["IAPV_Norma"] ||
+        allProps["Norma"] ||
+        "—";
+
+      info["Material Principal"] =
+        allProps["Material Principal"] ||
+        allProps["IAPV_Material"] ||
+        allProps["Material"] ||
+        "—";
+
+      info["Terminación"] =
+        allProps["Terminación"] ||
+        allProps["IAPV_Terminacion"] ||
+        allProps["Acabado"] ||
+        "—";
+
+      info["Local"] =
+        allProps["IAPV_Local"] ||
+        allProps["Local"] ||
+        "—";
+
+      info["Inspector"] =
+        allProps["IAPV_Inspector"] ||
+        allProps["Inspector"] ||
+        "—";
+
+      // ── Cantidades (buscar en Qto_* primero, luego en allProps) ────────
+      let area   = "—";
       let volume = "—";
       for (const pset of allPsets) {
         if (pset.name.startsWith("Qto_")) {
-          if (!area || area === "—") {
-            area = pset.properties["GrossArea"] || pset.properties["NetArea"] || pset.properties["Area"] || "—";
-          }
-          if (!volume || volume === "—") {
-            volume = pset.properties["GrossVolume"] || pset.properties["NetVolume"] || pset.properties["Volume"] || "—";
-          }
+          if (area   === "—") area   = pset.properties["GrossArea"]   || pset.properties["NetArea"]   || pset.properties["Area"]   || "—";
+          if (volume === "—") volume = pset.properties["GrossVolume"] || pset.properties["NetVolume"] || pset.properties["Volume"] || "—";
         }
       }
-      info["Área"] = area;
+      // Fallback a allProps si Qto_ no tenía nada
+      if (area   === "—") area   = allProps["GrossArea"]   || allProps["NetArea"]   || allProps["Area"]   || "—";
+      if (volume === "—") volume = allProps["GrossVolume"] || allProps["NetVolume"] || allProps["Volume"] || "—";
+
+      info["Área"]    = area;
       info["Volumen"] = volume;
+
       return info;
     };
 

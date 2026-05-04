@@ -3,8 +3,38 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Visualizador BIM IFC</title>
+  <title>Visualizador BIM — Gobierno de Entre Ríos</title>
+
+  <!-- Tipografía institucional: Montserrat (similar a la usada por el Gobierno ER) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
   <style>
+    /* ═══════════════════════════════════════════════════════════════════════
+       VARIABLES DE BRANDING — Gobierno de Entre Ríos
+       Paleta basada en la identidad visual institucional:
+         · Azul ER principal  #004A8F
+         · Azul ER oscuro     #003366
+         · Azul ER acento     #0070C0
+         · Oro institucional  #C9A84C  (escudo)
+         · Fondo claro        #F0F4F9
+    ═══════════════════════════════════════════════════════════════════════ */
+    :root {
+      --er-blue:       #004A8F;
+      --er-blue-dark:  #003366;
+      --er-blue-light: #0070C0;
+      --er-gold:       #C9A84C;
+      --er-surface:    #EEF2F7;
+      --er-text:       #1A2A3A;
+      --er-text-muted: #5A6A7A;
+
+      /* Sobrescribir token de acento de ThatOpen UI */
+      --bim-ui_accent-base: var(--er-blue);
+
+      font-family: 'Montserrat', 'Segoe UI', Arial, sans-serif;
+    }
+
     * {
       margin: 0;
       padding: 0;
@@ -15,27 +45,96 @@
       width: 100%;
       height: 100%;
       overflow: hidden;
-      background: #181818;
+      background: #181c24;
+      font-family: 'Montserrat', 'Segoe UI', Arial, sans-serif;
     }
 
+    /* ── Barra institucional superior ───────────────────────────────────── */
+    #er-topbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 38px;
+      background: var(--er-blue-dark);
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      gap: 12px;
+      z-index: 200;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+      border-bottom: 2px solid var(--er-gold);
+    }
+
+    /* Escudo SVG inline */
+    #er-topbar .er-escudo {
+      height: 26px;
+      width: auto;
+      flex-shrink: 0;
+    }
+
+    #er-topbar .er-divider {
+      width: 1px;
+      height: 20px;
+      background: rgba(255,255,255,0.25);
+      flex-shrink: 0;
+    }
+
+    #er-topbar .er-brand {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.1;
+    }
+
+    #er-topbar .er-brand-main {
+      font-size: 12px;
+      font-weight: 700;
+      color: #ffffff;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+
+    #er-topbar .er-brand-sub {
+      font-size: 10px;
+      font-weight: 400;
+      color: rgba(255,255,255,0.70);
+      letter-spacing: 0.3px;
+    }
+
+    #er-topbar .er-spacer { flex: 1; }
+
+    #er-topbar .er-app-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--er-gold);
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+    }
+
+    /* ── Empujar el bim-grid para que quede debajo del topbar ───────────── */
     bim-grid {
       position: fixed;
-      inset: 0;
+      top: 38px;
+      left: 0;
+      right: 0;
+      bottom: 0;
       z-index: 10;
     }
 
     bim-panel {
       position: relative;
+      font-family: 'Montserrat', 'Segoe UI', Arial, sans-serif !important;
     }
+
     bim-toolbar {
-   position: fixed;
-   bottom: 1.5rem;
-   left: 50%;
-   transform: translateX(-50%);
-   z-index: 100;
-   border-radius: 12px;
-   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-   }
+      position: fixed;
+      bottom: 1.5rem;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 100;
+      border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    }
 
     bim-view-cube {
       cursor: grab;
@@ -43,9 +142,50 @@
     bim-view-cube:active {
       cursor: grabbing;
     }
+
+    /* ── Aplicar tipografía Montserrat a todos los custom elements BUI ──── */
+    bim-panel, bim-panel-section, bim-toolbar, bim-toolbar-section,
+    bim-button, bim-label, bim-checkbox, bim-number-input,
+    bim-dropdown, bim-table, bim-table-row, bim-color-input {
+      font-family: 'Montserrat', 'Segoe UI', Arial, sans-serif !important;
+    }
   </style>
 </head>
 <body>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       Barra institucional — Gobierno de Entre Ríos
+  ═══════════════════════════════════════════════════════════════════════════ -->
+  <div id="er-topbar">
+    <!-- Escudo de Entre Ríos (SVG simplificado en colores institucionales) -->
+    <svg class="er-escudo" viewBox="0 0 60 72" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Escudo de Entre Ríos">
+      <!-- Escudo base -->
+      <path d="M30 2 L58 14 L58 44 Q58 62 30 70 Q2 62 2 44 L2 14 Z" fill="#004A8F" stroke="#C9A84C" stroke-width="2"/>
+      <!-- Cuartel superior izquierdo: azul celeste (ríos) -->
+      <path d="M30 2 L2 14 L2 44 Q2 58 16 65 L30 36 Z" fill="#0070C0" opacity="0.85"/>
+      <!-- Cuartel superior derecho: blanco -->
+      <path d="M30 2 L58 14 L58 44 Q58 58 44 65 L30 36 Z" fill="#ffffff" opacity="0.90"/>
+      <!-- Cuartel inferior: verde (Entre los ríos) -->
+      <path d="M16 65 Q24 69 30 70 Q36 69 44 65 L30 36 Z" fill="#2E7D32" opacity="0.9"/>
+      <!-- Detalle central: estrella de 6 puntas dorada -->
+      <polygon points="30,22 32.5,29 39.5,29 34,33.5 36.5,40.5 30,36 23.5,40.5 26,33.5 20.5,29 27.5,29"
+               fill="#C9A84C" opacity="0.95"/>
+      <!-- Borde del escudo -->
+      <path d="M30 2 L58 14 L58 44 Q58 62 30 70 Q2 62 2 44 L2 14 Z" fill="none" stroke="#C9A84C" stroke-width="1.5"/>
+    </svg>
+
+    <div class="er-divider"></div>
+
+    <div class="er-brand">
+      <span class="er-brand-main">Gobierno de Entre Ríos</span>
+      <span class="er-brand-sub">Ministerio de Planeamiento, Infraestructura y Servicios</span>
+    </div>
+
+    <div class="er-spacer"></div>
+
+    <span class="er-app-label">Visualizador BIM · Demo</span>
+  </div>
+
   <div id="container"></div>
   <script type="module" src="/src/main.ts"></script>
 </body>
