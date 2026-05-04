@@ -108,38 +108,43 @@ const SECTION_FILL_CATEGORIES: RegExp[] = [
 }
 
 // ===============================
-// BRANDING — Gobierno de Entre Ríos
-// Paleta verde institucional (#5AB244) aplicada a los tokens de ThatOpen UI.
-// Conserva el fondo oscuro del visor 3D con paneles bien contrastados.
+// BRANDING — Gobierno de Entre Ríos  (tema CLARO)
+// Paneles blancos/crema, texto azul oscuro, botones verdes ER (#5AB244).
+// El visor 3D conserva su fondo oscuro; solo los paneles laterales son claros.
 // ===============================
 {
   const erStyle = document.createElement("style");
   erStyle.textContent = `
-    /* ── Tokens globales ThatOpen UI → paleta verde ER ── */
+    /* ── Tokens ThatOpen UI → tema claro ER ──────────────────────────────
+       bg-base      = fondo del panel  (blanco/crema)
+       bg-contrast-N = escala oscuro→claro sobre fondo blanco
+         10  → sombra/hover suave
+         20  → bordes
+         40  → texto desactivado
+         60  → texto secundario
+         80  → texto normal
+         100 → texto principal (máximo contraste)
+    ──────────────────────────────────────────────────────────────────── */
     :root, bim-grid {
-      /* Fondo de paneles: gris oscuro con tinte verde muy suave */
-      --bim-ui_bg-base:          #1c2018;
+      --bim-ui_bg-base:          #f7f9f7;   /* crema muy suave, casi blanco */
 
-      /* Capas de contraste: variantes verdes sobre fondo oscuro */
-      --bim-ui_bg-contrast-10:   rgba(90, 178, 68, 0.12);
-      --bim-ui_bg-contrast-20:   rgba(90, 178, 68, 0.22);
-      --bim-ui_bg-contrast-40:   rgba(180, 220, 165, 0.50);
-      --bim-ui_bg-contrast-60:   rgba(195, 230, 180, 0.72);
-      --bim-ui_bg-contrast-80:   rgba(215, 240, 205, 0.90);
-      --bim-ui_bg-contrast-100:  #e8f5e3;
+      --bim-ui_bg-contrast-10:   rgba(30, 50, 80, 0.07);   /* hover / zebra */
+      --bim-ui_bg-contrast-20:   rgba(30, 50, 80, 0.14);   /* bordes suaves */
+      --bim-ui_bg-contrast-40:   rgba(30, 50, 80, 0.38);   /* texto apagado */
+      --bim-ui_bg-contrast-60:   rgba(30, 50, 80, 0.58);   /* texto secundario */
+      --bim-ui_bg-contrast-80:   rgba(20, 40, 70, 0.80);   /* texto normal */
+      --bim-ui_bg-contrast-100:  #142846;                  /* texto principal azul oscuro */
 
-      /* Superficie principal de paneles */
-      --bim-ui_main-base:        #222a1e;
-      --bim-ui_main-contrast:    #dff0d8;
+      --bim-ui_main-base:        #ffffff;
+      --bim-ui_main-contrast:    #142846;
 
-      /* Acento institucional: verde ER */
-      --bim-ui_accent-base:      #5AB244;
+      --bim-ui_accent-base:      #5AB244;   /* verde ER */
       --bim-ui_accent-contrast:  #ffffff;
 
       font-family: 'Montserrat', 'Segoe UI', Arial, sans-serif !important;
     }
 
-    /* ── Encabezado de paneles: verde ER con texto blanco ── */
+    /* ── Encabezado de paneles: verde ER → texto blanco ── */
     bim-panel::part(header),
     bim-panel [slot="header"] {
       background: linear-gradient(135deg, #3D8A2E 0%, #5AB244 100%) !important;
@@ -150,48 +155,67 @@ const SECTION_FILL_CATEGORIES: RegExp[] = [
       letter-spacing: 0.3px;
     }
 
-    /* ── Hover en secciones de panel ── */
+    /* ── Encabezados de sección: texto azul oscuro ── */
+    bim-panel-section::part(title) {
+      color: #142846 !important;
+      font-weight: 600 !important;
+    }
     bim-panel-section::part(header):hover {
-      background: rgba(90, 178, 68, 0.20) !important;
+      background: rgba(90, 178, 68, 0.12) !important;
     }
 
-    /* ── Hover en botones ── */
+    /* ── Botones: hover verde suave ── */
     bim-button::part(button):hover {
-      background: rgba(90, 178, 68, 0.28) !important;
+      background: rgba(90, 178, 68, 0.15) !important;
     }
 
-    /* ── Barra de herramientas flotante ── */
-    bim-toolbar {
-      background: #1e2619 !important;
-      border: 1px solid rgba(90, 178, 68, 0.40) !important;
-      border-top: 2px solid #5AB244 !important;
-    }
-    bim-toolbar-section::part(header) {
-      color: #7AC85F !important;
-      font-family: 'Montserrat', 'Segoe UI', Arial, sans-serif !important;
-      font-size: 9px !important;
-      font-weight: 700 !important;
-      letter-spacing: 0.8px !important;
-      text-transform: uppercase;
-    }
-
-    /* ── Tabs de Selection Information ── */
-    .sel-tab-nav-btn {
-      background: rgba(90, 178, 68, 0.20) !important;
-      color: #a8d895 !important;
-    }
-    .sel-tab-nav-btn:hover {
-      background: rgba(90, 178, 68, 0.38) !important;
-    }
-
-    /* ── Botón Cargar IFC ── */
+    /* ── Botón "Cargar IFC": verde sólido ── */
     bim-button[label="Cargar IFC"]::part(button) {
       background: linear-gradient(135deg, #3D8A2E, #5AB244) !important;
       color: #fff !important;
       font-weight: 700 !important;
     }
 
-    /* ── Tipografía Montserrat en todos los custom elements ── */
+    /* ── Barra de herramientas flotante: blanco con borde verde ── */
+    bim-toolbar {
+      background: #ffffff !important;
+      border: 1px solid rgba(90, 178, 68, 0.35) !important;
+      border-top: 3px solid #5AB244 !important;
+      box-shadow: 0 6px 24px rgba(0,0,0,0.18) !important;
+    }
+    bim-toolbar-section::part(header) {
+      color: #3D8A2E !important;
+      font-family: 'Montserrat', 'Segoe UI', Arial, sans-serif !important;
+      font-size: 9px !important;
+      font-weight: 700 !important;
+      letter-spacing: 0.8px !important;
+      text-transform: uppercase;
+    }
+    /* Íconos y texto de botones en toolbar: azul oscuro */
+    bim-toolbar bim-button::part(button) {
+      color: #142846 !important;
+    }
+    bim-toolbar bim-button::part(button):hover {
+      background: rgba(90, 178, 68, 0.18) !important;
+      color: #3D8A2E !important;
+    }
+
+    /* ── Tabs de Selection Information ── */
+    .sel-tab-nav-btn {
+      background: rgba(30, 50, 80, 0.08) !important;
+      color: #3a5a80 !important;
+    }
+    .sel-tab-nav-btn:hover {
+      background: rgba(90, 178, 68, 0.15) !important;
+      color: #3D8A2E !important;
+    }
+
+    /* ── Labels y textos generales: azul oscuro ── */
+    bim-label {
+      color: #142846 !important;
+    }
+
+    /* ── Tipografía Montserrat ── */
     bim-panel, bim-panel-section, bim-toolbar-section,
     bim-button, bim-label, bim-checkbox, bim-number-input,
     bim-dropdown, bim-table, bim-color-input {
@@ -201,16 +225,15 @@ const SECTION_FILL_CATEGORIES: RegExp[] = [
     /* ── Pie de marca en panel izquierdo ── */
     #er-panel-footer {
       padding: 10px 12px;
-      border-top: 1px solid rgba(90, 178, 68, 0.25);
+      border-top: 1px solid rgba(90, 178, 68, 0.30);
       margin-top: auto;
       display: flex;
       align-items: center;
       gap: 8px;
-      opacity: 0.75;
     }
     #er-panel-footer span {
       font-size: 9px;
-      color: #8cbf7a;
+      color: #5a7a5a;
       line-height: 1.3;
       font-family: 'Montserrat', 'Segoe UI', Arial, sans-serif;
     }
