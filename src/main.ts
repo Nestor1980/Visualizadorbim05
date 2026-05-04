@@ -109,60 +109,65 @@ const SECTION_FILL_CATEGORIES: RegExp[] = [
 
 // ===============================
 // BRANDING — Gobierno de Entre Ríos
-// Sobrescribe los tokens de color de @thatopen/ui para que toda
-// la interfaz adopte la paleta institucional sin tocar la lógica.
+// Paleta verde institucional (#5AB244) aplicada a los tokens de ThatOpen UI.
+// Conserva el fondo oscuro del visor 3D con paneles bien contrastados.
 // ===============================
 {
   const erStyle = document.createElement("style");
   erStyle.textContent = `
-    /* ── Tokens globales ThatOpen UI → paleta ER ── */
+    /* ── Tokens globales ThatOpen UI → paleta verde ER ── */
     :root, bim-grid {
-      --bim-ui_bg-base:          #0e1828;
-      --bim-ui_bg-contrast-10:   rgba(0, 74, 143, 0.18);
-      --bim-ui_bg-contrast-20:   rgba(0, 74, 143, 0.30);
-      --bim-ui_bg-contrast-40:   rgba(180, 200, 220, 0.45);
-      --bim-ui_bg-contrast-60:   rgba(180, 210, 240, 0.70);
-      --bim-ui_bg-contrast-80:   rgba(210, 230, 250, 0.88);
-      --bim-ui_bg-contrast-100:  #e8f0f8;
+      /* Fondo de paneles: gris oscuro con tinte verde muy suave */
+      --bim-ui_bg-base:          #1c2018;
 
-      --bim-ui_main-base:        #0f2540;
-      --bim-ui_main-contrast:    #e8f0f8;
+      /* Capas de contraste: variantes verdes sobre fondo oscuro */
+      --bim-ui_bg-contrast-10:   rgba(90, 178, 68, 0.12);
+      --bim-ui_bg-contrast-20:   rgba(90, 178, 68, 0.22);
+      --bim-ui_bg-contrast-40:   rgba(180, 220, 165, 0.50);
+      --bim-ui_bg-contrast-60:   rgba(195, 230, 180, 0.72);
+      --bim-ui_bg-contrast-80:   rgba(215, 240, 205, 0.90);
+      --bim-ui_bg-contrast-100:  #e8f5e3;
 
-      --bim-ui_accent-base:      #004A8F;
+      /* Superficie principal de paneles */
+      --bim-ui_main-base:        #222a1e;
+      --bim-ui_main-contrast:    #dff0d8;
+
+      /* Acento institucional: verde ER */
+      --bim-ui_accent-base:      #5AB244;
       --bim-ui_accent-contrast:  #ffffff;
 
       font-family: 'Montserrat', 'Segoe UI', Arial, sans-serif !important;
     }
 
-    /* ── Encabezado de cada panel: banda azul ER ── */
+    /* ── Encabezado de paneles: verde ER con texto blanco ── */
     bim-panel::part(header),
     bim-panel [slot="header"] {
-      background: linear-gradient(135deg, #003366 0%, #004A8F 100%) !important;
-      border-bottom: 2px solid #C9A84C !important;
+      background: linear-gradient(135deg, #3D8A2E 0%, #5AB244 100%) !important;
+      border-bottom: 2px solid #7AC85F !important;
       color: #ffffff !important;
       font-family: 'Montserrat', 'Segoe UI', Arial, sans-serif !important;
       font-weight: 700 !important;
-      letter-spacing: 0.4px;
+      letter-spacing: 0.3px;
     }
 
-    /* ── Secciones del panel: borde izquierdo azul ── */
+    /* ── Hover en secciones de panel ── */
     bim-panel-section::part(header):hover {
-      background: rgba(0, 74, 143, 0.25) !important;
+      background: rgba(90, 178, 68, 0.20) !important;
     }
 
-    /* ── Botones primarios con color ER ── */
+    /* ── Hover en botones ── */
     bim-button::part(button):hover {
-      background: rgba(0, 74, 143, 0.35) !important;
+      background: rgba(90, 178, 68, 0.28) !important;
     }
 
     /* ── Barra de herramientas flotante ── */
     bim-toolbar {
-      background: #0d1f38 !important;
-      border: 1px solid rgba(0, 74, 143, 0.5) !important;
-      border-top: 2px solid #C9A84C !important;
+      background: #1e2619 !important;
+      border: 1px solid rgba(90, 178, 68, 0.40) !important;
+      border-top: 2px solid #5AB244 !important;
     }
     bim-toolbar-section::part(header) {
-      color: rgba(201, 168, 76, 0.85) !important;
+      color: #7AC85F !important;
       font-family: 'Montserrat', 'Segoe UI', Arial, sans-serif !important;
       font-size: 9px !important;
       font-weight: 700 !important;
@@ -172,26 +177,21 @@ const SECTION_FILL_CATEGORIES: RegExp[] = [
 
     /* ── Tabs de Selection Information ── */
     .sel-tab-nav-btn {
-      background: rgba(0, 74, 143, 0.25) !important;
-      color: #a8c8e8 !important;
+      background: rgba(90, 178, 68, 0.20) !important;
+      color: #a8d895 !important;
     }
     .sel-tab-nav-btn:hover {
-      background: rgba(0, 74, 143, 0.45) !important;
+      background: rgba(90, 178, 68, 0.38) !important;
     }
 
-    /* ── Botón de carga IFC: color ER ── */
+    /* ── Botón Cargar IFC ── */
     bim-button[label="Cargar IFC"]::part(button) {
-      background: linear-gradient(135deg, #004A8F, #0070C0) !important;
+      background: linear-gradient(135deg, #3D8A2E, #5AB244) !important;
       color: #fff !important;
       font-weight: 700 !important;
     }
 
-    /* ── Línea dorada en el viewport ── */
-    bim-viewport {
-      border-top: 0 !important;
-    }
-
-    /* ── Tipografía general ── */
+    /* ── Tipografía Montserrat en todos los custom elements ── */
     bim-panel, bim-panel-section, bim-toolbar-section,
     bim-button, bim-label, bim-checkbox, bim-number-input,
     bim-dropdown, bim-table, bim-color-input {
@@ -201,16 +201,16 @@ const SECTION_FILL_CATEGORIES: RegExp[] = [
     /* ── Pie de marca en panel izquierdo ── */
     #er-panel-footer {
       padding: 10px 12px;
-      border-top: 1px solid rgba(0, 74, 143, 0.3);
+      border-top: 1px solid rgba(90, 178, 68, 0.25);
       margin-top: auto;
       display: flex;
       align-items: center;
       gap: 8px;
-      opacity: 0.65;
+      opacity: 0.75;
     }
     #er-panel-footer span {
       font-size: 9px;
-      color: #7a9ab8;
+      color: #8cbf7a;
       line-height: 1.3;
       font-family: 'Montserrat', 'Segoe UI', Arial, sans-serif;
     }
@@ -988,12 +988,18 @@ if (container) {
 
           <!-- ── Pie de marca institucional ── -->
           <div id="er-panel-footer">
-            <svg width="22" height="27" viewBox="0 0 60 72" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M30 2 L58 14 L58 44 Q58 62 30 70 Q2 62 2 44 L2 14 Z" fill="#004A8F" stroke="#C9A84C" stroke-width="2"/>
-              <path d="M30 2 L2 14 L2 44 Q2 58 16 65 L30 36 Z" fill="#0070C0" opacity="0.85"/>
-              <path d="M30 2 L58 14 L58 44 Q58 58 44 65 L30 36 Z" fill="#ffffff" opacity="0.90"/>
-              <path d="M16 65 Q24 69 30 70 Q36 69 44 65 L30 36 Z" fill="#2E7D32" opacity="0.9"/>
-              <polygon points="30,22 32.5,29 39.5,29 34,33.5 36.5,40.5 30,36 23.5,40.5 26,33.5 20.5,29 27.5,29" fill="#C9A84C" opacity="0.95"/>
+            <!-- Logo ER miniatura (mismo SVG que el topbar) -->
+            <svg width="26" height="26" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect width="100" height="100" rx="6" fill="#5AB244"/>
+              <rect x="14" y="16" width="36" height="11" rx="1" fill="white"/>
+              <rect x="14" y="16" width="11" height="68" rx="1" fill="white"/>
+              <rect x="14" y="44" width="28" height="10" rx="1" fill="white"/>
+              <rect x="14" y="73" width="36" height="11" rx="1" fill="white"/>
+              <rect x="58" y="16" width="11" height="68" rx="1" fill="white"/>
+              <rect x="58" y="16" width="22" height="11" rx="1" fill="white"/>
+              <rect x="69" y="16" width="11" height="34" rx="1" fill="white"/>
+              <rect x="58" y="39" width="22" height="10" rx="1" fill="white"/>
+              <rect x="69" y="49" width="11" height="36" rx="1" transform="rotate(-20 69 49)" fill="white"/>
             </svg>
             <span>Gobierno de Entre Ríos<br/>Ministerio de Planeamiento · Demo BIM</span>
           </div>

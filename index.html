@@ -5,126 +5,123 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Visualizador BIM — Gobierno de Entre Ríos</title>
 
-  <!-- Tipografía institucional: Montserrat (similar a la usada por el Gobierno ER) -->
+  <!-- Tipografía institucional: Montserrat -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 
   <style>
     /* ═══════════════════════════════════════════════════════════════════════
        VARIABLES DE BRANDING — Gobierno de Entre Ríos
-       Paleta basada en la identidad visual institucional:
-         · Azul ER principal  #004A8F
-         · Azul ER oscuro     #003366
-         · Azul ER acento     #0070C0
-         · Oro institucional  #C9A84C  (escudo)
-         · Fondo claro        #F0F4F9
+       Paleta real extraída del logo institucional:
+         · Verde ER principal  #5AB244  (logo ER verde)
+         · Verde oscuro        #3D8A2E  (hover / sombra)
+         · Verde claro         #7AC85F  (acento suave)
+         · Gris carbón         #3D3D3D  (texto oscuro)
+         · Blanco              #FFFFFF
     ═══════════════════════════════════════════════════════════════════════ */
     :root {
-      --er-blue:       #004A8F;
-      --er-blue-dark:  #003366;
-      --er-blue-light: #0070C0;
-      --er-gold:       #C9A84C;
-      --er-surface:    #EEF2F7;
-      --er-text:       #1A2A3A;
-      --er-text-muted: #5A6A7A;
+      --er-green:        #5AB244;
+      --er-green-dark:   #3D8A2E;
+      --er-green-light:  #7AC85F;
+      --er-green-pale:   #EBF5E6;
+      --er-charcoal:     #3D3D3D;
+      --er-gray:         #6B6B6B;
+      --er-white:        #FFFFFF;
+      --er-surface:      #F5F9F3;
 
-      /* Sobrescribir token de acento de ThatOpen UI */
-      --bim-ui_accent-base: var(--er-blue);
-
+      --bim-ui_accent-base: var(--er-green);
       font-family: 'Montserrat', 'Segoe UI', Arial, sans-serif;
     }
 
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
 
     html, body {
       width: 100%;
       height: 100%;
       overflow: hidden;
-      background: #181c24;
+      background: #1a1e1a;
       font-family: 'Montserrat', 'Segoe UI', Arial, sans-serif;
     }
 
     /* ── Barra institucional superior ───────────────────────────────────── */
     #er-topbar {
       position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 38px;
-      background: var(--er-blue-dark);
+      top: 0; left: 0; right: 0;
+      height: 44px;
+      background: #ffffff;
+      border-bottom: 3px solid var(--er-green);
       display: flex;
       align-items: center;
       padding: 0 16px;
-      gap: 12px;
+      gap: 14px;
       z-index: 200;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.35);
-      border-bottom: 2px solid var(--er-gold);
+      box-shadow: 0 2px 10px rgba(0,0,0,0.15);
     }
 
-    /* Escudo SVG inline */
-    #er-topbar .er-escudo {
-      height: 26px;
-      width: auto;
+    /* Logo ER: monograma SVG fiel al logo oficial */
+    #er-topbar .er-logo-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
       flex-shrink: 0;
+    }
+
+    #er-topbar .er-brand-text {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.15;
+    }
+    #er-topbar .er-brand-gov {
+      font-size: 9px;
+      font-weight: 500;
+      color: var(--er-charcoal);
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+    }
+    #er-topbar .er-brand-name {
+      font-size: 13px;
+      font-weight: 800;
+      color: var(--er-green-dark);
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
     }
 
     #er-topbar .er-divider {
       width: 1px;
-      height: 20px;
-      background: rgba(255,255,255,0.25);
+      height: 24px;
+      background: #d0d0d0;
       flex-shrink: 0;
     }
 
-    #er-topbar .er-brand {
-      display: flex;
-      flex-direction: column;
-      line-height: 1.1;
-    }
-
-    #er-topbar .er-brand-main {
-      font-size: 12px;
-      font-weight: 700;
-      color: #ffffff;
-      letter-spacing: 0.5px;
-      text-transform: uppercase;
-    }
-
-    #er-topbar .er-brand-sub {
+    #er-topbar .er-sub {
       font-size: 10px;
-      font-weight: 400;
-      color: rgba(255,255,255,0.70);
-      letter-spacing: 0.3px;
+      font-weight: 500;
+      color: var(--er-gray);
+      letter-spacing: 0.2px;
     }
 
     #er-topbar .er-spacer { flex: 1; }
 
-    #er-topbar .er-app-label {
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--er-gold);
-      letter-spacing: 0.8px;
+    #er-topbar .er-app-badge {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--er-white);
+      background: var(--er-green);
+      padding: 4px 12px;
+      border-radius: 20px;
+      letter-spacing: 0.5px;
       text-transform: uppercase;
     }
 
-    /* ── Empujar el bim-grid para que quede debajo del topbar ───────────── */
+    /* ── bim-grid: debajo de la topbar ─────────────────────────────────── */
     bim-grid {
       position: fixed;
-      top: 38px;
-      left: 0;
-      right: 0;
-      bottom: 0;
+      top: 44px; left: 0; right: 0; bottom: 0;
       z-index: 10;
     }
 
-    bim-panel {
-      position: relative;
-      font-family: 'Montserrat', 'Segoe UI', Arial, sans-serif !important;
-    }
+    bim-panel { position: relative; }
 
     bim-toolbar {
       position: fixed;
@@ -133,17 +130,12 @@
       transform: translateX(-50%);
       z-index: 100;
       border-radius: 12px;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.45);
     }
 
-    bim-view-cube {
-      cursor: grab;
-    }
-    bim-view-cube:active {
-      cursor: grabbing;
-    }
+    bim-view-cube { cursor: grab; }
+    bim-view-cube:active { cursor: grabbing; }
 
-    /* ── Aplicar tipografía Montserrat a todos los custom elements BUI ──── */
     bim-panel, bim-panel-section, bim-toolbar, bim-toolbar-section,
     bim-button, bim-label, bim-checkbox, bim-number-input,
     bim-dropdown, bim-table, bim-table-row, bim-color-input {
@@ -153,37 +145,56 @@
 </head>
 <body>
 
-  <!-- ═══════════════════════════════════════════════════════════════════════
-       Barra institucional — Gobierno de Entre Ríos
-  ═══════════════════════════════════════════════════════════════════════════ -->
+  <!-- Barra institucional — Gobierno de Entre Ríos -->
   <div id="er-topbar">
-    <!-- Escudo de Entre Ríos (SVG simplificado en colores institucionales) -->
-    <svg class="er-escudo" viewBox="0 0 60 72" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Escudo de Entre Ríos">
-      <!-- Escudo base -->
-      <path d="M30 2 L58 14 L58 44 Q58 62 30 70 Q2 62 2 44 L2 14 Z" fill="#004A8F" stroke="#C9A84C" stroke-width="2"/>
-      <!-- Cuartel superior izquierdo: azul celeste (ríos) -->
-      <path d="M30 2 L2 14 L2 44 Q2 58 16 65 L30 36 Z" fill="#0070C0" opacity="0.85"/>
-      <!-- Cuartel superior derecho: blanco -->
-      <path d="M30 2 L58 14 L58 44 Q58 58 44 65 L30 36 Z" fill="#ffffff" opacity="0.90"/>
-      <!-- Cuartel inferior: verde (Entre los ríos) -->
-      <path d="M16 65 Q24 69 30 70 Q36 69 44 65 L30 36 Z" fill="#2E7D32" opacity="0.9"/>
-      <!-- Detalle central: estrella de 6 puntas dorada -->
-      <polygon points="30,22 32.5,29 39.5,29 34,33.5 36.5,40.5 30,36 23.5,40.5 26,33.5 20.5,29 27.5,29"
-               fill="#C9A84C" opacity="0.95"/>
-      <!-- Borde del escudo -->
-      <path d="M30 2 L58 14 L58 44 Q58 62 30 70 Q2 62 2 44 L2 14 Z" fill="none" stroke="#C9A84C" stroke-width="1.5"/>
-    </svg>
 
-    <div class="er-divider"></div>
+    <div class="er-logo-wrap">
+      <!--
+        Logo "ER" — monograma geométrico fiel al logo oficial del
+        Gobierno de Entre Ríos. Construido con paths SVG que replican
+        la forma del isologo (E con corte diagonal + R geométrica).
+      -->
+      <svg width="38" height="38" viewBox="0 0 100 100" fill="none"
+           xmlns="http://www.w3.org/2000/svg" aria-label="Logo Gobierno de Entre Ríos">
+        <!-- Fondo cuadrado redondeado verde -->
+        <rect width="100" height="100" rx="6" fill="#5AB244"/>
 
-    <div class="er-brand">
-      <span class="er-brand-main">Gobierno de Entre Ríos</span>
-      <span class="er-brand-sub">Ministerio de Planeamiento, Infraestructura y Servicios</span>
+        <!-- Letra E geométrica (con muesca diagonal superior-derecha) -->
+        <!-- Trazo horizontal superior -->
+        <rect x="14" y="16" width="36" height="11" rx="1" fill="white"/>
+        <!-- Trazo vertical izquierdo -->
+        <rect x="14" y="16" width="11" height="68" rx="1" fill="white"/>
+        <!-- Trazo horizontal medio -->
+        <rect x="14" y="44" width="28" height="10" rx="1" fill="white"/>
+        <!-- Trazo horizontal inferior -->
+        <rect x="14" y="73" width="36" height="11" rx="1" fill="white"/>
+
+        <!-- Letra R geométrica -->
+        <!-- Trazo vertical izquierdo R -->
+        <rect x="58" y="16" width="11" height="68" rx="1" fill="white"/>
+        <!-- Trazo curvo superior (rectángulo + semiarco) -->
+        <rect x="58" y="16" width="22" height="11" rx="1" fill="white"/>
+        <!-- Panza de la R (arco derecho) -->
+        <rect x="69" y="16" width="11" height="34" rx="1" fill="white"/>
+        <!-- Travesaño medio R -->
+        <rect x="58" y="39" width="22" height="10" rx="1" fill="white"/>
+        <!-- Pata diagonal R (rectángulo rotado) -->
+        <rect x="69" y="49" width="11" height="36" rx="1"
+              transform="rotate(-20 69 49)" fill="white"/>
+      </svg>
+
+      <div class="er-brand-text">
+        <span class="er-brand-gov">Gobierno de</span>
+        <span class="er-brand-name">Entre Ríos</span>
+      </div>
     </div>
 
-    <div class="er-spacer"></div>
+    <div class="er-divider"></div>
+    <span class="er-sub">Ministerio de Planeamiento, Infraestructura y Servicios</span>
 
-    <span class="er-app-label">Visualizador BIM · Demo</span>
+    <div class="er-spacer"></div>
+    <span class="er-app-badge">Visualizador BIM · Demo</span>
+
   </div>
 
   <div id="container"></div>
