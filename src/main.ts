@@ -154,30 +154,23 @@ const SECTION_FILL_CATEGORIES: RegExp[] = [
       background: rgba(90, 178, 68, 0.12) !important;
     }
 
-    /* ── TODOS los botones: verde sólido por defecto ── */
-    bim-button::part(button) {
-      background: #5AB244 !important;
-      color: #ffffff !important;
-      font-weight: 600 !important;
-      border-radius: 6px !important;
-      transition: background 0.18s, filter 0.18s !important;
+    /* ── TODOS los bim-button: verde ER (custom props penetran shadow DOM) ── */
+    bim-button {
+      --bim-button--bgc: #5AB244;
+      --bim-button--c:   #ffffff;
     }
-    bim-button::part(button):hover {
-      background: #3D8A2E !important;
-      filter: brightness(1.08) !important;
-      color: #ffffff !important;
+    bim-button:hover {
+      --bim-button--bgc: #3D8A2E;
     }
 
     /* ── Botones de icono dentro de la toolbar: fondo transparente ── */
-    bim-toolbar bim-button::part(button) {
-      background: transparent !important;
-      color: #142846 !important;
-      border-radius: 8px !important;
+    bim-toolbar bim-button {
+      --bim-button--bgc: transparent;
+      --bim-button--c:   #142846;
     }
-    bim-toolbar bim-button::part(button):hover {
-      background: rgba(90, 178, 68, 0.20) !important;
-      color: #3D8A2E !important;
-      filter: none !important;
+    bim-toolbar bim-button:hover {
+      --bim-button--bgc: rgba(90, 178, 68, 0.20);
+      --bim-button--c:   #3D8A2E;
     }
 
     /* ── Barra de herramientas flotante ── */
@@ -1228,8 +1221,8 @@ if (container) {
         "flex:1","display:flex","align-items:center","justify-content:center",
         "gap:4px","padding:4px 8px","border:none","cursor:pointer",
         "border-radius:4px","font-size:11px","font-weight:600",
-        "background:var(--bim-ui_bg-contrast-10)",
-        "color:var(--bim-ui_bg-contrast-60)",
+        "background:#5AB244",
+        "color:#ffffff",
         "transition:background 0.15s,color 0.15s","font-family:inherit",
       ].join(";");
       const ico = document.createElement("bim-icon") as any;
@@ -1262,8 +1255,8 @@ if (container) {
       typesContainer.style.display = view === "types" ? "" : "none";
       [btnSpatialTree, btnTypesTree].forEach(btn => {
         const isActive = (view === "spatial" ? btnSpatialTree : btnTypesTree) === btn;
-        btn.style.background = isActive ? "var(--bim-ui_bg-contrast-20)" : "var(--bim-ui_bg-contrast-10)";
-        btn.style.color      = isActive ? "var(--bim-ui_bg-contrast-100)" : "var(--bim-ui_bg-contrast-60)";
+        btn.style.background = isActive ? "#3D8A2E" : "#5AB244";
+        btn.style.color      = "#ffffff";
       });
     };
 
@@ -1693,8 +1686,8 @@ if (container) {
         padding: "5px 12px", border: "none", cursor: "pointer",
         borderRadius: "4px 4px 0 0", fontSize: "11px", fontWeight: "600",
         letterSpacing: "0.3px", transition: "background 0.15s, color 0.15s, border-color 0.15s",
-        background: "var(--bim-ui_bg-contrast-10)",
-        color: "var(--bim-ui_bg-contrast-80)",
+        background: "#5AB244",
+        color: "#ffffff",
         borderBottom: "2px solid transparent",
         marginBottom: "-2px",          // solapa el border-bottom del tabBar
         fontFamily: "inherit", whiteSpace: "nowrap",
@@ -2203,9 +2196,9 @@ if (container) {
       tabButtons.forEach((btn, tabKey) => {
         const isActive = tabKey === key;
         Object.assign(btn.style, {
-          background:   isActive ? "var(--bim-ui_bg-contrast-20)" : "var(--bim-ui_bg-contrast-10)",
-          color:        isActive ? "var(--bim-ui_bg-contrast-100)" : "var(--bim-ui_bg-contrast-80)",
-          borderBottom: isActive ? "2px solid var(--bim-ui_accent-base, #6528d7)" : "2px solid transparent",
+          background:   isActive ? "#3D8A2E" : "#5AB244",
+          color:        "#ffffff",
+          borderBottom: isActive ? "2px solid #ffffff" : "2px solid transparent",
           fontWeight:   isActive ? "700" : "600",
         });
         // Desplazar la barra para que el tab activo quede visible
