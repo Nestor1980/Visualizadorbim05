@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Visualizador BIM IFC</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #181818;
+    }
+
+    bim-grid {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+    }
+
+    bim-panel {
+      position: relative;
+    }
+    bim-toolbar {
+   position: fixed;
+   bottom: 1.5rem;
+   left: 50%;
+   transform: translateX(-50%);
+   z-index: 100;
+   border-radius: 12px;
+   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+   }
+
+    bim-view-cube {
+      cursor: grab;
+    }
+    bim-view-cube:active {
+      cursor: grabbing;
+    }
+  </style>
+  <script type="module" crossorigin src="/assets/index-yTftwqZG.js"></script>
+</head>
+<body>
+  <div id="container"></div>
+</body>
+</html>

@@ -110,6 +110,8 @@ const SECTION_FILL_CATEGORIES: RegExp[] = [
 // BOOTSTRAP
 // ===============================
 
+BUI.Manager.init();
+
 const container = document.getElementById("container");
 
 if (container) {
@@ -136,6 +138,11 @@ if (container) {
 
   components.init();
   console.log("✅ 2.4_Components inicializado");
+
+  // FragmentsManager debe inicializarse antes que cualquier componente que lo use
+  const fragments = components.get(OBC.FragmentsManager);
+  fragments.init("/workers/worker.mjs");
+  console.log("✅ 2.5_FragmentsManager inicializado");
 
   // ===============================
   // PASO 3 – BCFTopics
@@ -508,10 +515,8 @@ if (container) {
   };
 
   // ===============================
-  // PASO 7 – FragmentsManager
+  // PASO 7 – FragmentsManager (ya inicializado arriba)
   // ===============================
-  const fragments = components.get(OBC.FragmentsManager);
-  fragments.init("/workers/worker.mjs");
   console.log("✅ 7.1_FragmentsManager configurado");
 
   // Ref para el ViewCube – se inicializa dentro de startApp() una vez que
@@ -626,7 +631,7 @@ if (container) {
   const setupIfcLoader = async () => {
     await ifcLoader.setup({
       autoSetWasm: false,
-      wasm: { path: "https://unpkg.com/web-ifc@0.0.74/", absolute: true },
+      wasm: { path: "https://unpkg.com/web-ifc@0.0.77/", absolute: true },
     });
     console.log("✅ 8.1_IfcLoader configurado");
   };
@@ -636,7 +641,6 @@ if (container) {
   // ===============================
   const startApp = async () => {
     await setupIfcLoader();
-    BUI.Manager.init();
     CUI.Manager.init();
     console.log("✅ 9.1_BUI y CUI Managers inicializados");
 
