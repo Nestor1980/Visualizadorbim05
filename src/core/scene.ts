@@ -29,7 +29,6 @@ export function createScene(viewport: HTMLElement): SceneSetup {
   components.init();
 
   const fragments = components.get(OBC.FragmentsManager);
-  fragments.init("/workers/worker.mjs");
 
   // — Scene & lighting —
   world.scene.setup();

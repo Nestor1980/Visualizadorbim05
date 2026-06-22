@@ -14,6 +14,7 @@ export function createLeftPanel(
   postproduction: OBF.Postproduction,
   sunLight: THREE.DirectionalLight,
   threeRenderer: THREE.WebGLRenderer,
+  onModelLoaded: (model: any) => Promise<void>,
 ): BUI.Panel {
   const [modelsList] = CUI.tables.modelsList({
     components, metaDataTags: ["schema"], actions: { download: false },
@@ -27,9 +28,10 @@ export function createLeftPanel(
       input.onchange = async () => {
         const file = input.files?.[0];
         if (!file) return;
-        await ifcLoader.load(new Uint8Array(await file.arrayBuffer()), false, file.name, {
+        const model = await ifcLoader.load(new Uint8Array(await file.arrayBuffer()), true, file.name, {
           processData: { progressCallback: (p) => console.log("Progreso:", p) },
         });
+        await onModelLoaded(model);
       };
       input.click();
     };

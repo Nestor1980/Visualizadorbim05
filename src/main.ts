@@ -13,8 +13,8 @@ import { createViewCube }         from "./camera/view-cube";
 import { createSectionTool }      from "./tools/section-tool";
 import { createMeasurementTool }  from "./tools/measurement-tool";
 import { ToolManager }            from "./tools/tool-manager";
-import { setupIfcLoader }         from "./ifc/loader";
-import { setupModelProcessor }    from "./ifc/model-processor";
+import { setupIfcLoader }                  from "./ifc/loader";
+import { setupModelProcessor, processModel } from "./ifc/model-processor";
 import { createRightPanel }       from "./ui/right-panel/index";
 import { createLeftPanel }        from "./ui/left-panel";
 import { createToolbar }          from "./ui/toolbar";
@@ -34,6 +34,8 @@ async function startApp() {
   // — Core scene —
   const { components, world, fragments, worldGrid, sunLight, threeRenderer, adjustGridToModel } =
     createScene(viewport);
+
+  fragments.init(await OBC.FragmentsManager.getWorker());
 
   // — BCF topics setup —
   const topics     = components.get(OBC.BCFTopics);
@@ -96,7 +98,7 @@ async function startApp() {
 
   // — IFC —
   const ifcLoader = await setupIfcLoader(components);
-  setupModelProcessor(fragments, world, sectionTool, adjustGridToModel);
+  setupModelProcessor(fragments, world);
 
   // — UI (requires CUI.Manager.init first) —
   CUI.Manager.init();
@@ -117,16 +119,22 @@ async function startApp() {
     return origApplyType(map, label, count);
   };
 
+  const onModelLoaded = (model: any) =>
+    processModel(model, fragments, sectionTool, adjustGridToModel);
+
   const leftPanel = createLeftPanel(
     components, fragments, ifcLoader, measurer, sectionTool,
-    postproduction, sunLight, threeRenderer,
+    postproduction, sunLight, threeRenderer, onModelLoaded,
   );
 
   const { openModal } = setupBCFSection(components, world, rightPanel.element);
   const toolbar       = createToolbar(world, fragments, toolManager, selectionManager, openModal);
 
   await setupLayout(leftPanel as unknown as HTMLElement, viewport, rightPanel.element, toolbar);
-  container.append(viewport);
+
+  // Force renderer + camera to pick up the real DOM dimensions after layout is mounted.
+  world.renderer?.resize(undefined);
+  (world.camera as OBC.OrthoPerspectiveCamera).updateAspect();
 }
 
 startApp();
