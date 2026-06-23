@@ -35,7 +35,7 @@ async function startApp() {
   const { components, world, fragments, worldGrid, sunLight, threeRenderer, adjustGridToModel } =
     createScene(viewport);
 
-  fragments.init(await OBC.FragmentsManager.getWorker());
+  fragments.init("/workers/worker.mjs");
 
   // — BCF topics setup —
   const topics     = components.get(OBC.BCFTopics);
