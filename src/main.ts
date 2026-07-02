@@ -137,4 +137,19 @@ async function startApp() {
   (world.camera as OBC.OrthoPerspectiveCamera).updateAspect();
 }
 
-startApp();
+function hideLoadingScreen() {
+  const loadingScreen = document.getElementById("loading-screen");
+  if (!loadingScreen) return;
+  loadingScreen.classList.add("hidden");
+  loadingScreen.addEventListener("transitionend", () => loadingScreen.remove(), { once: true });
+}
+
+startApp()
+  .then(hideLoadingScreen)
+  .catch((error) => {
+    console.error(error);
+    const loadingText = document.getElementById("loading-text");
+    if (loadingText) {
+      loadingText.textContent = "Error al cargar el visualizador. Recarga la página.";
+    }
+  });

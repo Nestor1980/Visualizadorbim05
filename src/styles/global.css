@@ -1,0 +1,129 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #181818;
+}
+
+bim-grid {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+}
+
+bim-panel {
+  position: relative;
+}
+
+.panel-overlay {
+  position: fixed;
+  top: 0;
+  height: 100%;
+  z-index: 20;
+  display: flex;
+  align-items: stretch;
+  transition: transform 0.25s ease;
+}
+.panel-left {
+  left: 0;
+  --panel-w: 300px;
+}
+.panel-right {
+  right: 0;
+  --panel-w: 370px;
+}
+.panel-left bim-panel,
+.panel-right bim-panel {
+  width: var(--panel-w);
+  height: 100%;
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.45);
+}
+.panel-left.collapsed {
+  transform: translateX(calc(-1 * var(--panel-w)));
+}
+.panel-right.collapsed {
+  transform: translateX(var(--panel-w));
+}
+
+.panel-toggle {
+  flex-shrink: 0;
+  align-self: center;
+  width: 24px;
+  height: 64px;
+  border: none;
+  cursor: pointer;
+  background: #2a2a2a;
+  color: #ccc;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+.panel-left .panel-toggle {
+  border-radius: 0 8px 8px 0;
+}
+.panel-right .panel-toggle {
+  border-radius: 8px 0 0 8px;
+}
+.panel-toggle:hover {
+  background: #383838;
+  color: #fff;
+}
+
+bim-toolbar {
+  position: fixed;
+  bottom: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+bim-view-cube {
+  cursor: grab;
+}
+bim-view-cube:active {
+  cursor: grabbing;
+}
+
+#loading-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+  background: #181818;
+  transition: opacity 0.35s ease;
+}
+#loading-screen.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+#loading-spinner {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 4px solid rgba(101, 40, 215, 0.25);
+  border-top-color: #6528d7;
+  animation: loading-spin 0.9s linear infinite;
+}
+#loading-text {
+  font-family: system-ui, sans-serif;
+  color: #ccc;
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+}
+@keyframes loading-spin {
+  to { transform: rotate(360deg); }
+}

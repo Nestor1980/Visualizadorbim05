@@ -4,49 +4,21 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Visualizador BIM IFC</title>
-  <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
-    html, body {
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background: #181818;
-    }
-
-    bim-grid {
-      position: fixed;
-      inset: 0;
-      z-index: 10;
-    }
-
-    bim-panel {
-      position: relative;
-    }
-    bim-toolbar {
-   position: fixed;
-   bottom: 1.5rem;
-   left: 50%;
-   transform: translateX(-50%);
-   z-index: 100;
-   border-radius: 12px;
-   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-   }
-
-    bim-view-cube {
-      cursor: grab;
-    }
-    bim-view-cube:active {
-      cursor: grabbing;
-    }
-  </style>
+  <link rel="stylesheet" href="/src/styles/global.css" />
 </head>
 <body>
   <div id="container"></div>
+  <div id="loading-screen">
+    <div id="loading-spinner"></div>
+    <div id="loading-text">Cargando visualizador…</div>
+  </div>
+  <script>
+    // three/webgpu reads self.GPUShaderStage at module load time with no
+    // safe fallback in browsers that lack WebGPU. Without this, importing
+    // @thatopen/components-front throws "Cannot read properties of
+    // undefined (reading 'VERTEX')" before the app ever starts.
+    window.GPUShaderStage = window.GPUShaderStage || { VERTEX: 1, FRAGMENT: 2, COMPUTE: 4 };
+  </script>
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

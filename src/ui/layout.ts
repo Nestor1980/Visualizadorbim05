@@ -12,11 +12,43 @@ export async function setupLayout(
 
   grid.layouts = {
     main: {
-      template: `"sidebar viewport right" 1fr / 300px 1fr 370px`,
-      elements: { sidebar, viewport, right: rightPanel },
+      template: `"viewport" 1fr / 1fr`,
+      elements: { viewport },
     },
   };
 
   grid.layout = "main";
-  document.body.append(toolbar);
+
+  document.body.append(
+    createOverlayPanel(sidebar, "left"),
+    createOverlayPanel(rightPanel, "right"),
+    toolbar,
+  );
+}
+
+function createOverlayPanel(panel: HTMLElement, side: "left" | "right"): HTMLElement {
+  const wrapper = document.createElement("div");
+  wrapper.className = `panel-overlay panel-${side}`;
+
+  const collapsedIcon = side === "left" ? "❯" : "❮";
+  const expandedIcon  = side === "left" ? "❮" : "❯";
+
+  const handle = document.createElement("button");
+  handle.className = "panel-toggle";
+  handle.type = "button";
+  handle.textContent = expandedIcon;
+  handle.setAttribute(
+    "aria-label",
+    side === "left" ? "Mostrar/ocultar panel izquierdo" : "Mostrar/ocultar panel derecho",
+  );
+
+  handle.addEventListener("click", () => {
+    const collapsed = wrapper.classList.toggle("collapsed");
+    handle.textContent = collapsed ? collapsedIcon : expandedIcon;
+  });
+
+  if (side === "left") wrapper.append(panel, handle);
+  else wrapper.append(handle, panel);
+
+  return wrapper;
 }
