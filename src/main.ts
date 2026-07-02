@@ -15,8 +15,8 @@ import { createMeasurementTool }  from "./tools/measurement-tool";
 import { ToolManager }            from "./tools/tool-manager";
 import { setupIfcLoader }                  from "./ifc/loader";
 import { setupModelProcessor, processModel } from "./ifc/model-processor";
-import { createRightPanel }       from "./ui/right-panel/index";
-import { createLeftPanel }        from "./ui/left-panel/index";
+import { createRightPanel, attachRightPanelResize } from "./ui/right-panel/index";
+import { createLeftPanel, attachLeftPanelResize }    from "./ui/left-panel/index";
 import { createToolbar }          from "./ui/toolbar";
 import { setupLayout }            from "./ui/layout";
 import { setupBCFSection }        from "./bcf/bcf-manager";
@@ -160,7 +160,10 @@ async function startApp() {
   // del setMode inicial: re-aplicar el modo para que "Navegar" arranque activo.
   toolManager.setMode(toolManager.activeMode);
 
-  await setupLayout(leftPanel.element, viewport, rightPanel.element, toolbar);
+  await setupLayout(
+    leftPanel.element, viewport, rightPanel.element, toolbar,
+    attachLeftPanelResize, attachRightPanelResize,
+  );
 
   // Force renderer + camera to pick up the real DOM dimensions after layout is mounted.
   world.renderer?.resize(undefined);

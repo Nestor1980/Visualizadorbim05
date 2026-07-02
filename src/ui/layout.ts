@@ -5,6 +5,8 @@ export async function setupLayout(
   viewport: HTMLElement,
   rightPanel: HTMLElement,
   toolbar: HTMLElement,
+  attachLeftResize?: (wrapper: HTMLElement) => void,
+  attachRightResize?: (wrapper: HTMLElement) => void,
 ): Promise<void> {
   const grid = document.createElement("bim-grid") as BUI.Grid<["main"]>;
   document.body.append(grid);
@@ -20,13 +22,17 @@ export async function setupLayout(
   grid.layout = "main";
 
   document.body.append(
-    createOverlayPanel(sidebar, "left"),
-    createOverlayPanel(rightPanel, "right"),
+    createOverlayPanel(sidebar, "left", attachLeftResize),
+    createOverlayPanel(rightPanel, "right", attachRightResize),
     toolbar,
   );
 }
 
-function createOverlayPanel(panel: HTMLElement, side: "left" | "right"): HTMLElement {
+function createOverlayPanel(
+  panel: HTMLElement,
+  side: "left" | "right",
+  attachResize?: (wrapper: HTMLElement) => void,
+): HTMLElement {
   const wrapper = document.createElement("div");
   wrapper.className = `panel-overlay panel-${side}`;
 
@@ -37,33 +43,37 @@ function createOverlayPanel(panel: HTMLElement, side: "left" | "right"): HTMLEle
     ? "material-symbols:chevron-left"
     : "material-symbols:chevron-right";
 
-  const handle = document.createElement("button");
-  handle.className = "panel-toggle";
-  handle.type = "button";
-  handle.setAttribute(
+  const toggleBtn = document.createElement("button");
+  toggleBtn.className = "panel-toggle";
+  toggleBtn.type = "button";
+  toggleBtn.setAttribute(
     "aria-label",
     side === "left" ? "Mostrar/ocultar panel izquierdo" : "Mostrar/ocultar panel derecho",
   );
 
   const icon = document.createElement("bim-icon") as HTMLElement & { icon: string };
-  handle.append(icon);
+  toggleBtn.append(icon);
 
   const setCollapsed = (collapsed: boolean) => {
     wrapper.classList.toggle("collapsed", collapsed);
     icon.icon = collapsed ? collapsedIcon : expandedIcon;
-    handle.setAttribute("aria-expanded", String(!collapsed));
+    toggleBtn.setAttribute("aria-expanded", String(!collapsed));
   };
 
   // En pantallas estrechas los paneles taparían casi todo el viewport:
   // arrancan colapsados y el usuario los abre bajo demanda.
   setCollapsed(window.matchMedia("(max-width: 1200px)").matches);
 
-  handle.addEventListener("click", () => {
+  toggleBtn.addEventListener("click", () => {
     setCollapsed(!wrapper.classList.contains("collapsed"));
   });
 
-  if (side === "left") wrapper.append(panel, handle);
-  else wrapper.append(handle, panel);
+  if (side === "left") wrapper.append(panel, toggleBtn);
+  else wrapper.append(toggleBtn, panel);
+
+  // Cada panel define su propio handle de arrastre (límites de ancho, punto
+  // de anclaje) e inserta el nodo en el hueco correcto dentro del wrapper.
+  attachResize?.(wrapper);
 
   return wrapper;
 }

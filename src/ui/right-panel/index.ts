@@ -85,3 +85,41 @@ export function createRightPanel(
 
   return { element: panel, setView, applySelection, applyTypeSelection };
 }
+
+const MIN_WIDTH = 280;
+const MAX_WIDTH = 640;
+
+/** Inserta el handle de arrastre del panel derecho entre el botón de colapso y el panel. */
+export function attachRightPanelResize(wrapper: HTMLElement): void {
+  const panelEl = wrapper.lastElementChild as HTMLElement | null;
+  if (!panelEl) return;
+
+  const resizeHandle = document.createElement("div");
+  resizeHandle.className = "panel-resize-handle";
+  resizeHandle.setAttribute("role", "separator");
+  resizeHandle.setAttribute("aria-orientation", "vertical");
+  resizeHandle.setAttribute("aria-label", "Redimensionar panel derecho");
+  wrapper.insertBefore(resizeHandle, panelEl);
+
+  resizeHandle.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = parseFloat(getComputedStyle(wrapper).getPropertyValue("--panel-w")) || 370;
+    resizeHandle.setPointerCapture(event.pointerId);
+    document.body.classList.add("resizing-panel");
+
+    const onMove = (moveEvent: PointerEvent) => {
+      const next = startWidth - (moveEvent.clientX - startX);
+      const clamped = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, next));
+      wrapper.style.setProperty("--panel-w", `${clamped}px`);
+    };
+    const onUp = () => {
+      resizeHandle.releasePointerCapture(event.pointerId);
+      document.body.classList.remove("resizing-panel");
+      resizeHandle.removeEventListener("pointermove", onMove);
+      resizeHandle.removeEventListener("pointerup", onUp);
+    };
+    resizeHandle.addEventListener("pointermove", onMove);
+    resizeHandle.addEventListener("pointerup", onUp);
+  });
+}
