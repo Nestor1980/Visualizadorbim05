@@ -3,7 +3,11 @@
   "version": "1.0.0",
   "scripts": {
     "dev": "vite",
+    "check:assets": "node scripts/check-asset-paths.mjs",
+    "prebuild": "npm run check:assets",
     "build": "vite build",
+    "prebuild:prod": "npm run check:assets",
+    "build:prod": "rm -rf dist && NODE_OPTIONS=--max-old-space-size=4096 vite build",
     "preview": "vite preview"
   },
   "dependencies": {
