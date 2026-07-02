@@ -30,21 +30,36 @@ function createOverlayPanel(panel: HTMLElement, side: "left" | "right"): HTMLEle
   const wrapper = document.createElement("div");
   wrapper.className = `panel-overlay panel-${side}`;
 
-  const collapsedIcon = side === "left" ? "❯" : "❮";
-  const expandedIcon  = side === "left" ? "❮" : "❯";
+  const collapsedIcon = side === "left"
+    ? "material-symbols:chevron-right"
+    : "material-symbols:chevron-left";
+  const expandedIcon = side === "left"
+    ? "material-symbols:chevron-left"
+    : "material-symbols:chevron-right";
 
   const handle = document.createElement("button");
   handle.className = "panel-toggle";
   handle.type = "button";
-  handle.textContent = expandedIcon;
   handle.setAttribute(
     "aria-label",
     side === "left" ? "Mostrar/ocultar panel izquierdo" : "Mostrar/ocultar panel derecho",
   );
 
+  const icon = document.createElement("bim-icon") as HTMLElement & { icon: string };
+  handle.append(icon);
+
+  const setCollapsed = (collapsed: boolean) => {
+    wrapper.classList.toggle("collapsed", collapsed);
+    icon.icon = collapsed ? collapsedIcon : expandedIcon;
+    handle.setAttribute("aria-expanded", String(!collapsed));
+  };
+
+  // En pantallas estrechas los paneles taparían casi todo el viewport:
+  // arrancan colapsados y el usuario los abre bajo demanda.
+  setCollapsed(window.matchMedia("(max-width: 1200px)").matches);
+
   handle.addEventListener("click", () => {
-    const collapsed = wrapper.classList.toggle("collapsed");
-    handle.textContent = collapsed ? collapsedIcon : expandedIcon;
+    setCollapsed(!wrapper.classList.contains("collapsed"));
   });
 
   if (side === "left") wrapper.append(panel, handle);

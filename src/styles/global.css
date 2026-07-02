@@ -1,3 +1,11 @@
+:root {
+  /* Acento único de la app. Debe coincidir con ACCENT_HEX en src/config/constants.ts */
+  --accent: #6528d7;
+  --accent-dim: rgba(101, 40, 215, 0.25);
+  --accent-selected-bg: rgba(101, 40, 215, 0.18);
+  --accent-selected-border: rgba(101, 40, 215, 0.85);
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -76,6 +84,127 @@ bim-panel {
   background: #383838;
   color: #fff;
 }
+.panel-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  color: #fff;
+}
+
+/* — Árbol de tipos (panel izquierdo) — */
+.tree-switcher {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.tree-view-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border: none;
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: inherit;
+  background: var(--bim-ui_bg-contrast-10);
+  color: var(--bim-ui_bg-contrast-60);
+  transition: background 0.15s, color 0.15s;
+}
+.tree-view-btn:hover {
+  background: var(--bim-ui_bg-contrast-20);
+}
+.tree-view-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.tree-view-btn.active {
+  background: var(--bim-ui_bg-contrast-20);
+  color: var(--bim-ui_bg-contrast-100);
+}
+
+.types-empty {
+  color: var(--bim-ui_bg-contrast-40);
+  font-size: 11px;
+  text-align: center;
+  padding: 20px 8px;
+}
+.types-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 8px;
+  cursor: pointer;
+  user-select: none;
+  border-bottom: 1px solid var(--bim-ui_bg-contrast-10);
+  color: var(--bim-ui_bg-contrast-80);
+}
+.types-row--inst {
+  padding: 3px 8px 3px 30px;
+  color: var(--bim-ui_bg-contrast-70);
+  border-bottom: 1px solid var(--bim-ui_bg-contrast-05);
+}
+.types-row:hover:not(.is-selected) {
+  background: var(--bim-ui_bg-contrast-10);
+}
+.types-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.types-row.is-selected {
+  background: var(--accent-selected-bg);
+  border-left: 3px solid var(--accent-selected-border);
+  padding-left: 5px;
+}
+.types-row--inst.is-selected {
+  padding-left: 27px;
+}
+.types-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  flex-shrink: 0;
+  opacity: 0.55;
+  transition: transform 0.15s;
+}
+.types-arrow.expanded {
+  transform: rotate(90deg);
+}
+.types-arrow:focus-visible {
+  outline: 2px solid var(--accent);
+  opacity: 1;
+}
+.types-cat-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+.types-cat-label {
+  flex: 1;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.types-cat-count {
+  font-size: 10px;
+  opacity: 0.45;
+  flex-shrink: 0;
+}
+.types-inst-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 bim-toolbar {
   position: fixed;
@@ -114,8 +243,8 @@ bim-view-cube:active {
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  border: 4px solid rgba(101, 40, 215, 0.25);
-  border-top-color: #6528d7;
+  border: 4px solid var(--accent-dim);
+  border-top-color: var(--accent);
   animation: loading-spin 0.9s linear infinite;
 }
 #loading-text {

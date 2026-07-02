@@ -20,22 +20,38 @@ export function createLeftPanel(
     components, metaDataTags: ["schema"], actions: { download: false },
   });
 
-  const loadIfcBtn = BUI.Component.create<BUI.Button>(() => {
-    const onClick = async () => {
-      const input    = document.createElement("input");
-      input.type     = "file";
-      input.accept   = ".ifc";
-      input.onchange = async () => {
-        const file = input.files?.[0];
-        if (!file) return;
+  const onLoadClick = () => {
+    if (loadIfcBtn.loading) return;
+    const input    = document.createElement("input");
+    input.type     = "file";
+    input.accept   = ".ifc";
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      loadIfcBtn.loading = true;
+      loadIfcBtn.label   = "Cargando… 0%";
+      try {
         const model = await ifcLoader.load(new Uint8Array(await file.arrayBuffer()), true, file.name, {
-          processData: { progressCallback: (p) => console.log("Progreso:", p) },
+          processData: {
+            progressCallback: (p) => {
+              loadIfcBtn.label = `Cargando… ${Math.round(p * 100)}%`;
+            },
+          },
         });
         await onModelLoaded(model);
-      };
-      input.click();
+        loadIfcBtn.label = "Cargar IFC";
+      } catch (error) {
+        console.error("Error al cargar IFC:", error);
+        loadIfcBtn.label = "Error al cargar — reintentar";
+      } finally {
+        loadIfcBtn.loading = false;
+      }
     };
-    return BUI.html`<bim-button label="Cargar IFC" icon="mage:box-3d-fill" @click=${onClick}></bim-button>`;
+    input.click();
+  };
+
+  const loadIfcBtn = BUI.Component.create<BUI.Button>(() => {
+    return BUI.html`<bim-button label="Cargar IFC" icon="mage:box-3d-fill" @click=${onLoadClick}></bim-button>`;
   });
 
   const treePanel = createTreePanel(components, fragments, highlighter);

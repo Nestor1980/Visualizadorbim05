@@ -5,7 +5,7 @@ import * as FRAGS from "@thatopen/fragments";
 import * as BUI from "@thatopen/ui";
 import * as CUI from "@thatopen/ui-obc";
 
-import { injectCompactTableCSS } from "./config/constants";
+import { injectCompactTableCSS, HIGHLIGHT_COLOR } from "./config/constants";
 import { createScene }            from "./core/scene";
 import { setupPostprocessing }    from "./core/postprocessing";
 import { setupPivotRaycaster }    from "./camera/pivot-raycaster";
@@ -63,13 +63,13 @@ async function startApp() {
   hoverer.world    = world;
   hoverer.enabled  = true;
   hoverer.material = new THREE.MeshBasicMaterial({
-    color: 0x6528d7, transparent: true, opacity: 0.5, depthTest: false,
+    color: HIGHLIGHT_COLOR.clone(), transparent: true, opacity: 0.5, depthTest: false,
   });
 
   const highlighter = components.get(OBF.Highlighter);
   highlighter.setup({ world });
   highlighter.styles.set("select", {
-    color:         new THREE.Color(0x6528d7),
+    color:         HIGHLIGHT_COLOR.clone(),
     opacity:       0.55,
     transparent:   true,
     renderedFaces: FRAGS.RenderedFaces.TWO,
@@ -155,6 +155,10 @@ async function startApp() {
 
   const { openModal } = setupBCFSection(components, world, rightPanel.element);
   const toolbar       = createToolbar(world, fragments, toolManager, selectionManager, openModal);
+
+  // Los botones de la toolbar se registran en el ToolManager al crearla, después
+  // del setMode inicial: re-aplicar el modo para que "Navegar" arranque activo.
+  toolManager.setMode(toolManager.activeMode);
 
   await setupLayout(leftPanel.element, viewport, rightPanel.element, toolbar);
 

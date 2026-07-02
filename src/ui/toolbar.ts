@@ -15,13 +15,22 @@ export function createToolbar(
     return BUI.html`
       <bim-toolbar style="justify-self: center;">
 
+        <bim-toolbar-section label="Navegación">
+          <bim-button tooltip-title="Navegar"
+            tooltip-text="Orbitar la cámara y seleccionar elementos"
+            icon="material-symbols:arrow-selector-tool"
+            ${BUI.ref((el: Element | undefined) => { toolManager.navigateBtnEl = el as BUI.Button ?? null; })}
+            @click=${() => toolManager.setMode("navigate")}>
+          </bim-button>
+        </bim-toolbar-section>
+
         <bim-toolbar-section label="Cámara">
           <bim-button tooltip-title="Perspectiva"
             tooltip-text="Alternar cámara ortográfica / perspectiva"
             icon="tabler:camera"
             @click=${() => world.camera.projection.toggle()}>
           </bim-button>
-          <bim-button tooltip-title="Fit Model"
+          <bim-button tooltip-title="Ajustar vista"
             tooltip-text="Ajustar vista al modelo"
             icon="material-symbols:fit-screen"
             @click=${async () => {

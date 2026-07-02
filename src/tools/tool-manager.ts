@@ -11,16 +11,17 @@ interface RightPanelLike {
   setView: (view: RightPanelView) => void;
 }
 
-const ACTIVE_STYLE = {
-  background:   "var(--bim-ui_main-base)",
-  borderRadius: "4px",
-  outline:      "2px solid var(--bim-ui_accent-base, #6528d7)",
-};
-const RESET_STYLE = { background: "", borderRadius: "", outline: "" };
+function isEditableTarget(event: Event): boolean {
+  const target = event.composedPath()[0];
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable;
+}
 
 export class ToolManager {
   activeMode: ToolMode = "navigate";
 
+  navigateBtnEl: BUI.Button | null = null;
   measureBtnEl: BUI.Button | null = null;
   sectionBtnEl: BUI.Button | null = null;
   propertiesBtnEl: BUI.Button | null = null;
@@ -71,15 +72,15 @@ export class ToolManager {
       this.sectionTool.sectionFillGroup.visible = true;
     }
 
-    [this.measureBtnEl, this.sectionBtnEl, this.propertiesBtnEl].forEach((btn) => {
-      if (btn) Object.assign(btn.style, RESET_STYLE);
-    });
-    if (mode === "measure" && this.measureBtnEl)
-      Object.assign(this.measureBtnEl.style, ACTIVE_STYLE);
-    if (mode === "section" && this.sectionBtnEl)
-      Object.assign(this.sectionBtnEl.style, ACTIVE_STYLE);
-    if (mode === "properties" && this.propertiesBtnEl)
-      Object.assign(this.propertiesBtnEl.style, ACTIVE_STYLE);
+    const modeButtons: Record<ToolMode, BUI.Button | null> = {
+      navigate:   this.navigateBtnEl,
+      measure:    this.measureBtnEl,
+      section:    this.sectionBtnEl,
+      properties: this.propertiesBtnEl,
+    };
+    for (const [btnMode, btn] of Object.entries(modeButtons)) {
+      if (btn) btn.active = btnMode === mode;
+    }
 
     const view: RightPanelView =
       mode === "measure"    ? "measure" :
@@ -90,24 +91,26 @@ export class ToolManager {
   }
 
   bindViewportEvents(viewport: HTMLElement, world: OBC.World): void {
-    viewport.ondblclick = () => {
+    viewport.addEventListener("dblclick", () => {
       if (this.activeMode === "measure") {
         this.measurer.create();
       } else if (this.activeMode === "section") {
         this.sectionTool.clipper.create(world);
         this.sectionTool.rebuildSectionFills();
       }
-    };
+    });
 
-    window.onkeydown = (event) => {
-      if (event.code === "Delete" || event.code === "Backspace") {
-        if (this.activeMode === "measure") {
-          this.measurer.delete();
-        } else if (this.activeMode === "section") {
-          this.sectionTool.clipper.delete(world);
-          this.sectionTool.rebuildSectionFills();
-        }
+    window.addEventListener("keydown", (event) => {
+      if (event.code !== "Delete" && event.code !== "Backspace") return;
+      // No borrar mediciones/planos mientras el usuario escribe en un campo
+      // de texto (p. ej. el formulario BCF).
+      if (isEditableTarget(event)) return;
+      if (this.activeMode === "measure") {
+        this.measurer.delete();
+      } else if (this.activeMode === "section") {
+        this.sectionTool.clipper.delete(world);
+        this.sectionTool.rebuildSectionFills();
       }
-    };
+    });
   }
 }

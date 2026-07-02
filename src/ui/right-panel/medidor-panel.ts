@@ -16,9 +16,6 @@ export function createMedidorPanel(measurer: OBF.LengthMeasurement): MedidorPane
   const settingsSection = BUI.Component.create<BUI.PanelSection>(() => {
     return BUI.html`
       <bim-panel-section label="Medidor" icon="solar:ruler-cross-pen-bold">
-        <bim-checkbox checked label="Habilitado"
-          @change="${({ target }: { target: BUI.Checkbox }) => { measurer.enabled = target.value; }}">
-        </bim-checkbox>
         <bim-checkbox checked label="Visible"
           @change="${({ target }: { target: BUI.Checkbox }) => { measurer.visible = target.value; }}">
         </bim-checkbox>
@@ -67,6 +64,9 @@ export function createMedidorPanel(measurer: OBF.LengthMeasurement): MedidorPane
   };
 
   measurer.list.onItemAdded.add(renderList);
+  measurer.list.onItemDeleted.add(renderList);
+  measurer.list.onCleared.add(renderList);
+  renderList();
 
   return { element };
 }
