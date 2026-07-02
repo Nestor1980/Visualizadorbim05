@@ -36,6 +36,18 @@ export function createToolbar(
           </bim-button>
         </bim-toolbar-section>
 
+        <bim-toolbar-section label="Información">
+          <bim-button tooltip-title="Propiedades"
+            tooltip-text="Ver propiedades del elemento seleccionado"
+            icon="material-symbols:info"
+            ${BUI.ref((el: Element | undefined) => { toolManager.propertiesBtnEl = el as BUI.Button ?? null; })}
+            @click=${() => {
+              if (toolManager.activeMode === "properties") toolManager.setMode("navigate");
+              else toolManager.setMode("properties");
+            }}>
+          </bim-button>
+        </bim-toolbar-section>
+
         <bim-toolbar-section label="Medición">
           <bim-button tooltip-title="Activar Medición"
             tooltip-text="Doble click para medir"
