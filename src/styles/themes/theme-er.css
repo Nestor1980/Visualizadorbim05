@@ -1,0 +1,99 @@
+/*
+ * Tema institucional — Gobierno de Entre Ríos.
+ * Paleta extraída por muestreo de píxeles de la portada del "Manual de Marca"
+ * (https://es.scribd.com/document/837767021/MANUAL-GOBIERNO-ER-2024): el
+ * documento completo está bajo paywall, solo la portada fue accesible, así
+ * que estos hex son una aproximación fiel a esa página y deben ajustarse si
+ * se consigue la guía completa (páginas de paleta/tipografía oficial).
+ *
+ * Modos: oscuro (por defecto, vía prefers-color-scheme) y claro. El cambio
+ * explícito de modo usa las mismas clases que ya usa @thatopen/ui
+ * (BUI.Manager.toggleTheme() alterna html.bim-ui-dark / html.bim-ui-light).
+ */
+
+:root {
+  --font-body: 'Nunito', system-ui, sans-serif;
+
+  /* Paleta de marca (no cambia entre modos) */
+  --brand-primary:       #ADDA01; /* verde lima — color insignia */
+  --brand-primary-dark:  #8FB800; /* hover/active sobre el verde lima */
+  --brand-secondary:     #70B852; /* verde medio */
+  --brand-tertiary:      #42B639; /* verde oscuro */
+  --brand-ink:           #33424A; /* petróleo oscuro — texto sobre fondos claros */
+  --brand-cream:         #F0F0E4; /* fondo crema del manual */
+
+  /* Acento de la app (usado por overlays, selección, foco) */
+  --accent: var(--brand-primary);
+  --accent-dim: rgba(173, 218, 1, 0.25);
+  --accent-selected-bg: rgba(173, 218, 1, 0.18);
+  --accent-selected-border: rgba(173, 218, 1, 0.85);
+
+  /* Overrides de @thatopen/ui: reemplaza el acento morado por defecto */
+  --bim-ui_main-base: var(--brand-ink);
+  --bim-ui_accent-base: var(--brand-primary);
+
+  /* Tokens semánticos — valores por defecto = modo oscuro */
+  --bg-app: #181818;
+  --bg-surface: #1f1f1f;
+  --bg-elevated: #2a2a2a;
+  --bg-surface-hover: #383838;
+  --text-primary: #f2f2f2;
+  --text-secondary: #cccccc;
+  --text-muted: #888888;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+}
+
+/*
+ * NOTA: @thatopen/ui inyecta su propia hoja de estilos en runtime (al llamar
+ * BUI.Manager.init() en main.ts), DESPUÉS de que este archivo ya cargó como
+ * <link>. Esa hoja trae sus propias reglas para html.bim-ui-light/dark con
+ * la misma especificidad que un override normal — y por cargar después,
+ * gana el empate y pisa nuestros colores (esto causaba el hover morado en
+ * modo claro). Por eso los bloques de abajo usan ":root:root" /
+ * ":root.bim-ui-*" en lugar de ":root" / "html.bim-ui-*": es el mismo
+ * elemento (<html>), pero con mayor especificidad, así siempre ganamos
+ * independientemente del orden de carga.
+ */
+@media (prefers-color-scheme: light) {
+  :root:root {
+    --bim-ui_main-base: var(--brand-primary-dark);
+    --bim-ui_accent-base: var(--brand-primary);
+
+    --bg-app: var(--brand-cream);
+    --bg-surface: #ffffff;
+    --bg-elevated: #ffffff;
+    --bg-surface-hover: #e4e4d6;
+    --text-primary: var(--brand-ink);
+    --text-secondary: #55666e;
+    --text-muted: #8a968c;
+    --border-subtle: rgba(51, 66, 74, 0.12);
+  }
+}
+
+:root.bim-ui-dark {
+  --bim-ui_main-base: var(--brand-ink);
+  --bim-ui_accent-base: var(--brand-primary);
+
+  --bg-app: #181818;
+  --bg-surface: #1f1f1f;
+  --bg-elevated: #2a2a2a;
+  --bg-surface-hover: #383838;
+  --text-primary: #f2f2f2;
+  --text-secondary: #cccccc;
+  --text-muted: #888888;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+}
+
+:root.bim-ui-light {
+  --bim-ui_main-base: var(--brand-primary-dark);
+  --bim-ui_accent-base: var(--brand-primary);
+
+  --bg-app: var(--brand-cream);
+  --bg-surface: #ffffff;
+  --bg-elevated: #ffffff;
+  --bg-surface-hover: #e4e4d6;
+  --text-primary: var(--brand-ink);
+  --text-secondary: #55666e;
+  --text-muted: #8a968c;
+  --border-subtle: rgba(51, 66, 74, 0.12);
+}

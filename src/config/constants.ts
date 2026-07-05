@@ -78,9 +78,9 @@ export const IFC_ICON: Record<string, string> = {
   IFCCURTAINWALL:      "material-symbols:grid-view",
 };
 
-// Color de acento único de la app. Debe coincidir con --accent en global.css
-// y con el --bim-ui_main-base por defecto de @thatopen/ui.
-export const ACCENT_HEX = 0x6528d7;
+// Color de acento único de la app. Debe coincidir con --accent en el tema
+// activo (src/styles/themes/theme-er.css → --brand-primary).
+export const ACCENT_HEX = 0xadda01;
 export const HIGHLIGHT_COLOR = new THREE.Color(ACCENT_HEX);
 
 export function injectCompactTableCSS(): void {

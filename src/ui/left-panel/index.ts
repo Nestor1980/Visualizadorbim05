@@ -56,9 +56,36 @@ export function createLeftPanel(
 
   const treePanel = createTreePanel(components, fragments, highlighter);
 
+  const isLightTheme = (): boolean => {
+    const html = document.documentElement;
+    if (html.classList.contains("bim-ui-light")) return true;
+    if (html.classList.contains("bim-ui-dark")) return false;
+    return window.matchMedia("(prefers-color-scheme: light)").matches;
+  };
+
+  const updateThemeToggleBtn = (): void => {
+    const light = isLightTheme();
+    themeToggleBtn.icon  = light ? "material-symbols:dark-mode" : "material-symbols:light-mode";
+    themeToggleBtn.label = light ? "Modo oscuro" : "Modo claro";
+  };
+
+  const onThemeToggleClick = () => {
+    BUI.Manager.toggleTheme();
+    updateThemeToggleBtn();
+  };
+
+  const themeToggleBtn = BUI.Component.create<BUI.Button>(() => {
+    return BUI.html`<bim-button @click=${onThemeToggleClick}></bim-button>`;
+  });
+  updateThemeToggleBtn();
+
   const panel = BUI.Component.create<BUI.PanelSection>(() => {
     return BUI.html`
       <bim-panel active label="Visualizador BIM" class="options-menu">
+
+        <bim-panel-section label="Apariencia" icon="material-symbols:contrast-rounded">
+          ${themeToggleBtn}
+        </bim-panel-section>
 
         <bim-panel-section label="Modelos IFC" icon="mage:box-3d-fill">
           ${loadIfcBtn}

@@ -1,10 +1,8 @@
-:root {
-  /* Acento único de la app. Debe coincidir con ACCENT_HEX en src/config/constants.ts */
-  --accent: #6528d7;
-  --accent-dim: rgba(101, 40, 215, 0.25);
-  --accent-selected-bg: rgba(101, 40, 215, 0.18);
-  --accent-selected-border: rgba(101, 40, 215, 0.85);
-}
+/*
+ * Variables de marca (--accent, --bg-*, --text-*, etc.) definidas en
+ * src/styles/themes/*.css — este archivo solo consume esas variables.
+ * --accent debe coincidir con ACCENT_HEX en src/config/constants.ts.
+ */
 
 * {
   margin: 0;
@@ -16,7 +14,8 @@ html, body {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: #181818;
+  background: var(--bg-app);
+  font-family: var(--font-body);
 }
 
 bim-grid {
@@ -66,8 +65,8 @@ bim-panel {
   height: 64px;
   border: none;
   cursor: pointer;
-  background: #2a2a2a;
-  color: #ccc;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
   font-size: 0.85rem;
   display: flex;
   align-items: center;
@@ -81,13 +80,13 @@ bim-panel {
   border-radius: 8px 0 0 8px;
 }
 .panel-toggle:hover {
-  background: #383838;
-  color: #fff;
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
 }
 .panel-toggle:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-  color: #fff;
+  color: var(--text-primary);
 }
 
 .panel-resize-handle {
@@ -262,7 +261,7 @@ bim-view-cube:active {
   align-items: center;
   justify-content: center;
   gap: 1.25rem;
-  background: #181818;
+  background: var(--bg-app);
   transition: opacity 0.35s ease;
 }
 #loading-screen.hidden {
@@ -278,8 +277,8 @@ bim-view-cube:active {
   animation: loading-spin 0.9s linear infinite;
 }
 #loading-text {
-  font-family: system-ui, sans-serif;
-  color: #ccc;
+  font-family: inherit;
+  color: var(--text-secondary);
   font-size: 0.95rem;
   letter-spacing: 0.02em;
 }
