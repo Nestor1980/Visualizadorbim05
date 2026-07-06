@@ -1,0 +1,288 @@
+:root {
+  /* Acento único de la app. Debe coincidir con ACCENT_HEX en src/config/constants.ts */
+  --accent: #6528d7;
+  --accent-dim: rgba(101, 40, 215, 0.25);
+  --accent-selected-bg: rgba(101, 40, 215, 0.18);
+  --accent-selected-border: rgba(101, 40, 215, 0.85);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #181818;
+}
+
+bim-grid {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+}
+
+bim-panel {
+  position: relative;
+}
+
+.panel-overlay {
+  position: fixed;
+  top: 0;
+  height: 100%;
+  z-index: 20;
+  display: flex;
+  align-items: stretch;
+  transition: transform 0.25s ease;
+}
+.panel-left {
+  left: 0;
+  --panel-w: 300px;
+}
+.panel-right {
+  right: 0;
+  --panel-w: 370px;
+}
+.panel-left bim-panel,
+.panel-right bim-panel {
+  width: var(--panel-w);
+  height: 100%;
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.45);
+}
+.panel-left.collapsed {
+  transform: translateX(calc(-1 * var(--panel-w)));
+}
+.panel-right.collapsed {
+  transform: translateX(var(--panel-w));
+}
+
+.panel-toggle {
+  flex-shrink: 0;
+  align-self: center;
+  width: 24px;
+  height: 64px;
+  border: none;
+  cursor: pointer;
+  background: #2a2a2a;
+  color: #ccc;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+.panel-left .panel-toggle {
+  border-radius: 0 8px 8px 0;
+}
+.panel-right .panel-toggle {
+  border-radius: 8px 0 0 8px;
+}
+.panel-toggle:hover {
+  background: #383838;
+  color: #fff;
+}
+.panel-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  color: #fff;
+}
+
+.panel-resize-handle {
+  flex-shrink: 0;
+  width: 6px;
+  cursor: ew-resize;
+  touch-action: none;
+  position: relative;
+}
+.panel-resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 2px;
+  border-radius: 1px;
+  background: transparent;
+  transition: background 0.15s;
+}
+.panel-resize-handle:hover::after,
+.panel-resize-handle:active::after {
+  background: var(--accent);
+}
+.panel-overlay.collapsed .panel-resize-handle {
+  display: none;
+}
+body.resizing-panel {
+  cursor: ew-resize;
+  user-select: none;
+}
+
+/* — Árbol de tipos (panel izquierdo) — */
+.tree-switcher {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.tree-view-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border: none;
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: inherit;
+  background: var(--bim-ui_bg-contrast-10);
+  color: var(--bim-ui_bg-contrast-60);
+  transition: background 0.15s, color 0.15s;
+}
+.tree-view-btn:hover {
+  background: var(--bim-ui_bg-contrast-20);
+}
+.tree-view-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.tree-view-btn.active {
+  background: var(--bim-ui_bg-contrast-20);
+  color: var(--bim-ui_bg-contrast-100);
+}
+
+.types-empty {
+  color: var(--bim-ui_bg-contrast-40);
+  font-size: 11px;
+  text-align: center;
+  padding: 20px 8px;
+}
+.types-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 8px;
+  cursor: pointer;
+  user-select: none;
+  border-bottom: 1px solid var(--bim-ui_bg-contrast-10);
+  color: var(--bim-ui_bg-contrast-80);
+}
+.types-row--inst {
+  padding: 3px 8px 3px 30px;
+  color: var(--bim-ui_bg-contrast-70);
+  border-bottom: 1px solid var(--bim-ui_bg-contrast-05);
+}
+.types-row:hover:not(.is-selected) {
+  background: var(--bim-ui_bg-contrast-10);
+}
+.types-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.types-row.is-selected {
+  background: var(--accent-selected-bg);
+  border-left: 3px solid var(--accent-selected-border);
+  padding-left: 5px;
+}
+.types-row--inst.is-selected {
+  padding-left: 27px;
+}
+.types-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  flex-shrink: 0;
+  opacity: 0.55;
+  transition: transform 0.15s;
+}
+.types-arrow.expanded {
+  transform: rotate(90deg);
+}
+.types-arrow:focus-visible {
+  outline: 2px solid var(--accent);
+  opacity: 1;
+}
+.types-cat-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+.types-cat-label {
+  flex: 1;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.types-cat-count {
+  font-size: 10px;
+  opacity: 0.45;
+  flex-shrink: 0;
+}
+.types-inst-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+bim-toolbar {
+  position: fixed;
+  bottom: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+bim-view-cube {
+  cursor: grab;
+}
+bim-view-cube:active {
+  cursor: grabbing;
+}
+
+#loading-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+  background: #181818;
+  transition: opacity 0.35s ease;
+}
+#loading-screen.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+#loading-spinner {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 4px solid var(--accent-dim);
+  border-top-color: var(--accent);
+  animation: loading-spin 0.9s linear infinite;
+}
+#loading-text {
+  font-family: system-ui, sans-serif;
+  color: #ccc;
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+}
+@keyframes loading-spin {
+  to { transform: rotate(360deg); }
+}

@@ -63,14 +63,8 @@ function toCompactTree(nodes: any[]): any[] {
 
 function makeTreeViewBtn(iconName: string, label: string): HTMLButtonElement {
   const btn = document.createElement("button");
-  btn.style.cssText = [
-    "flex:1","display:flex","align-items:center","justify-content:center",
-    "gap:4px","padding:4px 8px","border:none","cursor:pointer",
-    "border-radius:4px","font-size:11px","font-weight:600",
-    "background:var(--bim-ui_bg-contrast-10)",
-    "color:var(--bim-ui_bg-contrast-60)",
-    "transition:background 0.15s,color 0.15s","font-family:inherit",
-  ].join(";");
+  btn.type = "button";
+  btn.className = "tree-view-btn";
   const ico = document.createElement("bim-icon") as any;
   ico.icon = iconName;
   ico.style.fontSize = "13px";
@@ -78,6 +72,18 @@ function makeTreeViewBtn(iconName: string, label: string): HTMLButtonElement {
   lbl.textContent = label;
   btn.append(ico, lbl);
   return btn;
+}
+
+/** Activa un handler de click también con Enter/Espacio cuando la fila tiene el foco. */
+function makeRowAccessible(row: HTMLElement): void {
+  row.tabIndex = 0;
+  row.setAttribute("role", "button");
+  row.addEventListener("keydown", (e: KeyboardEvent) => {
+    if (e.target !== row) return;
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    row.click();
+  });
 }
 
 export function createTreePanel(
@@ -99,20 +105,10 @@ export function createTreePanel(
 
   const selectTypesRow = (row: HTMLElement | null) => {
     if (selectedTypesRow && selectedTypesRow !== row) {
-      selectedTypesRow.style.background  = "";
-      selectedTypesRow.style.outline     = "";
-      selectedTypesRow.style.borderLeft  = "";
-      selectedTypesRow.style.paddingLeft = "";
-      delete (selectedTypesRow as any)._typSel;
+      selectedTypesRow.classList.remove("is-selected");
     }
     selectedTypesRow = row;
-    if (row) {
-      row.style.background  = "rgba(101,40,215,0.18)";
-      row.style.outline     = "none";
-      row.style.borderLeft  = "3px solid rgba(101,40,215,0.85)";
-      row.style.paddingLeft = "5px";
-      (row as any)._typSel  = true;
-    }
+    row?.classList.add("is-selected");
   };
 
   // — Callbacks set by consumers —
@@ -127,9 +123,8 @@ export function createTreePanel(
     typesContainer.innerHTML = "";
 
     if (typesData.size === 0) {
-      typesContainer.innerHTML = `<div style="color:var(--bim-ui_bg-contrast-40);
-        font-size:11px;text-align:center;padding:20px 8px;">
-        Cargue un modelo IFC para ver los tipos.</div>`;
+      typesContainer.innerHTML =
+        `<div class="types-empty">Cargue un modelo IFC para ver los tipos.</div>`;
       return;
     }
 
@@ -146,33 +141,29 @@ export function createTreePanel(
       const iconStr = IFC_ICON[category]  ?? "material-symbols:category";
 
       const catRow = document.createElement("div");
-      catRow.style.cssText = [
-        "display:flex","align-items:center","gap:5px",
-        "padding:5px 8px","cursor:pointer","user-select:none",
-        "border-bottom:1px solid var(--bim-ui_bg-contrast-10)",
-        "color:var(--bim-ui_bg-contrast-80)",
-      ].join(";");
-      catRow.addEventListener("mouseenter", () => {
-        if (!(catRow as any)._typSel) catRow.style.background = "var(--bim-ui_bg-contrast-10)";
-      });
-      catRow.addEventListener("mouseleave", () => {
-        catRow.style.background = (catRow as any)._typSel ? "rgba(101,40,215,0.18)" : "";
-      });
+      catRow.className = "types-row types-row--cat";
+      makeRowAccessible(catRow);
 
-      const arrow = document.createElement("span");
-      arrow.textContent = "▶";
-      arrow.style.cssText = "font-size:8px;flex-shrink:0;opacity:0.55;transition:transform 0.15s;width:10px;";
+      const arrow = document.createElement("button");
+      arrow.type = "button";
+      arrow.className = "types-arrow";
+      arrow.setAttribute("aria-label", `Expandir ${label}`);
+      arrow.setAttribute("aria-expanded", "false");
+      const arrowIcon = document.createElement("bim-icon") as any;
+      arrowIcon.icon = "material-symbols:chevron-right";
+      arrowIcon.style.fontSize = "12px";
+      arrow.append(arrowIcon);
 
       const catIcon = document.createElement("bim-icon") as any;
       catIcon.icon = iconStr;
-      catIcon.style.cssText = "font-size:14px;flex-shrink:0;opacity:0.75;";
+      catIcon.className = "types-cat-icon";
 
       const catLabel = document.createElement("span");
-      catLabel.style.cssText = "flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+      catLabel.className = "types-cat-label";
       catLabel.textContent = label;
 
       const catCount = document.createElement("span");
-      catCount.style.cssText = "font-size:10px;opacity:0.45;flex-shrink:0;";
+      catCount.className = "types-cat-count";
       catCount.textContent = String(instances.length);
 
       catRow.append(arrow, catIcon, catLabel, catCount);
@@ -184,12 +175,13 @@ export function createTreePanel(
       arrow.addEventListener("click", (e: Event) => {
         e.stopPropagation();
         expanded = !expanded;
-        arrow.style.transform = expanded ? "rotate(90deg)" : "";
+        arrow.classList.toggle("expanded", expanded);
+        arrow.setAttribute("aria-expanded", String(expanded));
         instsContainer.style.display = expanded ? "" : "none";
       });
 
       catRow.addEventListener("click", (e: MouseEvent) => {
-        if ((e.target as HTMLElement) === arrow) return;
+        if (arrow.contains(e.target as Node)) return;
         const modelIdMap: OBC.ModelIdMap = {};
         for (const inst of instances) {
           if (!modelIdMap[inst.modelId]) modelIdMap[inst.modelId] = new Set();
@@ -202,21 +194,11 @@ export function createTreePanel(
 
       for (const inst of instances) {
         const instRow = document.createElement("div");
-        instRow.style.cssText = [
-          "display:flex","align-items:center","gap:5px",
-          "padding:3px 8px 3px 30px","cursor:pointer",
-          "color:var(--bim-ui_bg-contrast-70)",
-          "border-bottom:1px solid var(--bim-ui_bg-contrast-05)",
-        ].join(";");
-        instRow.addEventListener("mouseenter", () => {
-          if (!(instRow as any)._typSel) instRow.style.background = "var(--bim-ui_bg-contrast-10)";
-        });
-        instRow.addEventListener("mouseleave", () => {
-          instRow.style.background = (instRow as any)._typSel ? "rgba(101,40,215,0.18)" : "";
-        });
+        instRow.className = "types-row types-row--inst";
+        makeRowAccessible(instRow);
 
         const instLbl = document.createElement("span");
-        instLbl.style.cssText = "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+        instLbl.className = "types-inst-label";
         instLbl.textContent = inst.name;
         instRow.append(instLbl);
 
@@ -308,10 +290,10 @@ export function createTreePanel(
   section.collapsed = false;
 
   const switcherBar = document.createElement("div");
-  switcherBar.style.cssText = "display:flex;gap:4px;margin-bottom:6px;";
+  switcherBar.className = "tree-switcher";
 
-  const btnSpatial = makeTreeViewBtn("material-symbols:account-tree", "Spatial");
-  const btnTypes   = makeTreeViewBtn("material-symbols:category", "Types");
+  const btnSpatial = makeTreeViewBtn("material-symbols:account-tree", "Espacial");
+  const btnTypes   = makeTreeViewBtn("material-symbols:category", "Tipos");
   switcherBar.append(btnSpatial, btnTypes);
 
   let currentView: "spatial" | "types" = "spatial";
@@ -320,16 +302,14 @@ export function createTreePanel(
     currentView = view;
     (spatialTree as HTMLElement).style.display = view === "spatial" ? "" : "none";
     typesContainer.style.display = view === "types" ? "" : "none";
-    [btnSpatial, btnTypes].forEach(btn => {
-      const isActive = (view === "spatial" ? btnSpatial : btnTypes) === btn;
-      btn.style.background = isActive ? "var(--bim-ui_bg-contrast-20)" : "var(--bim-ui_bg-contrast-10)";
-      btn.style.color      = isActive ? "var(--bim-ui_bg-contrast-100)" : "var(--bim-ui_bg-contrast-60)";
-    });
+    btnSpatial.classList.toggle("active", view === "spatial");
+    btnTypes.classList.toggle("active", view === "types");
   };
 
   btnSpatial.addEventListener("click", () => switchView("spatial"));
   btnTypes.addEventListener("click",   () => switchView("types"));
   switchView("spatial");
+  renderTypesTree();
 
   section.append(switcherBar, spatialTree, typesContainer);
 

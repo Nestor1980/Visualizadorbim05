@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import * as OBC from "@thatopen/components";
 import * as OBF from "@thatopen/components-front";
+import { HIGHLIGHT_COLOR } from "../config/constants";
 
 export function setupPostprocessing(
   world: OBC.World,
@@ -71,7 +72,7 @@ export function setupPostprocessing(
   outliner.enabled  = true;
   outliner.color    = new THREE.Color(0x39ff14);
   outliner.thickness = 3;
-  outliner.fillColor = new THREE.Color(0x6528d7);
+  outliner.fillColor = HIGHLIGHT_COLOR.clone();
   outliner.fillOpacity = 0.35;
   outliner.styles.add("select");
 

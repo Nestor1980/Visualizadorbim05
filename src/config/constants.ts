@@ -39,19 +39,19 @@ export const SECTION_FILL_CATEGORIES: RegExp[] = [
 ];
 
 export const IFC_LABEL: Record<string, string> = {
-  IFCWALL: "Wall",                IFCWALLSTANDARDCASE: "Wall",
-  IFCSLAB: "Slab",               IFCCOLUMN: "Column",
-  IFCBEAM: "Beam",               IFCDOOR: "Door",
-  IFCWINDOW: "Window",           IFCSTAIR: "Stair",
-  IFCROOF: "Roof",               IFCOPENINGELEMENT: "Opening",
-  IFCFOOTING: "Footing",         IFCPILE: "Pile",
-  IFCFURNISHINGELEMENT: "Furniture", IFCPLATE: "Plate",
-  IFCMEMBER: "Member",           IFCSPACE: "Space",
-  IFCPIPESEGMENT: "Pipe",        IFCPIPEFITTING: "Pipe Fitting",
-  IFCDUCTSEGMENT: "Duct",        IFCDUCTFITTING: "Duct Fitting",
-  IFCFLOWSEGMENT: "Flow Segment",IFCFLOWTERMINAL: "Terminal",
-  IFCFLOWFITTING: "Flow Fitting",IFCCURTAINWALL: "Curtain Wall",
-  IFCCOVERING: "Covering",       IFCRAILING: "Railing",
+  IFCWALL: "Muro",                IFCWALLSTANDARDCASE: "Muro",
+  IFCSLAB: "Losa",               IFCCOLUMN: "Columna",
+  IFCBEAM: "Viga",               IFCDOOR: "Puerta",
+  IFCWINDOW: "Ventana",          IFCSTAIR: "Escalera",
+  IFCROOF: "Cubierta",           IFCOPENINGELEMENT: "Hueco",
+  IFCFOOTING: "Zapata",          IFCPILE: "Pilote",
+  IFCFURNISHINGELEMENT: "Mobiliario", IFCPLATE: "Placa",
+  IFCMEMBER: "Perfil",           IFCSPACE: "Espacio",
+  IFCPIPESEGMENT: "Tubería",     IFCPIPEFITTING: "Accesorio tubería",
+  IFCDUCTSEGMENT: "Conducto",    IFCDUCTFITTING: "Accesorio conducto",
+  IFCFLOWSEGMENT: "Segmento de flujo", IFCFLOWTERMINAL: "Terminal",
+  IFCFLOWFITTING: "Accesorio de flujo", IFCCURTAINWALL: "Muro cortina",
+  IFCCOVERING: "Revestimiento",  IFCRAILING: "Barandilla",
 };
 
 export const IFC_ICON: Record<string, string> = {
@@ -78,7 +78,10 @@ export const IFC_ICON: Record<string, string> = {
   IFCCURTAINWALL:      "material-symbols:grid-view",
 };
 
-export const HIGHLIGHT_COLOR = new THREE.Color(0x6528d7);
+// Color de acento único de la app. Debe coincidir con --accent en global.css
+// y con el --bim-ui_main-base por defecto de @thatopen/ui.
+export const ACCENT_HEX = 0x6528d7;
+export const HIGHLIGHT_COLOR = new THREE.Color(ACCENT_HEX);
 
 export function injectCompactTableCSS(): void {
   const s = document.createElement("style");
