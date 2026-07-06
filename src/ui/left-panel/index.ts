@@ -63,15 +63,28 @@ export function createLeftPanel(
     return window.matchMedia("(prefers-color-scheme: light)").matches;
   };
 
-  const updateThemeToggleBtn = (): void => {
-    const light = isLightTheme();
+  const brandLogo = document.createElement("img");
+  brandLogo.className = "panel-brand-logo";
+  brandLogo.alt = "Visualizador BIM";
+
+  const applyTheme = (light: boolean): void => {
     themeToggleBtn.icon  = light ? "material-symbols:dark-mode" : "material-symbols:light-mode";
     themeToggleBtn.label = light ? "Modo oscuro" : "Modo claro";
+    brandLogo.src = light
+      ? "/img/visualizador_bim_logo_light.png"
+      : "/img/visualizador_bim_logo_dark.png";
   };
 
+  const updateThemeToggleBtn = (): void => applyTheme(isLightTheme());
+
+  // BUI.Manager.toggleTheme() aplica la clase bim-ui-light/dark en un
+  // setTimeout interno (~250ms, para animar la transición), así que releer
+  // classList justo después de llamarlo devuelve el tema anterior. En vez de
+  // eso, calculamos el próximo estado nosotros mismos y lo aplicamos directo.
   const onThemeToggleClick = () => {
+    const nextLight = !isLightTheme();
     BUI.Manager.toggleTheme();
-    updateThemeToggleBtn();
+    applyTheme(nextLight);
   };
 
   const themeToggleBtn = BUI.Component.create<BUI.Button>(() => {
@@ -81,7 +94,8 @@ export function createLeftPanel(
 
   const panel = BUI.Component.create<BUI.PanelSection>(() => {
     return BUI.html`
-      <bim-panel active label="Visualizador BIM" class="options-menu">
+      <bim-panel active class="options-menu">
+        <div class="panel-brand">${brandLogo}</div>
 
         <bim-panel-section label="Apariencia" icon="material-symbols:contrast-rounded">
           ${themeToggleBtn}

@@ -28,6 +28,18 @@ bim-panel {
   position: relative;
 }
 
+.panel-brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--bim-ui_size-4xl, 1rem);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.panel-brand-logo {
+  max-width: 100%;
+  height: auto;
+}
+
 .panel-overlay {
   position: fixed;
   top: 0;
