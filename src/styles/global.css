@@ -10,6 +10,18 @@
   box-sizing: border-box;
 }
 
+/*
+ * Transición clara/oscuro: minimalista y gradual, sin el flash del overlay
+ * de "wipe" circular de @thatopen/ui (desactivado con toggleTheme(false)).
+ * Solo cubre el DOM "de luz" (esta hoja no penetra los shadow roots de los
+ * bim-* components, que ya traen su propia transición de ~150ms).
+ */
+*, *::before, *::after {
+  transition-property: background-color, color, border-color, box-shadow;
+  transition-duration: 0.25s;
+  transition-timing-function: ease;
+}
+
 html, body {
   width: 100%;
   height: 100%;

@@ -178,7 +178,9 @@ export function showWelcomeScreen({ onLoadIfc, onLoadBytes, onClose }: WelcomeSc
   applyThemeIcon(isLightTheme());
   themeToggleBtn.addEventListener("click", () => {
     const nextLight = !isLightTheme();
-    BUI.Manager.toggleTheme();
+    // false = sin el overlay de "wipe" circular de @thatopen/ui; el cambio
+    // de variables CSS ya se transiciona de forma suave vía global.css.
+    BUI.Manager.toggleTheme(false);
     applyThemeIcon(nextLight);
   });
 

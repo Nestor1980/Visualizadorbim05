@@ -86,13 +86,12 @@ export function createLeftPanel(
 
   const updateThemeToggleBtn = (): void => applyTheme(isLightTheme());
 
-  // BUI.Manager.toggleTheme() aplica la clase bim-ui-light/dark en un
-  // setTimeout interno (~250ms, para animar la transición), así que releer
-  // classList justo después de llamarlo devuelve el tema anterior. En vez de
-  // eso, calculamos el próximo estado nosotros mismos y lo aplicamos directo.
+  // animate=false evita el overlay de "wipe" circular (el flash de pantalla
+  // completa) que aplica @thatopen/ui por defecto; el cambio de variables CSS
+  // ya se transiciona de forma suave y minimalista vía global.css.
   const onThemeToggleClick = () => {
     const nextLight = !isLightTheme();
-    BUI.Manager.toggleTheme();
+    BUI.Manager.toggleTheme(false);
     applyTheme(nextLight);
   };
 
