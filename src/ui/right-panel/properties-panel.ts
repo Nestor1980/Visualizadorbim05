@@ -152,7 +152,7 @@ export function createPropertiesPanel(
       Object.assign(btn.style, {
         background:   isActive ? "var(--bim-ui_bg-contrast-20)" : "var(--bim-ui_bg-contrast-10)",
         color:        isActive ? "var(--bim-ui_bg-contrast-100)" : "var(--bim-ui_bg-contrast-80)",
-        borderBottom: isActive ? "2px solid var(--bim-ui_accent-base, #6528d7)" : "2px solid transparent",
+        borderBottom: isActive ? "2px solid var(--accent, #adda01)" : "2px solid transparent",
         fontWeight:   isActive ? "700" : "600",
       });
       if (isActive) btn.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" });

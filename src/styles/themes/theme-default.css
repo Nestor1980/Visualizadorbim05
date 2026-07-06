@@ -1,0 +1,35 @@
+/*
+ * Tema genérico (acento morado original, previo a la identidad institucional).
+ * Se conserva como ejemplo alternativo del formato de temas: define el mismo
+ * contrato de variables que theme-er.css, así que puede activarse
+ * reemplazando el <link> de tema en index.html sin tocar el resto del CSS.
+ * No implementa modo claro — solo un set de valores (modo oscuro).
+ */
+
+:root {
+  --font-body: 'Nunito', system-ui, sans-serif;
+
+  --brand-primary: #6528d7;
+  --brand-primary-dark: #4d1ea3;
+  --brand-secondary: #8a5cf0;
+  --brand-tertiary: #3d1a8f;
+  --brand-ink: #1a1a1a;
+  --brand-cream: #f0f0f0;
+
+  --accent: var(--brand-primary);
+  --accent-dim: rgba(101, 40, 215, 0.25);
+  --accent-selected-bg: rgba(101, 40, 215, 0.18);
+  --accent-selected-border: rgba(101, 40, 215, 0.85);
+
+  --bim-ui_main-base: var(--brand-primary);
+  --bim-ui_accent-base: #bcf124;
+
+  --bg-app: #181818;
+  --bg-surface: #1f1f1f;
+  --bg-elevated: #2a2a2a;
+  --bg-surface-hover: #383838;
+  --text-primary: #f2f2f2;
+  --text-secondary: #cccccc;
+  --text-muted: #888888;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+}

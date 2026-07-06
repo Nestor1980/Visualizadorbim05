@@ -1,10 +1,8 @@
-:root {
-  /* Acento único de la app. Debe coincidir con ACCENT_HEX en src/config/constants.ts */
-  --accent: #6528d7;
-  --accent-dim: rgba(101, 40, 215, 0.25);
-  --accent-selected-bg: rgba(101, 40, 215, 0.18);
-  --accent-selected-border: rgba(101, 40, 215, 0.85);
-}
+/*
+ * Variables de marca (--accent, --bg-*, --text-*, etc.) definidas en
+ * src/styles/themes/*.css — este archivo solo consume esas variables.
+ * --accent debe coincidir con ACCENT_HEX en src/config/constants.ts.
+ */
 
 * {
   margin: 0;
@@ -16,7 +14,8 @@ html, body {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: #181818;
+  background: var(--bg-app);
+  font-family: var(--font-body);
 }
 
 bim-grid {
@@ -27,6 +26,18 @@ bim-grid {
 
 bim-panel {
   position: relative;
+}
+
+.panel-brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--bim-ui_size-4xl, 1rem);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.panel-brand-logo {
+  max-width: 100%;
+  height: auto;
 }
 
 .panel-overlay {
@@ -66,8 +77,8 @@ bim-panel {
   height: 64px;
   border: none;
   cursor: pointer;
-  background: #2a2a2a;
-  color: #ccc;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
   font-size: 0.85rem;
   display: flex;
   align-items: center;
@@ -81,13 +92,13 @@ bim-panel {
   border-radius: 8px 0 0 8px;
 }
 .panel-toggle:hover {
-  background: #383838;
-  color: #fff;
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
 }
 .panel-toggle:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-  color: #fff;
+  color: var(--text-primary);
 }
 
 .panel-resize-handle {
@@ -114,6 +125,12 @@ bim-panel {
 }
 .panel-overlay.collapsed .panel-resize-handle {
   display: none;
+}
+/* Mientras se muestra la pantalla de bienvenida, los paneles laterales
+ * permanecen ocultos (incluido su botón de toggle). */
+body.welcome-active .panel-overlay {
+  opacity: 0;
+  pointer-events: none;
 }
 body.resizing-panel {
   cursor: ew-resize;
@@ -262,7 +279,7 @@ bim-view-cube:active {
   align-items: center;
   justify-content: center;
   gap: 1.25rem;
-  background: #181818;
+  background: var(--bg-app);
   transition: opacity 0.35s ease;
 }
 #loading-screen.hidden {
@@ -278,11 +295,216 @@ bim-view-cube:active {
   animation: loading-spin 0.9s linear infinite;
 }
 #loading-text {
-  font-family: system-ui, sans-serif;
-  color: #ccc;
+  font-family: inherit;
+  color: var(--text-secondary);
   font-size: 0.95rem;
   letter-spacing: 0.02em;
 }
 @keyframes loading-spin {
   to { transform: rotate(360deg); }
+}
+
+#welcome-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  transition: opacity 0.25s ease;
+}
+#welcome-screen.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.welcome-card {
+  position: relative;
+  width: min(640px, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  overflow: hidden auto;
+  background: var(--bg-surface);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+}
+
+.welcome-close {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.3);
+  color: #fff;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+.welcome-close:hover {
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.welcome-hero {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 2rem;
+  min-height: 140px;
+  background: linear-gradient(135deg, var(--brand-tertiary), var(--brand-secondary) 55%, var(--brand-primary));
+}
+.welcome-logo {
+  max-width: 70%;
+  max-height: 92px;
+  width: auto;
+  height: auto;
+}
+.welcome-version {
+  position: absolute;
+  bottom: 0.6rem;
+  right: 0.85rem;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.85);
+  letter-spacing: 0.02em;
+}
+
+.welcome-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  padding: 1.5rem 2rem;
+}
+.welcome-col h3 {
+  margin: 0 0 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.welcome-col h3.welcome-subheading {
+  margin-top: 1rem;
+}
+
+.welcome-file-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  margin-bottom: 0.5rem;
+  padding: 0.4rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.welcome-file-item:hover {
+  background: var(--bg-surface-hover);
+}
+.welcome-file-item:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.welcome-thumb {
+  position: relative;
+  flex-shrink: 0;
+  width: 56px;
+  height: 36px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--bg-app);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.welcome-thumb-img {
+  display: none;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.welcome-thumb-img.loaded {
+  display: block;
+}
+.welcome-thumb-img.loaded + .welcome-thumb-placeholder {
+  display: none;
+}
+.welcome-thumb-placeholder {
+  font-size: 1.2rem;
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+
+.welcome-file-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.welcome-file-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.88rem;
+}
+.welcome-file-subtitle {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.welcome-empty {
+  display: block;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.welcome-action:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.welcome-action {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  margin-bottom: 0.5rem;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.welcome-action:hover {
+  background: var(--bg-surface-hover);
+}
+.welcome-action-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--brand-ink);
+  font-weight: 700;
+}
+.welcome-action-primary:hover {
+  background: var(--brand-primary-dark);
+}
+
+.welcome-footer {
+  padding: 0.85rem 2rem;
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  font-size: 0.75rem;
 }
