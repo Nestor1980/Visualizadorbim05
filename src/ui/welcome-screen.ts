@@ -1,3 +1,4 @@
+import * as BUI from "@thatopen/ui";
 import { listRecentFiles, getRecentFileData, getThumbnail } from "../ifc/recent-files";
 
 export interface WelcomeScreenOptions {
@@ -17,6 +18,13 @@ const PROJECTS: Project[] = [
 ];
 
 const formatSize = (bytes: number): string => `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+
+const isLightTheme = (): boolean => {
+  const html = document.documentElement;
+  if (html.classList.contains("bim-ui-light")) return true;
+  if (html.classList.contains("bim-ui-dark")) return false;
+  return window.matchMedia("(prefers-color-scheme: light)").matches;
+};
 
 /** Botón de archivo con miniatura: reserva el espacio de la imagen y muestra un ícono por defecto hasta que haya una en caché. */
 function createFileItem(
@@ -58,9 +66,14 @@ export function showWelcomeScreen({ onLoadIfc, onLoadBytes, onClose }: WelcomeSc
   overlay.id = "welcome-screen";
   overlay.innerHTML = `
     <div class="welcome-card">
-      <button class="welcome-close" type="button" aria-label="Cerrar">
-        <iconify-icon icon="material-symbols:close"></iconify-icon>
-      </button>
+      <div class="welcome-top-actions">
+        <button class="welcome-theme-toggle" type="button" aria-label="Cambiar tema">
+          <iconify-icon icon="material-symbols:dark-mode"></iconify-icon>
+        </button>
+        <button class="welcome-close" type="button" aria-label="Cerrar">
+          <iconify-icon icon="material-symbols:close"></iconify-icon>
+        </button>
+      </div>
 
       <div class="welcome-hero">
         <img class="welcome-logo" src="/img/visualizador_bim_withe.png" alt="Instituto Autárquico de Planeamiento y Vivienda" />
@@ -154,6 +167,20 @@ export function showWelcomeScreen({ onLoadIfc, onLoadBytes, onClose }: WelcomeSc
       console.error("No se pudieron leer los archivos recientes:", error);
       recentsEl.innerHTML = `<span class="welcome-empty">No hay archivos recientes</span>`;
     });
+
+  // — Alternar tema claro/oscuro —
+  const themeToggleBtn = overlay.querySelector(".welcome-theme-toggle") as HTMLButtonElement;
+  const themeToggleIcon = themeToggleBtn.querySelector("iconify-icon") as HTMLElement;
+  const applyThemeIcon = (light: boolean): void => {
+    themeToggleIcon.setAttribute("icon", light ? "material-symbols:dark-mode" : "material-symbols:light-mode");
+    themeToggleBtn.setAttribute("aria-label", light ? "Cambiar a modo oscuro" : "Cambiar a modo claro");
+  };
+  applyThemeIcon(isLightTheme());
+  themeToggleBtn.addEventListener("click", () => {
+    const nextLight = !isLightTheme();
+    BUI.Manager.toggleTheme();
+    applyThemeIcon(nextLight);
+  });
 
   overlay.addEventListener("click", (event) => {
     if (event.target === overlay) close();

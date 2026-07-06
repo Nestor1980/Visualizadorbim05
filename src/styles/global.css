@@ -329,11 +329,16 @@ bim-view-cube:active {
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
 }
 
-.welcome-close {
+.welcome-top-actions {
   position: absolute;
   top: 0.75rem;
   right: 0.75rem;
   z-index: 1;
+  display: flex;
+  gap: 0.4rem;
+}
+.welcome-theme-toggle,
+.welcome-close {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -346,6 +351,7 @@ bim-view-cube:active {
   font-size: 1.1rem;
   cursor: pointer;
 }
+.welcome-theme-toggle:hover,
 .welcome-close:hover {
   background: rgba(0, 0, 0, 0.5);
 }
