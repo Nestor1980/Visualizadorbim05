@@ -6,8 +6,9 @@ Un inspector pueda ver el modelo.
 [x] - Colores institucionales (Entre Rios IAPV).
 [x] - Cambiar fuente de letra
 
-[ ] - Welcome Screen
-[ ] - Modelo incial de gemelo digital (modelo IFC de casa propia).
+[x] - Welcome Screen
+[x] - Modelo incial de gemelo digital (modelo IFC de casa propia).
+[ ] - Agregar vista de miniatura
 
 [ ] - Funciones las herramientas de forma responsiva. (Medidor de distancia).
 [ ] - Mostrar información de los elementos seleccionados. (Pedir imagenes de referencia).

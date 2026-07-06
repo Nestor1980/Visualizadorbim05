@@ -3,10 +3,13 @@ import * as OBF from "@thatopen/components-front";
 import * as CUI from "@thatopen/ui-obc";
 import * as BUI from "@thatopen/ui";
 import { createTreePanel, TreePanel } from "./tree-panel";
+import { saveRecentFile } from "../../ifc/recent-files";
 
 export interface LeftPanel {
   element: BUI.Panel;
   treePanel: TreePanel;
+  triggerLoadIfc: () => void;
+  loadIfcBytes: (bytes: Uint8Array, name: string) => Promise<void>;
 }
 
 export function createLeftPanel(
@@ -20,6 +23,29 @@ export function createLeftPanel(
     components, metaDataTags: ["schema"], actions: { download: false },
   });
 
+  const loadIfcBytes = async (bytes: Uint8Array, name: string): Promise<void> => {
+    if (loadIfcBtn.loading) return;
+    loadIfcBtn.loading = true;
+    loadIfcBtn.label   = "Cargando… 0%";
+    try {
+      const model = await ifcLoader.load(bytes, true, name, {
+        processData: {
+          progressCallback: (p) => {
+            loadIfcBtn.label = `Cargando… ${Math.round(p * 100)}%`;
+          },
+        },
+      });
+      await onModelLoaded(model);
+      saveRecentFile(name, bytes).catch((error) => console.error("No se pudo guardar en recientes:", error));
+      loadIfcBtn.label = "Cargar IFC";
+    } catch (error) {
+      console.error("Error al cargar IFC:", error);
+      loadIfcBtn.label = "Error al cargar — reintentar";
+    } finally {
+      loadIfcBtn.loading = false;
+    }
+  };
+
   const onLoadClick = () => {
     if (loadIfcBtn.loading) return;
     const input    = document.createElement("input");
@@ -28,24 +54,7 @@ export function createLeftPanel(
     input.onchange = async () => {
       const file = input.files?.[0];
       if (!file) return;
-      loadIfcBtn.loading = true;
-      loadIfcBtn.label   = "Cargando… 0%";
-      try {
-        const model = await ifcLoader.load(new Uint8Array(await file.arrayBuffer()), true, file.name, {
-          processData: {
-            progressCallback: (p) => {
-              loadIfcBtn.label = `Cargando… ${Math.round(p * 100)}%`;
-            },
-          },
-        });
-        await onModelLoaded(model);
-        loadIfcBtn.label = "Cargar IFC";
-      } catch (error) {
-        console.error("Error al cargar IFC:", error);
-        loadIfcBtn.label = "Error al cargar — reintentar";
-      } finally {
-        loadIfcBtn.loading = false;
-      }
+      await loadIfcBytes(new Uint8Array(await file.arrayBuffer()), file.name);
     };
     input.click();
   };
@@ -112,7 +121,12 @@ export function createLeftPanel(
 
   (panel as unknown as HTMLElement).append(treePanel.section);
 
-  return { element: panel as unknown as BUI.Panel, treePanel };
+  return {
+    element: panel as unknown as BUI.Panel,
+    treePanel,
+    triggerLoadIfc: onLoadClick,
+    loadIfcBytes,
+  };
 }
 
 const MIN_WIDTH = 240;

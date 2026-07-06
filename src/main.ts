@@ -21,8 +21,12 @@ import { createToolbar }          from "./ui/toolbar";
 import { setupLayout }            from "./ui/layout";
 import { setupBCFSection }        from "./bcf/bcf-manager";
 import { SelectionManager }       from "./selection/selection-manager";
+import { showWelcomeScreen }      from "./ui/welcome-screen";
 
-async function startApp() {
+async function startApp(): Promise<{
+  triggerLoadIfc: () => void;
+  loadIfcBytes: (bytes: Uint8Array, name: string) => Promise<void>;
+}> {
   BUI.Manager.init();
   injectCompactTableCSS();
 
@@ -168,6 +172,8 @@ async function startApp() {
   // Force renderer + camera to pick up the real DOM dimensions after layout is mounted.
   world.renderer?.resize(undefined);
   (world.camera as OBC.OrthoPerspectiveCamera).updateAspect();
+
+  return { triggerLoadIfc: leftPanel.triggerLoadIfc, loadIfcBytes: leftPanel.loadIfcBytes };
 }
 
 function hideLoadingScreen() {
@@ -178,7 +184,10 @@ function hideLoadingScreen() {
 }
 
 startApp()
-  .then(hideLoadingScreen)
+  .then(({ triggerLoadIfc, loadIfcBytes }) => {
+    hideLoadingScreen();
+    showWelcomeScreen({ onLoadIfc: triggerLoadIfc, onLoadBytes: loadIfcBytes });
+  })
   .catch((error) => {
     console.error(error);
     const loadingText = document.getElementById("loading-text");
