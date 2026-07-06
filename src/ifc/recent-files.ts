@@ -1,7 +1,8 @@
 const DB_NAME = "visualizador-bim";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const META_STORE = "recentFilesMeta";
 const DATA_STORE = "recentFilesData";
+const THUMB_STORE = "thumbnails";
 const MAX_RECENT = 5;
 
 export interface RecentFileEntry {
@@ -17,6 +18,7 @@ function openDb(): Promise<IDBDatabase> {
       const db = request.result;
       if (!db.objectStoreNames.contains(META_STORE)) db.createObjectStore(META_STORE, { keyPath: "name" });
       if (!db.objectStoreNames.contains(DATA_STORE)) db.createObjectStore(DATA_STORE, { keyPath: "name" });
+      if (!db.objectStoreNames.contains(THUMB_STORE)) db.createObjectStore(THUMB_STORE, { keyPath: "name" });
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
@@ -52,15 +54,34 @@ export async function saveRecentFile(name: string, data: Uint8Array): Promise<vo
   );
   if (entries.length > MAX_RECENT) {
     const stale = entries.sort((a, b) => a.timestamp - b.timestamp).slice(0, entries.length - MAX_RECENT);
-    const pruneTx = db.transaction([META_STORE, DATA_STORE], "readwrite");
+    const pruneTx = db.transaction([META_STORE, DATA_STORE, THUMB_STORE], "readwrite");
     for (const entry of stale) {
       pruneTx.objectStore(META_STORE).delete(entry.name);
       pruneTx.objectStore(DATA_STORE).delete(entry.name);
+      pruneTx.objectStore(THUMB_STORE).delete(entry.name);
     }
     await txToPromise(pruneTx);
   }
 
   db.close();
+}
+
+/** Guarda una captura (data URL) de la vista del modelo recién cargado, usada como miniatura. */
+export async function saveThumbnail(name: string, dataUrl: string): Promise<void> {
+  const db = await openDb();
+  const tx = db.transaction(THUMB_STORE, "readwrite");
+  tx.objectStore(THUMB_STORE).put({ name, dataUrl });
+  await txToPromise(tx);
+  db.close();
+}
+
+export async function getThumbnail(name: string): Promise<string | undefined> {
+  const db = await openDb();
+  const record = await reqToPromise<{ name: string; dataUrl: string } | undefined>(
+    db.transaction(THUMB_STORE).objectStore(THUMB_STORE).get(name),
+  );
+  db.close();
+  return record?.dataUrl;
 }
 
 export async function listRecentFiles(): Promise<RecentFileEntry[]> {

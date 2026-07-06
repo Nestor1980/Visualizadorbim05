@@ -126,6 +126,12 @@ bim-panel {
 .panel-overlay.collapsed .panel-resize-handle {
   display: none;
 }
+/* Mientras se muestra la pantalla de bienvenida, los paneles laterales
+ * permanecen ocultos (incluido su botón de toggle). */
+body.welcome-active .panel-overlay {
+  opacity: 0;
+  pointer-events: none;
+}
 body.resizing-panel {
   cursor: ew-resize;
   user-select: none;
@@ -385,19 +391,75 @@ bim-view-cube:active {
   margin-top: 1rem;
 }
 
-.welcome-action-recent {
-  justify-content: flex-start;
+.welcome-file-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  margin-bottom: 0.5rem;
+  padding: 0.4rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease;
 }
-.welcome-recent-name {
+.welcome-file-item:hover {
+  background: var(--bg-surface-hover);
+}
+.welcome-file-item:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.welcome-thumb {
+  position: relative;
+  flex-shrink: 0;
+  width: 56px;
+  height: 36px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--bg-app);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.welcome-thumb-img {
+  display: none;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.welcome-thumb-img.loaded {
+  display: block;
+}
+.welcome-thumb-img.loaded + .welcome-thumb-placeholder {
+  display: none;
+}
+.welcome-thumb-placeholder {
+  font-size: 1.2rem;
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+
+.welcome-file-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.welcome-file-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 0.88rem;
 }
-.welcome-recent-size {
-  margin-left: auto;
-  flex-shrink: 0;
+.welcome-file-subtitle {
   color: var(--text-muted);
-  font-size: 0.78rem;
+  font-size: 0.75rem;
 }
 
 .welcome-empty {
@@ -438,15 +500,6 @@ bim-view-cube:active {
 }
 .welcome-action-primary:hover {
   background: var(--brand-primary-dark);
-}
-
-.welcome-tip {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  margin-bottom: 0.55rem;
-  color: var(--text-secondary);
-  font-size: 0.88rem;
 }
 
 .welcome-footer {

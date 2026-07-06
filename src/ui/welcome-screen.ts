@@ -1,8 +1,9 @@
-import { listRecentFiles, getRecentFileData } from "../ifc/recent-files";
+import { listRecentFiles, getRecentFileData, getThumbnail } from "../ifc/recent-files";
 
 export interface WelcomeScreenOptions {
   onLoadIfc: () => void;
   onLoadBytes: (bytes: Uint8Array, name: string) => Promise<void>;
+  onClose?: () => void;
 }
 
 interface Project {
@@ -17,8 +18,42 @@ const PROJECTS: Project[] = [
 
 const formatSize = (bytes: number): string => `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 
+/** Botón de archivo con miniatura: reserva el espacio de la imagen y muestra un ícono por defecto hasta que haya una en caché. */
+function createFileItem(
+  name: string,
+  label: string,
+  subtitle: string | null,
+  onSelect: (button: HTMLButtonElement) => Promise<void>,
+): HTMLButtonElement {
+  const btn = document.createElement("button");
+  btn.className = "welcome-file-item";
+  btn.type = "button";
+  btn.innerHTML = `
+    <span class="welcome-thumb">
+      <img class="welcome-thumb-img" alt="" />
+      <iconify-icon class="welcome-thumb-placeholder" icon="material-symbols:image-outline"></iconify-icon>
+    </span>
+    <span class="welcome-file-text">
+      <span class="welcome-file-label">${label}</span>
+      ${subtitle ? `<span class="welcome-file-subtitle">${subtitle}</span>` : ""}
+    </span>
+  `;
+  btn.addEventListener("click", () => onSelect(btn));
+
+  getThumbnail(name)
+    .then((dataUrl) => {
+      if (!dataUrl) return;
+      const img = btn.querySelector(".welcome-thumb-img") as HTMLImageElement;
+      img.src = dataUrl;
+      img.classList.add("loaded");
+    })
+    .catch((error) => console.error(`No se pudo leer la miniatura de "${name}":`, error));
+
+  return btn;
+}
+
 /** Pantalla de bienvenida mostrada una vez, al terminar de cargar la app. */
-export function showWelcomeScreen({ onLoadIfc, onLoadBytes }: WelcomeScreenOptions): void {
+export function showWelcomeScreen({ onLoadIfc, onLoadBytes, onClose }: WelcomeScreenOptions): void {
   const overlay = document.createElement("div");
   overlay.id = "welcome-screen";
   overlay.innerHTML = `
@@ -65,6 +100,7 @@ export function showWelcomeScreen({ onLoadIfc, onLoadBytes }: WelcomeScreenOptio
   const close = () => {
     overlay.classList.add("hidden");
     overlay.addEventListener("transitionend", () => overlay.remove(), { once: true });
+    onClose?.();
   };
 
   const loadAndClose = async (bytes: Uint8Array, name: string) => {
@@ -75,11 +111,7 @@ export function showWelcomeScreen({ onLoadIfc, onLoadBytes }: WelcomeScreenOptio
   // — Proyectos —
   const projectsEl = overlay.querySelector(".welcome-projects") as HTMLElement;
   for (const project of PROJECTS) {
-    const btn = document.createElement("button");
-    btn.className = "welcome-action";
-    btn.type = "button";
-    btn.innerHTML = `<iconify-icon icon="material-symbols:home-work-outline"></iconify-icon> ${project.label}`;
-    btn.addEventListener("click", async () => {
+    const btn = createFileItem(project.name, project.label, null, async () => {
       btn.disabled = true;
       try {
         const response = await fetch(project.url);
@@ -104,15 +136,7 @@ export function showWelcomeScreen({ onLoadIfc, onLoadBytes }: WelcomeScreenOptio
       }
       recentsEl.innerHTML = "";
       for (const entry of entries) {
-        const btn = document.createElement("button");
-        btn.className = "welcome-action welcome-action-recent";
-        btn.type = "button";
-        btn.innerHTML = `
-          <iconify-icon icon="material-symbols:history"></iconify-icon>
-          <span class="welcome-recent-name">${entry.name}</span>
-          <span class="welcome-recent-size">${formatSize(entry.size)}</span>
-        `;
-        btn.addEventListener("click", async () => {
+        const btn = createFileItem(entry.name, entry.name, formatSize(entry.size), async () => {
           btn.disabled = true;
           try {
             const bytes = await getRecentFileData(entry.name);

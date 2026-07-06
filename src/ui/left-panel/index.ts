@@ -17,7 +17,7 @@ export function createLeftPanel(
   fragments: OBC.FragmentsManager,
   ifcLoader: OBC.IfcLoader,
   highlighter: OBF.Highlighter,
-  onModelLoaded: (model: any) => Promise<void>,
+  onModelLoaded: (model: any, name: string) => Promise<void>,
 ): LeftPanel {
   const [modelsList] = CUI.tables.modelsList({
     components, metaDataTags: ["schema"], actions: { download: false },
@@ -35,7 +35,7 @@ export function createLeftPanel(
           },
         },
       });
-      await onModelLoaded(model);
+      await onModelLoaded(model, name);
       saveRecentFile(name, bytes).catch((error) => console.error("No se pudo guardar en recientes:", error));
       loadIfcBtn.label = "Cargar IFC";
     } catch (error) {

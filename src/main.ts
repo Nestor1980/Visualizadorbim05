@@ -22,6 +22,19 @@ import { setupLayout }            from "./ui/layout";
 import { setupBCFSection }        from "./bcf/bcf-manager";
 import { SelectionManager }       from "./selection/selection-manager";
 import { showWelcomeScreen }      from "./ui/welcome-screen";
+import { saveThumbnail }          from "./ifc/recent-files";
+
+/** Resuelve en cuanto el renderer dibuja el próximo frame (justo tras postproduction.update()). */
+function captureNextFrame(world: OBC.World, threeRenderer: THREE.WebGLRenderer): Promise<string> {
+  return new Promise((resolve) => {
+    const renderer = world.renderer as OBF.PostproductionRenderer;
+    const onAfterUpdate = () => {
+      renderer.onAfterUpdate.remove(onAfterUpdate);
+      resolve(threeRenderer.domElement.toDataURL("image/jpeg", 0.72));
+    };
+    renderer.onAfterUpdate.add(onAfterUpdate);
+  });
+}
 
 async function startApp(): Promise<{
   triggerLoadIfc: () => void;
@@ -128,8 +141,20 @@ async function startApp(): Promise<{
     return origApplyType(map, label, count);
   };
 
-  const onModelLoaded = (model: any) =>
-    processModel(model, fragments, sectionTool, adjustGridToModel);
+  const onModelLoaded = async (model: any, name: string) => {
+    await processModel(model, fragments, sectionTool, adjustGridToModel);
+    try {
+      const meshes: THREE.Mesh[] = [];
+      model.object?.traverse((obj: THREE.Object3D) => {
+        if (obj instanceof THREE.Mesh) meshes.push(obj);
+      });
+      if (meshes.length > 0) await world.camera.fit(meshes);
+      const dataUrl = await captureNextFrame(world, threeRenderer);
+      await saveThumbnail(name, dataUrl);
+    } catch (error) {
+      console.error("No se pudo generar la miniatura del modelo:", error);
+    }
+  };
 
   const leftPanel = createLeftPanel(components, fragments, ifcLoader, highlighter, onModelLoaded);
 
@@ -183,10 +208,16 @@ function hideLoadingScreen() {
   loadingScreen.addEventListener("transitionend", () => loadingScreen.remove(), { once: true });
 }
 
+document.body.classList.add("welcome-active");
+
 startApp()
   .then(({ triggerLoadIfc, loadIfcBytes }) => {
     hideLoadingScreen();
-    showWelcomeScreen({ onLoadIfc: triggerLoadIfc, onLoadBytes: loadIfcBytes });
+    showWelcomeScreen({
+      onLoadIfc: triggerLoadIfc,
+      onLoadBytes: loadIfcBytes,
+      onClose: () => document.body.classList.remove("welcome-active"),
+    });
   })
   .catch((error) => {
     console.error(error);
