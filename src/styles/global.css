@@ -85,11 +85,10 @@ bim-panel {
 .panel-resize-handle:active::after {
   background: var(--accent);
 }
-/* Mientras se muestra la pantalla de bienvenida, el panel permanece oculto;
- * el propio #welcome-screen ya cubre todo el viewport, así que esto solo
- * evita clicks/parpadeos por debajo. */
+/* Mientras se muestra la pantalla de bienvenida, el panel queda visible
+ * (atenuado por el overlay de #welcome-screen) pero no interactivo, ya que
+ * #welcome-screen cubre todo el viewport y captura los clicks. */
 body.welcome-active .panel-pane {
-  opacity: 0;
   pointer-events: none;
 }
 body.resizing-panel {
@@ -441,11 +440,17 @@ bim-viewport {
   position: relative;
 }
 
-bim-toolbar {
+.floating-toolbars {
   position: absolute;
   top: 1.5rem;
   left: 1.5rem;
   z-index: 100;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+bim-toolbar {
   border-radius: 12px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
   --bim-toolbar-section--gap: 4px;

@@ -5,6 +5,7 @@ import { createTreePanel, TreePanel } from "./tree-panel";
 import { createModelsTree } from "./models-tree";
 import { createDataLayersTree } from "./data-layers-tree";
 import { saveRecentFile } from "../../ifc/recent-files";
+import { ensureExplicitThemeClass, createThemeToggleButton } from "../theme";
 
 export interface LeftPanel {
   /** Frame "Escena": bim-panel propio con su header, para el split superior del panel derecho.

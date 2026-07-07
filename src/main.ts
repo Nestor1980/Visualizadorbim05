@@ -19,6 +19,7 @@ import { createRightPanel, attachRightPanelResize } from "./ui/right-panel/index
 import { createLeftPanel }    from "./ui/left-panel/index";
 import { createToolOptionsPanel } from "./ui/tool-options-panel";
 import { createToolbar }          from "./ui/toolbar";
+import { createProjectToolbar }   from "./ui/project-toolbar";
 import { setupLayout }            from "./ui/layout";
 import { createPanelSplit }       from "./ui/panel-split";
 import { setupBCFSection }        from "./bcf/bcf-manager";
@@ -161,9 +162,9 @@ async function startApp(): Promise<{
     measurer, sectionTool.clipper, world,
   );
 
-  // Panel dinámico de abajo: Controles, Estructuras (árbol espacial), Renderizado y Apariencia.
+  // Panel dinámico de abajo: Estructuras (árbol espacial), Renderizado y Apariencia.
   const rightPanel = createRightPanel(
-    fragments, postproduction, sunLight, threeRenderer,
+    postproduction, sunLight, threeRenderer,
     leftPanel.treePanel.section, leftPanel.appearanceSection,
   );
 
@@ -192,18 +193,23 @@ async function startApp(): Promise<{
   });
 
   const { openModal } = setupBCFSection(components, world, rightPanel.element);
-  const toolbar       = createToolbar(world, fragments, toolManager, selectionManager, openModal);
+  const toolbar        = createToolbar(world, fragments, toolManager, selectionManager, openModal);
+  const projectToolbar  = createProjectToolbar(fragments);
 
   // Los botones de la toolbar se registran en el ToolManager al crearla, después
   // del setMode inicial: re-aplicar el modo para que "Navegar" arranque activo.
   toolManager.setMode(toolManager.activeMode);
+
+  const floatingToolbars = document.createElement("div");
+  floatingToolbars.className = "floating-toolbars";
+  floatingToolbars.append(toolbar, projectToolbar);
 
   // Frame derecho dividido en dos: "Escena" (árbol de modelos IFC cargados,
   // estilo outliner) arriba, paneles dinámicos (Controles, Estructuras,
   // Renderizado, Apariencia, BCF) abajo.
   const panelSplit = createPanelSplit(leftPanel.element, rightPanel.element);
 
-  await setupLayout(viewport, panelSplit, toolbar, attachRightPanelResize);
+  await setupLayout(viewport, panelSplit, floatingToolbars, attachRightPanelResize);
 
   // Force renderer + camera to pick up the real DOM dimensions after layout is mounted.
   world.renderer?.resize(undefined);

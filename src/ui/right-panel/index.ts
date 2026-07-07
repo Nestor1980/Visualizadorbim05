@@ -1,8 +1,6 @@
 import * as THREE from "three";
-import * as OBC from "@thatopen/components";
 import * as OBF from "@thatopen/components-front";
 import * as BUI from "@thatopen/ui";
-import { createControlsPanel } from "./controls-panel";
 import { createRenderizadoPanel } from "./renderizado-panel";
 
 export interface RightPanel {
@@ -10,7 +8,6 @@ export interface RightPanel {
 }
 
 export function createRightPanel(
-  fragments: OBC.FragmentsManager,
   postproduction: OBF.Postproduction,
   sunLight: THREE.DirectionalLight,
   threeRenderer: THREE.WebGLRenderer,
@@ -19,10 +16,9 @@ export function createRightPanel(
 ): RightPanel {
   const panel = document.createElement("bim-panel") as BUI.Panel;
 
-  const controlsPanel    = createControlsPanel(fragments);
   const renderizadoPanel = createRenderizadoPanel(postproduction, sunLight, threeRenderer);
 
-  panel.append(controlsPanel.section, structureSection, renderizadoPanel.section, appearanceSection);
+  panel.append(structureSection, renderizadoPanel.section, appearanceSection);
 
   return { element: panel };
 }
