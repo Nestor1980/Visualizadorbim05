@@ -77,6 +77,10 @@ export function createPropertiesPanel(
   section.label     = "Selection Information";
   section.icon      = "material-symbols:info";
   section.collapsed = true;
+  // Fuera de un <bim-panel>, bim-panel-section se autodetecta como "fixed"
+  // (sin botón de colapso); lo forzamos a false para que el header siga
+  // siendo clickeable cuando este panel flota en el viewport.
+  section.fixed     = false;
 
   // — Tab bar wrapper —
   const tabBarWrapper = document.createElement("div");

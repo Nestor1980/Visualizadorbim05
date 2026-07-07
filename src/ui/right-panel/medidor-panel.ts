@@ -15,7 +15,7 @@ export function createMedidorPanel(measurer: OBF.LengthMeasurement): MedidorPane
 
   const settingsSection = BUI.Component.create<BUI.PanelSection>(() => {
     return BUI.html`
-      <bim-panel-section label="Medidor" icon="solar:ruler-cross-pen-bold">
+      <bim-panel-section label="Medidor" icon="solar:ruler-cross-pen-bold" .fixed=${false}>
         <bim-checkbox checked label="Visible"
           @change="${({ target }: { target: BUI.Checkbox }) => { measurer.visible = target.value; }}">
         </bim-checkbox>
@@ -46,8 +46,9 @@ export function createMedidorPanel(measurer: OBF.LengthMeasurement): MedidorPane
   const renderList = (): void => {
     const existing = element.querySelector("bim-panel-section[label='Mediciones']");
     if (existing) existing.remove();
-    const section = document.createElement("bim-panel-section");
+    const section = document.createElement("bim-panel-section") as BUI.PanelSection;
     section.setAttribute("label", "Mediciones");
+    section.fixed = false;
     const values = getAllMeasurementValues();
     if (values.length === 0) {
       const lbl = document.createElement("bim-label");

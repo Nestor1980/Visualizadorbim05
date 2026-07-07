@@ -3,12 +3,12 @@ import * as OBC from "@thatopen/components";
 import * as THREE from "three";
 import type { SectionTool } from "./section-tool";
 import type * as BUI from "@thatopen/ui";
-import type { RightPanelView } from "../ui/right-panel/index";
+import type { ToolOptionsView } from "../ui/tool-options-panel";
 
 export type ToolMode = "navigate" | "measure" | "section" | "properties";
 
-interface RightPanelLike {
-  setView: (view: RightPanelView) => void;
+interface ToolOptionsPanelLike {
+  setView: (view: ToolOptionsView) => void;
 }
 
 function isEditableTarget(event: Event): boolean {
@@ -31,7 +31,7 @@ export class ToolManager {
   private hoverer: OBF.Hoverer;
   private sectionTool: SectionTool;
   private postproduction: { enabled: boolean } | null = null;
-  private rightPanel: RightPanelLike | null = null;
+  private toolOptionsPanel: ToolOptionsPanelLike | null = null;
 
   constructor(
     measurer: OBF.LengthMeasurement,
@@ -49,8 +49,8 @@ export class ToolManager {
     this.postproduction = pp;
   }
 
-  setRightPanel(rightPanel: RightPanelLike): void {
-    this.rightPanel = rightPanel;
+  setToolOptionsPanel(toolOptionsPanel: ToolOptionsPanelLike): void {
+    this.toolOptionsPanel = toolOptionsPanel;
   }
 
   setMode(mode: ToolMode): void {
@@ -82,12 +82,12 @@ export class ToolManager {
       if (btn) btn.active = btnMode === mode;
     }
 
-    const view: RightPanelView =
+    const view: ToolOptionsView =
       mode === "measure"    ? "measure" :
       mode === "section"    ? "section" :
       mode === "properties" ? "properties" :
-      "controls";
-    this.rightPanel?.setView(view);
+      null;
+    this.toolOptionsPanel?.setView(view);
   }
 
   bindViewportEvents(viewport: HTMLElement, world: OBC.World): void {

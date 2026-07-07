@@ -13,7 +13,7 @@ export function createToolbar(
 ): BUI.Toolbar {
   const toolbar = BUI.Component.create<BUI.Toolbar>(() => {
     return BUI.html`
-      <bim-toolbar style="justify-self: center;">
+      <bim-toolbar vertical>
 
         <bim-toolbar-section label="Navegación">
           <bim-button tooltip-title="Navegar"

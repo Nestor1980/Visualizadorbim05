@@ -8,7 +8,7 @@ export interface SectionSettingsPanel {
 export function createSectionPanel(sectionTool: SectionTool): SectionSettingsPanel {
   const section = BUI.Component.create<BUI.PanelSection>(() => {
     return BUI.html`
-      <bim-panel-section label="Sección" icon="material-symbols:cut">
+      <bim-panel-section label="Sección" icon="material-symbols:cut" .fixed=${false}>
         <bim-number-input label="Tamaño del plano"
           value="5" min="1" max="30" step="1" suffix="m"
           @change="${({ target }: { target: BUI.NumberInput }) => { sectionTool.clipper.size = target.value; }}">

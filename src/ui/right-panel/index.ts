@@ -2,27 +2,15 @@ import * as THREE from "three";
 import * as OBC from "@thatopen/components";
 import * as OBF from "@thatopen/components-front";
 import * as BUI from "@thatopen/ui";
-import { createPropertiesPanel } from "./properties-panel";
 import { createControlsPanel } from "./controls-panel";
 import { createRenderizadoPanel } from "./renderizado-panel";
-import { createMedidorPanel } from "./medidor-panel";
-import { createSectionPanel } from "./section-panel";
-import type { SectionTool } from "../../tools/section-tool";
-
-export type RightPanelView = "controls" | "measure" | "section" | "properties";
 
 export interface RightPanel {
   element: BUI.Panel;
-  setView: (view: RightPanelView) => void;
-  applySelection: (modelIdMap: OBC.ModelIdMap) => Promise<void>;
-  applyTypeSelection: (modelIdMap: OBC.ModelIdMap, typeLabel: string, count: number) => Promise<void>;
 }
 
 export function createRightPanel(
-  components: OBC.Components,
   fragments: OBC.FragmentsManager,
-  measurer: OBF.LengthMeasurement,
-  sectionTool: SectionTool,
   postproduction: OBF.Postproduction,
   sunLight: THREE.DirectionalLight,
   threeRenderer: THREE.WebGLRenderer,
@@ -30,90 +18,64 @@ export function createRightPanel(
   const panel = document.createElement("bim-panel") as BUI.Panel;
   panel.label = "Panel";
 
-  const propertiesPanel  = createPropertiesPanel(components, fragments);
   const controlsPanel    = createControlsPanel(fragments);
   const renderizadoPanel = createRenderizadoPanel(postproduction, sunLight, threeRenderer);
-  const medidorPanel     = createMedidorPanel(measurer);
-  const sectionPanel     = createSectionPanel(sectionTool);
 
-  propertiesPanel.section.collapsed = false;
+  panel.append(controlsPanel.section, renderizadoPanel.section);
 
-  const controlsView = document.createElement("div");
-  controlsView.append(controlsPanel.section, renderizadoPanel.section);
-
-  const measureView = document.createElement("div");
-  measureView.append(medidorPanel.element);
-
-  const sectionView = document.createElement("div");
-  sectionView.append(sectionPanel.section);
-
-  const propertiesView = document.createElement("div");
-  propertiesView.append(propertiesPanel.section);
-
-  const views: Record<RightPanelView, HTMLElement> = {
-    controls:   controlsView,
-    measure:    measureView,
-    section:    sectionView,
-    properties: propertiesView,
-  };
-
-  panel.append(controlsView, measureView, sectionView, propertiesView);
-
-  const setView = (view: RightPanelView): void => {
-    for (const [key, el] of Object.entries(views)) {
-      el.style.display = key === view ? "" : "none";
-    }
-  };
-
-  setView("controls");
-
-  const applySelection = async (modelIdMap: OBC.ModelIdMap): Promise<void> => {
-    propertiesPanel.updateItemsData({ modelIdMap, emptySelectionWarning: false });
-    await propertiesPanel.renderForSelection(modelIdMap);
-    propertiesPanel.resetScrollTop();
-  };
-
-  const applyTypeSelection = async (
-    modelIdMap: OBC.ModelIdMap,
-    typeLabel: string,
-    count: number,
-  ): Promise<void> => {
-    propertiesPanel.updateItemsData({ modelIdMap, emptySelectionWarning: false });
-    await propertiesPanel.renderForTypeGroup(modelIdMap, typeLabel, count);
-    propertiesPanel.resetScrollTop();
-  };
-
-  return { element: panel, setView, applySelection, applyTypeSelection };
+  return { element: panel };
 }
 
-const MIN_WIDTH = 280;
-const MAX_WIDTH = 640;
+export const PANEL_MIN_WIDTH = 280;
+export const PANEL_MAX_WIDTH = 640;
 
-/** Inserta el handle de arrastre del panel derecho entre el botón de colapso y el panel. */
-export function attachRightPanelResize(wrapper: HTMLElement): void {
-  const panelEl = wrapper.lastElementChild as HTMLElement | null;
+/**
+ * Inserta el handle de arrastre entre el borde del viewport y el panel. El
+ * panel ya no es un overlay flotante: ocupa una columna real del bim-grid, así
+ * que redimensionar significa mutar --panel-w en el propio grid (de donde sale
+ * el ancho de esa columna vía `var(--panel-w)` en el grid-template).
+ */
+export function attachRightPanelResize(pane: HTMLElement, grid: HTMLElement): void {
+  const panelEl = pane.lastElementChild as HTMLElement | null;
   if (!panelEl) return;
 
   const resizeHandle = document.createElement("div");
   resizeHandle.className = "panel-resize-handle";
   resizeHandle.setAttribute("role", "separator");
   resizeHandle.setAttribute("aria-orientation", "vertical");
-  resizeHandle.setAttribute("aria-label", "Redimensionar panel derecho");
-  wrapper.insertBefore(resizeHandle, panelEl);
+  resizeHandle.setAttribute("aria-label", "Redimensionar panel");
+  pane.insertBefore(resizeHandle, panelEl);
 
   resizeHandle.addEventListener("pointerdown", (event) => {
     event.preventDefault();
     const startX = event.clientX;
-    const startWidth = parseFloat(getComputedStyle(wrapper).getPropertyValue("--panel-w")) || 370;
+    const startWidth = parseFloat(getComputedStyle(grid).getPropertyValue("--panel-w")) || 380;
     resizeHandle.setPointerCapture(event.pointerId);
     document.body.classList.add("resizing-panel");
 
+    // El viewport es un canvas WebGL con postprocesado (varios render targets);
+    // aplicar --panel-w en cada pointermove fuerza un resize/realloc de esos
+    // targets más rápido de lo que el render loop puede repintar, y eso es lo
+    // que se ve como flicker. Limitamos la escritura real a una por frame.
+    let pendingX: number | null = null;
+    let rafId = 0;
+
+    const applyPending = () => {
+      rafId = 0;
+      if (pendingX === null) return;
+      const next = startWidth - (pendingX - startX);
+      const clamped = Math.min(PANEL_MAX_WIDTH, Math.max(PANEL_MIN_WIDTH, next));
+      grid.style.setProperty("--panel-w", `${clamped}px`);
+      pendingX = null;
+    };
+
     const onMove = (moveEvent: PointerEvent) => {
-      const next = startWidth - (moveEvent.clientX - startX);
-      const clamped = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, next));
-      wrapper.style.setProperty("--panel-w", `${clamped}px`);
+      pendingX = moveEvent.clientX;
+      if (!rafId) rafId = requestAnimationFrame(applyPending);
     };
     const onUp = () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      applyPending();
       resizeHandle.releasePointerCapture(event.pointerId);
       document.body.classList.remove("resizing-panel");
       resizeHandle.removeEventListener("pointermove", onMove);

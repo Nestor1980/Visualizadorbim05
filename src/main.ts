@@ -16,7 +16,8 @@ import { ToolManager }            from "./tools/tool-manager";
 import { setupIfcLoader }                  from "./ifc/loader";
 import { setupModelProcessor, processModel } from "./ifc/model-processor";
 import { createRightPanel, attachRightPanelResize } from "./ui/right-panel/index";
-import { createLeftPanel, attachLeftPanelResize }    from "./ui/left-panel/index";
+import { createLeftPanel }    from "./ui/left-panel/index";
+import { createToolOptionsPanel } from "./ui/tool-options-panel";
 import { createToolbar }          from "./ui/toolbar";
 import { setupLayout }            from "./ui/layout";
 import { setupBCFSection }        from "./bcf/bcf-manager";
@@ -121,22 +122,21 @@ async function startApp(): Promise<{
   createViewCube(viewport, world, fragments, vcRef);
 
   const selectionManager = new SelectionManager();
-  const rightPanel = createRightPanel(
-    components, fragments, measurer, sectionTool,
-    postproduction, sunLight, threeRenderer,
-  );
+  const rightPanel = createRightPanel(fragments, postproduction, sunLight, threeRenderer);
+  const toolOptionsPanel = createToolOptionsPanel(components, fragments, measurer, sectionTool);
+  viewport.append(toolOptionsPanel.element);
 
-  toolManager.setRightPanel(rightPanel);
+  toolManager.setToolOptionsPanel(toolOptionsPanel);
   toolManager.setMode("navigate");
 
-  // Sync selectionManager with rightPanel selection handlers
-  const origApply     = rightPanel.applySelection.bind(rightPanel);
-  const origApplyType = rightPanel.applyTypeSelection.bind(rightPanel);
-  rightPanel.applySelection = async (map) => {
+  // Sync selectionManager with toolOptionsPanel selection handlers
+  const origApply     = toolOptionsPanel.applySelection.bind(toolOptionsPanel);
+  const origApplyType = toolOptionsPanel.applyTypeSelection.bind(toolOptionsPanel);
+  toolOptionsPanel.applySelection = async (map) => {
     selectionManager.lastModelIdMap = map;
     return origApply(map);
   };
-  rightPanel.applyTypeSelection = async (map, label, count) => {
+  toolOptionsPanel.applyTypeSelection = async (map, label, count) => {
     selectionManager.lastModelIdMap = map;
     return origApplyType(map, label, count);
   };
@@ -157,6 +157,7 @@ async function startApp(): Promise<{
   };
 
   const leftPanel = createLeftPanel(components, fragments, ifcLoader, highlighter, onModelLoaded);
+  rightPanel.element.prepend(leftPanel.element);
 
   // Selecting an element (tree or 3D click) switches the right panel to the
   // Propiedades view, mirroring an explicit click on the toolbar button.
@@ -167,19 +168,19 @@ async function startApp(): Promise<{
   leftPanel.treePanel.onElementClick((modelId, localId) => {
     leftPanel.treePanel.clearTypesSelection();
     showProperties();
-    rightPanel.applySelection({ [modelId]: new Set([localId]) }).catch(console.error);
+    toolOptionsPanel.applySelection({ [modelId]: new Set([localId]) }).catch(console.error);
   });
 
   leftPanel.treePanel.onTypeGroupClick((modelIdMap, typeLabel, count) => {
     showProperties();
-    rightPanel.applyTypeSelection(modelIdMap, typeLabel, count).catch(console.error);
+    toolOptionsPanel.applyTypeSelection(modelIdMap, typeLabel, count).catch(console.error);
   });
 
   highlighter.events["select"].onHighlight.add((modelIdMap) => {
     if (!Object.keys(modelIdMap).length) return;
     leftPanel.treePanel.clearTypesSelection();
     showProperties();
-    rightPanel.applySelection(modelIdMap).catch(console.error);
+    toolOptionsPanel.applySelection(modelIdMap).catch(console.error);
   });
 
   const { openModal } = setupBCFSection(components, world, rightPanel.element);
@@ -189,10 +190,7 @@ async function startApp(): Promise<{
   // del setMode inicial: re-aplicar el modo para que "Navegar" arranque activo.
   toolManager.setMode(toolManager.activeMode);
 
-  await setupLayout(
-    leftPanel.element, viewport, rightPanel.element, toolbar,
-    attachLeftPanelResize, attachRightPanelResize,
-  );
+  await setupLayout(viewport, rightPanel.element, toolbar, attachRightPanelResize);
 
   // Force renderer + camera to pick up the real DOM dimensions after layout is mounted.
   world.renderer?.resize(undefined);

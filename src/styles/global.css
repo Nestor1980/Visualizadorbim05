@@ -34,6 +34,10 @@ bim-grid {
   position: fixed;
   inset: 0;
   z-index: 10;
+  /* La grilla no-flotante de @thatopen/ui deja 1px de gap entre columnas
+   * (se ve como una línea negra entre viewport y panel); lo anulamos porque
+   * el propio panel-resize-handle ya marca la división. */
+  gap: 0 !important;
 }
 
 bim-panel {
@@ -52,70 +56,26 @@ bim-panel {
   height: auto;
 }
 
-.panel-overlay {
-  position: fixed;
-  top: 0;
+/* El panel es una columna real del bim-grid (misma jerarquía que el
+ * viewport), no un overlay flotante: redimensionarlo cambia --panel-w en
+ * el grid y el viewport reacomoda su columna (1fr) solo. */
+.panel-pane {
   height: 100%;
-  z-index: 20;
+  min-width: 0;
   display: flex;
   align-items: stretch;
-  transition: transform 0.25s ease;
+  overflow: hidden;
 }
-.panel-left {
-  left: 0;
-  --panel-w: 300px;
-}
-.panel-right {
-  right: 0;
-  --panel-w: 370px;
-}
-.panel-left bim-panel,
-.panel-right bim-panel {
-  width: var(--panel-w);
+.panel-pane bim-panel {
+  flex: 1 1 auto;
+  min-width: 0;
   height: 100%;
-  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.45);
-}
-.panel-left.collapsed {
-  transform: translateX(calc(-1 * var(--panel-w)));
-}
-.panel-right.collapsed {
-  transform: translateX(var(--panel-w));
-}
-
-.panel-toggle {
-  flex-shrink: 0;
-  align-self: center;
-  width: 24px;
-  height: 64px;
-  border: none;
-  cursor: pointer;
-  background: var(--bg-elevated);
-  color: var(--text-secondary);
-  font-size: 0.85rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-}
-.panel-left .panel-toggle {
-  border-radius: 0 8px 8px 0;
-}
-.panel-right .panel-toggle {
-  border-radius: 8px 0 0 8px;
-}
-.panel-toggle:hover {
-  background: var(--bg-surface-hover);
-  color: var(--text-primary);
-}
-.panel-toggle:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-  color: var(--text-primary);
+  overflow-y: auto;
 }
 
 .panel-resize-handle {
   flex-shrink: 0;
-  width: 6px;
+  width: 4px;
   cursor: ew-resize;
   touch-action: none;
   position: relative;
@@ -125,8 +85,8 @@ bim-panel {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: 2px;
-  width: 2px;
+  left: 1.5px;
+  width: 1px;
   border-radius: 1px;
   background: transparent;
   transition: background 0.15s;
@@ -135,12 +95,10 @@ bim-panel {
 .panel-resize-handle:active::after {
   background: var(--accent);
 }
-.panel-overlay.collapsed .panel-resize-handle {
-  display: none;
-}
-/* Mientras se muestra la pantalla de bienvenida, los paneles laterales
- * permanecen ocultos (incluido su botón de toggle). */
-body.welcome-active .panel-overlay {
+/* Mientras se muestra la pantalla de bienvenida, el panel permanece oculto;
+ * el propio #welcome-screen ya cubre todo el viewport, así que esto solo
+ * evita clicks/parpadeos por debajo. */
+body.welcome-active .panel-pane {
   opacity: 0;
   pointer-events: none;
 }
@@ -265,14 +223,47 @@ body.resizing-panel {
   white-space: nowrap;
 }
 
+bim-viewport {
+  position: relative;
+}
+
 bim-toolbar {
-  position: fixed;
-  bottom: 1.5rem;
-  left: 50%;
-  transform: translateX(-50%);
+  position: absolute;
+  top: 1.5rem;
+  left: 1.5rem;
   z-index: 100;
   border-radius: 12px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  --bim-toolbar-section--gap: 4px;
+  --bim-toolbar-section--p: 6px;
+}
+
+/* Panel de opciones de la herramienta activa: flota sobre la esquina
+ * superior derecha del viewport (no del layout completo) y desaparece
+ * cuando no hay ninguna herramienta seleccionada (ver ToolManager.setMode). */
+.tool-options-panel {
+  position: absolute;
+  top: 1.5rem;
+  right: 1.5rem;
+  z-index: 100;
+  width: 260px;
+  max-height: calc(100% - 3rem);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.tool-options-panel bim-panel-section {
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  flex-shrink: 0;
+}
+/* El medidor envuelve dos bim-panel-section (ajustes + lista) en un <div>
+ * plano: le damos el mismo layout en columna para que no queden pegadas. */
+.tool-options-panel > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
 bim-view-cube {

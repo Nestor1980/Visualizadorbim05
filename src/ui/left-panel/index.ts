@@ -6,7 +6,8 @@ import { createTreePanel, TreePanel } from "./tree-panel";
 import { saveRecentFile } from "../../ifc/recent-files";
 
 export interface LeftPanel {
-  element: BUI.Panel;
+  /** Contenido a insertar al inicio del panel derecho combinado (sin bim-panel propio). */
+  element: HTMLElement;
   treePanel: TreePanel;
   triggerLoadIfc: () => void;
   loadIfcBytes: (bytes: Uint8Array, name: string) => Promise<void>;
@@ -100,9 +101,9 @@ export function createLeftPanel(
   });
   updateThemeToggleBtn();
 
-  const panel = BUI.Component.create<BUI.PanelSection>(() => {
+  const panel = BUI.Component.create<HTMLElement>(() => {
     return BUI.html`
-      <bim-panel active class="options-menu">
+      <div class="left-panel-content">
         <div class="panel-brand">${brandLogo}</div>
 
         <bim-panel-section label="Apariencia" icon="material-symbols:contrast-rounded">
@@ -114,54 +115,17 @@ export function createLeftPanel(
           ${modelsList}
         </bim-panel-section>
 
-      </bim-panel>
+      </div>
     `;
   });
 
-  (panel as unknown as HTMLElement).append(treePanel.section);
+  panel.append(treePanel.section);
 
   return {
-    element: panel as unknown as BUI.Panel,
+    element: panel,
     treePanel,
     triggerLoadIfc: onLoadClick,
     loadIfcBytes,
   };
 }
 
-const MIN_WIDTH = 240;
-const MAX_WIDTH = 560;
-
-/** Inserta el handle de arrastre del panel izquierdo entre el panel y el botón de colapso. */
-export function attachLeftPanelResize(wrapper: HTMLElement): void {
-  const panelEl = wrapper.firstElementChild as HTMLElement | null;
-  if (!panelEl) return;
-
-  const resizeHandle = document.createElement("div");
-  resizeHandle.className = "panel-resize-handle";
-  resizeHandle.setAttribute("role", "separator");
-  resizeHandle.setAttribute("aria-orientation", "vertical");
-  resizeHandle.setAttribute("aria-label", "Redimensionar panel izquierdo");
-  wrapper.insertBefore(resizeHandle, panelEl.nextSibling);
-
-  resizeHandle.addEventListener("pointerdown", (event) => {
-    event.preventDefault();
-    const startX = event.clientX;
-    const startWidth = parseFloat(getComputedStyle(wrapper).getPropertyValue("--panel-w")) || 300;
-    resizeHandle.setPointerCapture(event.pointerId);
-    document.body.classList.add("resizing-panel");
-
-    const onMove = (moveEvent: PointerEvent) => {
-      const next = startWidth + (moveEvent.clientX - startX);
-      const clamped = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, next));
-      wrapper.style.setProperty("--panel-w", `${clamped}px`);
-    };
-    const onUp = () => {
-      resizeHandle.releasePointerCapture(event.pointerId);
-      document.body.classList.remove("resizing-panel");
-      resizeHandle.removeEventListener("pointermove", onMove);
-      resizeHandle.removeEventListener("pointerup", onUp);
-    };
-    resizeHandle.addEventListener("pointermove", onMove);
-    resizeHandle.addEventListener("pointerup", onUp);
-  });
-}
