@@ -189,9 +189,7 @@ async function startApp(): Promise<{
   });
 
   const { openModal } = setupBCFSection(components, world, rightPanel.element);
-  const toolbar       = createToolbar(
-    world, fragments, toolManager, selectionManager, openModal, leftPanel.loadIfcButton,
-  );
+  const toolbar       = createToolbar(world, fragments, toolManager, selectionManager, openModal);
 
   // Los botones de la toolbar se registran en el ToolManager al crearla, después
   // del setMode inicial: re-aplicar el modo para que "Navegar" arranque activo.

@@ -277,6 +277,146 @@ body.resizing-panel-split {
   white-space: nowrap;
 }
 
+/* @thatopen/ui define bim-tooltip como :host([visible]) { display: flex }
+ * sin flex-direction (fila por defecto): con dos <div> hijos (título +
+ * descripción) quedaban lado a lado, cada uno colapsado a un ancho mínimo y
+ * partido en columnas de una sola palabra. Lo pasamos a columna y le damos
+ * un ancho mínimo para que el texto respire. */
+bim-tooltip {
+  flex-direction: column;
+  gap: 2px;
+  min-width: 150px;
+  max-width: 260px;
+  line-height: 1.4;
+}
+
+/* — Barra de herramientas y árbol de modelos/colecciones (panel "Escena") — */
+.scene-toolbar {
+  display: flex;
+  gap: 4px;
+  padding: 8px 8px;
+  border-bottom: 1px solid var(--bim-ui_bg-contrast-10);
+}
+
+.models-tree {
+  display: flex;
+  flex-direction: column;
+}
+
+.models-row,
+.collection-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  min-height: 30px;
+  border-bottom: 1px solid var(--bim-ui_bg-contrast-05);
+}
+.models-row--nested {
+  padding-left: 26px;
+}
+.models-row-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+.models-row-name,
+.collection-row-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.collection-row-name {
+  font-weight: 600;
+  cursor: text;
+}
+.collection-row-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+  color: var(--accent);
+}
+.models-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.models-row-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 4px;
+  opacity: 0.6;
+  transition: background 0.15s, opacity 0.15s;
+}
+.models-row-action:hover {
+  background: var(--bim-ui_bg-contrast-10);
+  opacity: 1;
+}
+.collection-rename-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+  font-weight: 600;
+  color: inherit;
+  background: var(--bim-ui_bg-contrast-05);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+.collection-empty {
+  padding: 4px 8px 8px 30px;
+  font-size: 10.5px;
+  opacity: 0.45;
+}
+
+.row-menu {
+  z-index: 200;
+  min-width: 160px;
+  max-width: 240px;
+  padding: 4px;
+  border-radius: 8px;
+  background: var(--bim-ui_bg-base);
+  border: 1px solid var(--bim-ui_bg-contrast-10);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.row-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 8px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.row-menu-item:hover {
+  background: var(--bim-ui_bg-contrast-10);
+}
+.row-menu-item.is-active {
+  color: var(--accent);
+  font-weight: 600;
+}
+.row-menu-hint {
+  padding: 6px 8px;
+  font-size: 10.5px;
+  opacity: 0.5;
+}
+
 bim-viewport {
   position: relative;
 }

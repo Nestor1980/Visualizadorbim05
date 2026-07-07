@@ -1,19 +1,18 @@
 import * as OBC from "@thatopen/components";
 import * as OBF from "@thatopen/components-front";
-import * as CUI from "@thatopen/ui-obc";
 import * as BUI from "@thatopen/ui";
 import { createTreePanel, TreePanel } from "./tree-panel";
+import { createModelsTree } from "./models-tree";
 import { saveRecentFile } from "../../ifc/recent-files";
 
 export interface LeftPanel {
   /** Frame "Escena": bim-panel propio con su header, para el split superior del panel derecho.
-   *  Muestra únicamente el árbol de modelos IFC cargados (estilo outliner). */
+   *  Muestra una barra de herramientas (colecciones / cargar IFC) y el árbol de
+   *  modelos IFC cargados, agrupables en colecciones (estilo outliner). */
   element: BUI.Panel;
   treePanel: TreePanel;
   /** Sección "Apariencia" (toggle de tema), para montar en el panel dinámico de abajo. */
   appearanceSection: BUI.PanelSection;
-  /** Botón "Cargar IFC", para montar en la toolbar. */
-  loadIfcButton: BUI.Button;
   triggerLoadIfc: () => void;
   loadIfcBytes: (bytes: Uint8Array, name: string) => Promise<void>;
 }
@@ -25,49 +24,34 @@ export function createLeftPanel(
   highlighter: OBF.Highlighter,
   onModelLoaded: (model: any, name: string) => Promise<void>,
 ): LeftPanel {
-  const [modelsList] = CUI.tables.modelsList({
-    components,
-    metaDataTags: ["schema"],
-    actions: { visibility: true, download: false, dispose: true },
-    missingDataMessage: "No hay modelos IFC cargados",
-  });
-  modelsList.style.fontSize = "12px";
+  const modelsTree = createModelsTree(fragments);
 
-  // Antepone un ícono de cubo a cada fila para identificar visualmente los
-  // modelos IFC en el árbol de la "Escena" (estilo outliner).
-  const originalNameTransform = modelsList.dataTransform?.Name;
-  if (originalNameTransform) {
-    modelsList.dataTransform = {
-      ...modelsList.dataTransform,
-      Name: (value, data, group) => BUI.html`
-        <div style="display:flex;align-items:center;gap:6px;overflow:hidden;">
-          <bim-icon icon="mage:box-3d-fill" style="flex-shrink:0;font-size:14px;opacity:0.75;"></bim-icon>
-          <div style="flex:1;min-width:0;overflow:hidden;">
-            ${originalNameTransform(value, data, group)}
-          </div>
-        </div>
-      `,
-    };
-  }
+  // tooltip-title/tooltip-text de bim-button están deprecados y ya no
+  // renderizan nada visible en esta versión de @thatopen/ui (solo emiten un
+  // warning). El tooltip real se arma con <bim-tooltip>, cuyo texto de
+  // progreso mutamos vía esta referencia.
+  const loadTooltipDesc = document.createElement("div");
+  loadTooltipDesc.style.opacity = "0.75";
+  loadTooltipDesc.textContent = "Cargar un archivo .ifc";
 
   const loadIfcBytes = async (bytes: Uint8Array, name: string): Promise<void> => {
     if (loadIfcBtn.loading) return;
-    loadIfcBtn.loading      = true;
-    loadIfcBtn.tooltipText  = "Cargando… 0%";
+    loadIfcBtn.loading         = true;
+    loadTooltipDesc.textContent = "Cargando… 0%";
     try {
       const model = await ifcLoader.load(bytes, true, name, {
         processData: {
           progressCallback: (p) => {
-            loadIfcBtn.tooltipText = `Cargando… ${Math.round(p * 100)}%`;
+            loadTooltipDesc.textContent = `Cargando… ${Math.round(p * 100)}%`;
           },
         },
       });
       await onModelLoaded(model, name);
       saveRecentFile(name, bytes).catch((error) => console.error("No se pudo guardar en recientes:", error));
-      loadIfcBtn.tooltipText = "Cargar un archivo .ifc";
+      loadTooltipDesc.textContent = "Cargar un archivo .ifc";
     } catch (error) {
       console.error("Error al cargar IFC:", error);
-      loadIfcBtn.tooltipText = "Error al cargar — reintentar";
+      loadTooltipDesc.textContent = "Error al cargar — reintentar";
     } finally {
       loadIfcBtn.loading = false;
     }
@@ -88,8 +72,22 @@ export function createLeftPanel(
 
   const loadIfcBtn = BUI.Component.create<BUI.Button>(() => {
     return BUI.html`
-      <bim-button tooltip-title="Cargar IFC" tooltip-text="Cargar un archivo .ifc"
-        icon="mage:box-3d-fill" @click=${onLoadClick}>
+      <bim-button icon="mage:box-3d-fill" @click=${onLoadClick}>
+        <bim-tooltip>
+          <div style="font-weight:600;">Cargar IFC</div>
+          ${loadTooltipDesc}
+        </bim-tooltip>
+      </bim-button>
+    `;
+  });
+
+  const newCollectionBtn = BUI.Component.create<BUI.Button>(() => {
+    return BUI.html`
+      <bim-button icon="material-symbols:create-new-folder-outline" @click=${() => modelsTree.createCollection()}>
+        <bim-tooltip>
+          <div style="font-weight:600;">Nueva colección</div>
+          <div style="opacity:0.75;">Agrupar modelos IFC en una colección</div>
+        </bim-tooltip>
       </bim-button>
     `;
   });
@@ -102,6 +100,20 @@ export function createLeftPanel(
     if (html.classList.contains("bim-ui-dark")) return false;
     return window.matchMedia("(prefers-color-scheme: light)").matches;
   };
+
+  // BUI.Manager.toggleTheme() decide el próximo tema mirando únicamente si
+  // <html> ya tiene la clase "bim-ui-light" o "bim-ui-dark": si no tiene
+  // ninguna (estado inicial, antes del primer click), agrega "bim-ui-light"
+  // sin mirar el tema ambiente real — así el sistema esté en modo oscuro, el
+  // primer toggle "atascaba" el tema en claro y desincronizaba el ícono/label
+  // del botón. Fijar la clase explícita una sola vez al iniciar hace que ese
+  // primer toggle (y todos los siguientes) alternen de forma predecible.
+  const ensureExplicitThemeClass = (): void => {
+    const html = document.documentElement;
+    if (html.classList.contains("bim-ui-light") || html.classList.contains("bim-ui-dark")) return;
+    html.classList.add(isLightTheme() ? "bim-ui-light" : "bim-ui-dark");
+  };
+  ensureExplicitThemeClass();
 
   const applyTheme = (light: boolean): void => {
     themeToggleBtn.icon  = light ? "material-symbols:dark-mode" : "material-symbols:light-mode";
@@ -144,7 +156,11 @@ export function createLeftPanel(
   const body = BUI.Component.create<HTMLElement>(() => {
     return BUI.html`
       <div class="left-panel-content">
-        ${modelsList}
+        <div class="scene-toolbar">
+          ${newCollectionBtn}
+          ${loadIfcBtn}
+        </div>
+        ${modelsTree.element}
       </div>
     `;
   });
@@ -155,9 +171,7 @@ export function createLeftPanel(
     element: panel,
     treePanel,
     appearanceSection,
-    loadIfcButton: loadIfcBtn,
     triggerLoadIfc: onLoadClick,
     loadIfcBytes,
   };
 }
-

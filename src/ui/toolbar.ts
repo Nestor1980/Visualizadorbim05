@@ -10,33 +10,33 @@ export function createToolbar(
   toolManager: ToolManager,
   selectionManager: SelectionManager,
   openBcfModal: () => void,
-  loadIfcButton: BUI.Button,
 ): BUI.Toolbar {
   const toolbar = BUI.Component.create<BUI.Toolbar>(() => {
     return BUI.html`
       <bim-toolbar vertical>
 
-        <bim-toolbar-section label="Archivo">
-          ${loadIfcButton}
-        </bim-toolbar-section>
-
         <bim-toolbar-section label="Navegación">
-          <bim-button tooltip-title="Navegar"
-            tooltip-text="Orbitar la cámara y seleccionar elementos"
+          <bim-button
             icon="material-symbols:arrow-selector-tool"
             ${BUI.ref((el: Element | undefined) => { toolManager.navigateBtnEl = el as BUI.Button ?? null; })}
             @click=${() => toolManager.setMode("navigate")}>
+            <bim-tooltip>
+              <div style="font-weight:600;">Navegar</div>
+              <div style="opacity:0.75;">Orbitar la cámara y seleccionar elementos</div>
+            </bim-tooltip>
           </bim-button>
         </bim-toolbar-section>
 
         <bim-toolbar-section label="Cámara">
-          <bim-button tooltip-title="Perspectiva"
-            tooltip-text="Alternar cámara ortográfica / perspectiva"
+          <bim-button
             icon="tabler:camera"
             @click=${() => world.camera.projection.toggle()}>
+            <bim-tooltip>
+              <div style="font-weight:600;">Perspectiva</div>
+              <div style="opacity:0.75;">Alternar cámara ortográfica / perspectiva</div>
+            </bim-tooltip>
           </bim-button>
-          <bim-button tooltip-title="Ajustar vista"
-            tooltip-text="Ajustar vista al modelo"
+          <bim-button
             icon="material-symbols:fit-screen"
             @click=${async () => {
               const meshes: THREE.Mesh[] = [];
@@ -47,59 +47,73 @@ export function createToolbar(
               }
               if (meshes.length > 0) await world.camera.fit(meshes);
             }}>
+            <bim-tooltip>
+              <div style="font-weight:600;">Ajustar vista</div>
+              <div style="opacity:0.75;">Ajustar vista al modelo</div>
+            </bim-tooltip>
           </bim-button>
         </bim-toolbar-section>
 
         <bim-toolbar-section label="Información">
-          <bim-button tooltip-title="Propiedades"
-            tooltip-text="Ver propiedades del elemento seleccionado"
+          <bim-button
             icon="material-symbols:info"
             ${BUI.ref((el: Element | undefined) => { toolManager.propertiesBtnEl = el as BUI.Button ?? null; })}
             @click=${() => {
               if (toolManager.activeMode === "properties") toolManager.setMode("navigate");
               else toolManager.setMode("properties");
             }}>
+            <bim-tooltip>
+              <div style="font-weight:600;">Propiedades</div>
+              <div style="opacity:0.75;">Ver propiedades del elemento seleccionado</div>
+            </bim-tooltip>
           </bim-button>
         </bim-toolbar-section>
 
         <bim-toolbar-section label="Medición">
-          <bim-button tooltip-title="Activar Medición"
-            tooltip-text="Doble click para medir"
+          <bim-button
             icon="solar:ruler-bold"
             ${BUI.ref((el: Element | undefined) => { toolManager.measureBtnEl = el as BUI.Button ?? null; })}
             @click=${() => {
               if (toolManager.activeMode === "measure") toolManager.setMode("navigate");
               else toolManager.setMode("measure");
             }}>
+            <bim-tooltip>
+              <div style="font-weight:600;">Activar Medición</div>
+              <div style="opacity:0.75;">Doble click para medir</div>
+            </bim-tooltip>
           </bim-button>
-          <bim-button tooltip-title="Borrar mediciones"
+          <bim-button
             icon="material-symbols:delete-outline"
             @click=${() => {
               const measurer = (toolManager as any).measurer;
               measurer?.list?.clear();
             }}>
+            <bim-tooltip>Borrar mediciones</bim-tooltip>
           </bim-button>
         </bim-toolbar-section>
 
         <bim-toolbar-section label="Sección">
-          <bim-button tooltip-title="Plano de corte"
-            tooltip-text="Doble click para crear. Muestra hatch por categoría IFC."
+          <bim-button
             icon="material-symbols:cut"
             ${BUI.ref((el: Element | undefined) => { toolManager.sectionBtnEl = el as BUI.Button ?? null; })}
             @click=${() => {
               if (toolManager.activeMode === "section") toolManager.setMode("navigate");
               else toolManager.setMode("section");
             }}>
+            <bim-tooltip>
+              <div style="font-weight:600;">Plano de corte</div>
+              <div style="opacity:0.75;">Doble click para crear. Muestra hatch por categoría IFC.</div>
+            </bim-tooltip>
           </bim-button>
-          <bim-button tooltip-title="Borrar planos"
+          <bim-button
             icon="material-symbols:layers-clear"
             @click=${() => (toolManager as any).sectionTool?.clipper?.deleteAll()}>
+            <bim-tooltip>Borrar planos</bim-tooltip>
           </bim-button>
         </bim-toolbar-section>
 
         <bim-toolbar-section label="Visibilidad">
-          <bim-button tooltip-title="Aislar selección"
-            tooltip-text="Oculta todo excepto los elementos seleccionados"
+          <bim-button
             icon="material-symbols:filter-center-focus"
             @click=${async () => {
               if (selectionManager.isIsolated) {
@@ -123,8 +137,12 @@ export function createToolbar(
               }
               fragments.core.update(true);
             }}>
+            <bim-tooltip>
+              <div style="font-weight:600;">Aislar selección</div>
+              <div style="opacity:0.75;">Oculta todo excepto los elementos seleccionados</div>
+            </bim-tooltip>
           </bim-button>
-          <bim-button tooltip-title="Mostrar todo"
+          <bim-button
             icon="material-symbols:visibility"
             @click=${async () => {
               for (const [, model] of fragments.list) {
@@ -133,13 +151,15 @@ export function createToolbar(
               selectionManager.isIsolated = false;
               fragments.core.update(true);
             }}>
+            <bim-tooltip>Mostrar todo</bim-tooltip>
           </bim-button>
         </bim-toolbar-section>
 
         <bim-toolbar-section label="BCF">
-          <bim-button tooltip-title="Nuevo Topic"
+          <bim-button
             icon="material-symbols:task"
             @click=${() => openBcfModal()}>
+            <bim-tooltip>Nuevo Topic</bim-tooltip>
           </bim-button>
         </bim-toolbar-section>
 
