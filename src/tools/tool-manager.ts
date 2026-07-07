@@ -1,7 +1,9 @@
 import * as OBF from "@thatopen/components-front";
 import * as OBC from "@thatopen/components";
+import * as FRAGS from "@thatopen/fragments";
 import * as THREE from "three";
 import type { SectionTool } from "./section-tool";
+import { measureFaceEdges } from "./measurement-tool";
 import type * as BUI from "@thatopen/ui";
 import type { ToolOptionsView } from "../ui/tool-options-panel";
 
@@ -92,12 +94,46 @@ export class ToolManager {
 
   bindViewportEvents(viewport: HTMLElement, world: OBC.World): void {
     viewport.addEventListener("dblclick", () => {
-      if (this.activeMode === "measure") {
-        this.measurer.create();
-      } else if (this.activeMode === "section") {
+      if (this.activeMode === "section") {
         this.sectionTool.clipper.create(world);
         this.sectionTool.rebuildSectionFills();
       }
+    });
+
+    // En modo "measure", un click sobre un snap válido (vértice/borde/superficie,
+    // según measurer.snappings) coloca el punto de medición en lugar de dejar
+    // que camera-controls arranque el orbit; sin snap válido bajo el cursor el
+    // evento se deja pasar intacto y la cámara orbita como siempre. `lastPick`
+    // ya viene resuelto en background por el picker interno de Measurement (se
+    // recalcula por RAF en cada frame en que el mouse se mueve), así que se
+    // puede leer de forma síncrona justo al presionar, sin esperar un pick nuevo.
+    viewport.addEventListener("pointerdown", (event: PointerEvent) => {
+      if (event.button !== 0 || this.activeMode !== "measure") return;
+
+      const pick = (this.measurer as any).lastPick;
+      // `facePoints`/`faceIndices` vienen poblados en cualquier pick cercano a
+      // una cara sin importar el modo de snap activo — para no "quedar pegado"
+      // en superficie hay que exigir además que el snap resuelto para ESTE
+      // pick sea efectivamente FACE (measurer.snappings solo trae una clase a
+      // la vez, así que snappingClass refleja el modo realmente seleccionado).
+      const hasFaceSnap = !!(
+        pick && pick.snappingClass === FRAGS.SnappingClass.FACE && pick.facePoints && pick.faceIndices
+      );
+      const hasPointOrEdgeSnap = !hasFaceSnap && !!(pick && (pick.point || (pick.snappedEdgeP1 && pick.snappedEdgeP2)));
+      if (!hasFaceSnap && !hasPointOrEdgeSnap) return;
+
+      // camera-controls ya registró este pointerdown y arrancó su drag interno,
+      // pero solo aplica la rotación en los próximos pointermove (releyendo
+      // `enabled`/mouseButtons en cada uno) — deshabilitarlo acá alcanza para
+      // que este gesto puntual no orbite, sin necesidad de interceptar el evento.
+      const camera = world.camera as OBC.OrthoPerspectiveCamera;
+      camera.setUserInput(false);
+      if (hasFaceSnap) {
+        measureFaceEdges(this.measurer, pick.facePoints, pick.faceIndices);
+      } else {
+        this.measurer.create();
+      }
+      window.addEventListener("pointerup", () => camera.setUserInput(true), { once: true });
     });
 
     window.addEventListener("keydown", (event) => {
