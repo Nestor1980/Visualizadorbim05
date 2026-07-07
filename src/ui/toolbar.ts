@@ -82,14 +82,6 @@ export function createToolbar(
               <div style="opacity:0.75;">Doble click para medir</div>
             </bim-tooltip>
           </bim-button>
-          <bim-button
-            icon="material-symbols:delete-outline"
-            @click=${() => {
-              const measurer = (toolManager as any).measurer;
-              measurer?.list?.clear();
-            }}>
-            <bim-tooltip>Borrar mediciones</bim-tooltip>
-          </bim-button>
         </bim-toolbar-section>
 
         <bim-toolbar-section label="Sección">

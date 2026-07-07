@@ -3,6 +3,7 @@ import * as OBF from "@thatopen/components-front";
 import * as BUI from "@thatopen/ui";
 import { createTreePanel, TreePanel } from "./tree-panel";
 import { createModelsTree } from "./models-tree";
+import { createDataLayersTree } from "./data-layers-tree";
 import { saveRecentFile } from "../../ifc/recent-files";
 
 export interface LeftPanel {
@@ -23,8 +24,17 @@ export function createLeftPanel(
   ifcLoader: OBC.IfcLoader,
   highlighter: OBF.Highlighter,
   onModelLoaded: (model: any, name: string) => Promise<void>,
+  measurer: OBF.LengthMeasurement,
+  clipper: OBC.Clipper,
+  world: OBC.World,
 ): LeftPanel {
   const modelsTree = createModelsTree(fragments);
+  const dataLayersController = createDataLayersTree(
+    measurer, clipper, world,
+    () => modelsTree.refresh(),
+    () => modelsTree.ensureDefaultCollectionId(),
+  );
+  modelsTree.attachDataLayers(dataLayersController);
 
   // tooltip-title/tooltip-text de bim-button están deprecados y ya no
   // renderizan nada visible en esta versión de @thatopen/ui (solo emiten un
@@ -87,6 +97,17 @@ export function createLeftPanel(
         <bim-tooltip>
           <div style="font-weight:600;">Nueva colección</div>
           <div style="opacity:0.75;">Agrupar modelos IFC en una colección</div>
+        </bim-tooltip>
+      </bim-button>
+    `;
+  });
+
+  const newDataLayerBtn = BUI.Component.create<BUI.Button>(() => {
+    return BUI.html`
+      <bim-button icon="material-symbols:layers-outline" @click=${() => dataLayersController.createDataLayer()}>
+        <bim-tooltip>
+          <div style="font-weight:600;">Nueva capa de datos</div>
+          <div style="opacity:0.75;">Agrupar mediciones y vistas de corte</div>
         </bim-tooltip>
       </bim-button>
     `;
@@ -158,6 +179,7 @@ export function createLeftPanel(
       <div class="left-panel-content">
         <div class="scene-toolbar">
           ${newCollectionBtn}
+          ${newDataLayerBtn}
           ${loadIfcBtn}
         </div>
         ${modelsTree.element}

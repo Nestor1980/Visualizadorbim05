@@ -417,6 +417,26 @@ bim-tooltip {
   outline-offset: -2px;
 }
 
+/* — Filas de "Capa de datos" (mediciones + vista de cortes), anidadas
+ * dentro de una colección de modelos o sueltas a nivel raíz del árbol. */
+.data-layer-category-row {
+  padding-left: 26px;
+  cursor: default;
+}
+.data-layer-item-row {
+  padding-left: 46px;
+}
+/* Cuando la capa está anidada dentro de una colección, todo un nivel más adentro. */
+.collection-group .data-layer-group > .collection-row {
+  padding-left: 26px;
+}
+.collection-group .data-layer-group .data-layer-category-row {
+  padding-left: 46px;
+}
+.collection-group .data-layer-group .data-layer-item-row {
+  padding-left: 66px;
+}
+
 bim-viewport {
   position: relative;
 }

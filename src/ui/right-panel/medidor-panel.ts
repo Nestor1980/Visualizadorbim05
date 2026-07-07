@@ -7,12 +7,6 @@ export interface MedidorPanel {
 }
 
 export function createMedidorPanel(measurer: OBF.LengthMeasurement): MedidorPanel {
-  const getAllMeasurementValues = (): number[] => {
-    const lengths: number[] = [];
-    for (const line of measurer.list) lengths.push(line.value);
-    return lengths;
-  };
-
   const settingsSection = BUI.Component.create<BUI.PanelSection>(() => {
     return BUI.html`
       <bim-panel-section label="Medidor" icon="solar:ruler-cross-pen-bold" .fixed=${false}>
@@ -35,39 +29,12 @@ export function createMedidorPanel(measurer: OBF.LengthMeasurement): MedidorPane
           <bim-option label="3" value=3></bim-option>
           <bim-option label="4" value=4></bim-option>
         </bim-dropdown>
-        <bim-button label="Borrar todo" @click=${() => measurer.list.clear()}></bim-button>
       </bim-panel-section>
     `;
   });
 
   const element = document.createElement("div");
   element.append(settingsSection);
-
-  const renderList = (): void => {
-    const existing = element.querySelector("bim-panel-section[label='Mediciones']");
-    if (existing) existing.remove();
-    const section = document.createElement("bim-panel-section") as BUI.PanelSection;
-    section.setAttribute("label", "Mediciones");
-    section.fixed = false;
-    const values = getAllMeasurementValues();
-    if (values.length === 0) {
-      const lbl = document.createElement("bim-label");
-      lbl.textContent = "No hay mediciones";
-      section.append(lbl);
-    } else {
-      values.forEach((v, i) => {
-        const lbl = document.createElement("bim-label");
-        lbl.textContent = `Medición ${i + 1}: ${v.toFixed(2)} m`;
-        section.append(lbl);
-      });
-    }
-    element.append(section);
-  };
-
-  measurer.list.onItemAdded.add(renderList);
-  measurer.list.onItemDeleted.add(renderList);
-  measurer.list.onCleared.add(renderList);
-  renderList();
 
   return { element };
 }

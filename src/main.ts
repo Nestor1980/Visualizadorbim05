@@ -156,7 +156,10 @@ async function startApp(): Promise<{
     }
   };
 
-  const leftPanel = createLeftPanel(components, fragments, ifcLoader, highlighter, onModelLoaded);
+  const leftPanel = createLeftPanel(
+    components, fragments, ifcLoader, highlighter, onModelLoaded,
+    measurer, sectionTool.clipper, world,
+  );
 
   // Panel dinámico de abajo: Controles, Estructuras (árbol espacial), Renderizado y Apariencia.
   const rightPanel = createRightPanel(

@@ -1,4 +1,5 @@
 import * as OBC from "@thatopen/components";
+import type { DataLayersController } from "./data-layers-tree";
 
 interface Collection {
   id: string;
@@ -11,6 +12,9 @@ interface Collection {
 export interface ModelsTree {
   element: HTMLElement;
   createCollection: () => void;
+  ensureDefaultCollectionId: () => string;
+  attachDataLayers: (controller: DataLayersController) => void;
+  refresh: () => void;
 }
 
 /** Paleta de matices para diferenciar renglones de modelos a simple vista. */
@@ -27,6 +31,8 @@ export function createModelsTree(fragments: OBC.FragmentsManager): ModelsTree {
   let draggedModelId: string | null = null;
   /** Id de la colección donde caen los modelos nuevos por defecto. */
   let defaultCollectionId: string | null = null;
+  /** Capas de datos (mediciones/cortes) anidadas dentro de este árbol; se conecta después de construir ambos módulos. */
+  let dataLayersController: DataLayersController | null = null;
 
   const root = document.createElement("div");
   root.className = "models-tree";
@@ -153,7 +159,7 @@ export function createModelsTree(fragments: OBC.FragmentsManager): ModelsTree {
     wrapper.className = "collection-group";
 
     wrapper.addEventListener("dragover", (e: DragEvent) => {
-      if (!draggedModelId) return;
+      if (!draggedModelId && !dataLayersController?.isDraggingDataLayer()) return;
       e.preventDefault();
       e.stopPropagation();
       if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
@@ -166,6 +172,11 @@ export function createModelsTree(fragments: OBC.FragmentsManager): ModelsTree {
       e.preventDefault();
       e.stopPropagation();
       wrapper.classList.remove("drag-over");
+      const draggedLayerId = dataLayersController?.isDraggingDataLayer();
+      if (draggedLayerId) {
+        dataLayersController!.moveDataLayerTo(draggedLayerId, col.id);
+        return;
+      }
       const id = draggedModelId ?? e.dataTransfer?.getData("text/plain") ?? null;
       if (!id || !fragments.list.has(id)) return;
       col.expanded = true;
@@ -220,8 +231,9 @@ export function createModelsTree(fragments: OBC.FragmentsManager): ModelsTree {
       },
     );
 
-    const deleteBtn = makeIconButton("mdi:folder-remove-outline", "Eliminar colección (los modelos quedan sin agrupar)", () => {
+    const deleteBtn = makeIconButton("mdi:folder-remove-outline", "Eliminar colección (los modelos y capas de datos quedan sin agrupar)", () => {
       for (const id of memberIds) modelCollection.set(id, null);
+      dataLayersController?.onCollectionRemoved(col.id);
       const idx = collections.indexOf(col);
       if (idx >= 0) collections.splice(idx, 1);
       render();
@@ -231,14 +243,16 @@ export function createModelsTree(fragments: OBC.FragmentsManager): ModelsTree {
     row.append(arrow, folderIcon, nameEl, actions);
     wrapper.append(row);
 
+    const layerRows = dataLayersController?.renderForCollection(col.id) ?? [];
     if (col.expanded) {
-      if (memberIds.length === 0) {
+      if (memberIds.length === 0 && layerRows.length === 0) {
         const empty = document.createElement("div");
         empty.className = "collection-empty";
         empty.textContent = "Vacía — arrastrá un modelo hasta acá";
         wrapper.append(empty);
       } else {
         for (const id of memberIds) wrapper.append(renderModelRow(id, true));
+        for (const layerRow of layerRows) wrapper.append(layerRow);
       }
     }
 
@@ -249,8 +263,9 @@ export function createModelsTree(fragments: OBC.FragmentsManager): ModelsTree {
     root.innerHTML = "";
 
     const allModelIds = [...fragments.list.keys()];
+    const looseLayerRows = dataLayersController?.renderForCollection(null) ?? [];
 
-    if (allModelIds.length === 0 && collections.length === 0) {
+    if (allModelIds.length === 0 && collections.length === 0 && looseLayerRows.length === 0) {
       const empty = document.createElement("div");
       empty.className = "types-empty";
       empty.textContent = "No hay modelos IFC cargados";
@@ -262,13 +277,15 @@ export function createModelsTree(fragments: OBC.FragmentsManager): ModelsTree {
 
     const rootModelIds = allModelIds.filter((id) => (modelCollection.get(id) ?? null) === null);
     for (const id of rootModelIds) root.append(renderModelRow(id, false));
+
+    for (const layerRow of looseLayerRows) root.append(layerRow);
   }
 
   // Soltar un modelo sobre el fondo del árbol (fuera de cualquier colección)
   // lo saca de su colección actual. Los drops dentro de una colección hacen
   // stopPropagation, así que este handler solo ve los que caen "afuera".
   root.addEventListener("dragover", (e: DragEvent) => {
-    if (!draggedModelId) return;
+    if (!draggedModelId && !dataLayersController?.isDraggingDataLayer()) return;
     e.preventDefault();
     if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
     root.classList.add("drag-over-root");
@@ -279,6 +296,11 @@ export function createModelsTree(fragments: OBC.FragmentsManager): ModelsTree {
   root.addEventListener("drop", (e: DragEvent) => {
     e.preventDefault();
     root.classList.remove("drag-over-root");
+    const draggedLayerId = dataLayersController?.isDraggingDataLayer();
+    if (draggedLayerId) {
+      dataLayersController!.moveDataLayerTo(draggedLayerId, null);
+      return;
+    }
     const id = draggedModelId ?? e.dataTransfer?.getData("text/plain") ?? null;
     if (!id || !fragments.list.has(id)) return;
     moveModelTo(id, null);
@@ -327,5 +349,11 @@ export function createModelsTree(fragments: OBC.FragmentsManager): ModelsTree {
   defaultCollectionId = addCollection().id;
   render();
 
-  return { element: root, createCollection };
+  return {
+    element: root,
+    createCollection,
+    ensureDefaultCollectionId: () => ensureDefaultCollection().id,
+    attachDataLayers: (controller) => { dataLayersController = controller; render(); },
+    refresh: render,
+  };
 }
