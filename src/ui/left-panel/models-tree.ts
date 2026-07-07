@@ -25,6 +25,8 @@ export function createModelsTree(fragments: OBC.FragmentsManager): ModelsTree {
   let collectionCounter = 0;
   /** Id del modelo que se está arrastrando; nulo fuera de un drag activo. */
   let draggedModelId: string | null = null;
+  /** Id de la colección donde caen los modelos nuevos por defecto. */
+  let defaultCollectionId: string | null = null;
 
   const root = document.createElement("div");
   root.className = "models-tree";
@@ -282,7 +284,7 @@ export function createModelsTree(fragments: OBC.FragmentsManager): ModelsTree {
     moveModelTo(id, null);
   });
 
-  const createCollection = (): void => {
+  function addCollection(): Collection {
     collectionCounter += 1;
     const col: Collection = {
       id: `col-${Date.now()}-${collectionCounter}`,
@@ -291,6 +293,20 @@ export function createModelsTree(fragments: OBC.FragmentsManager): ModelsTree {
       hidden: false,
     };
     collections.push(col);
+    return col;
+  }
+
+  /** Devuelve la colección por defecto, recreándola si el usuario la eliminó. */
+  function ensureDefaultCollection(): Collection {
+    const existing = collections.find((c) => c.id === defaultCollectionId);
+    if (existing) return existing;
+    const col = addCollection();
+    defaultCollectionId = col.id;
+    return col;
+  }
+
+  const createCollection = (): void => {
+    const col = addCollection();
     render();
     requestAnimationFrame(() => {
       const nameEl = root.querySelector(
@@ -300,8 +316,15 @@ export function createModelsTree(fragments: OBC.FragmentsManager): ModelsTree {
     });
   };
 
-  fragments.list.onItemSet.add(() => render());
+  fragments.list.onItemSet.add(({ key }) => {
+    if (!modelCollection.has(key)) {
+      modelCollection.set(key, ensureDefaultCollection().id);
+    }
+    render();
+  });
   fragments.list.onItemDeleted.add(() => render());
+
+  defaultCollectionId = addCollection().id;
   render();
 
   return { element: root, createCollection };
