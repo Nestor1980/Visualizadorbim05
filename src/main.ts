@@ -20,6 +20,7 @@ import { createLeftPanel }    from "./ui/left-panel/index";
 import { createToolOptionsPanel } from "./ui/tool-options-panel";
 import { createToolbar }          from "./ui/toolbar";
 import { setupLayout }            from "./ui/layout";
+import { createPanelSplit }       from "./ui/panel-split";
 import { setupBCFSection }        from "./bcf/bcf-manager";
 import { SelectionManager }       from "./selection/selection-manager";
 import { showWelcomeScreen }      from "./ui/welcome-screen";
@@ -157,7 +158,6 @@ async function startApp(): Promise<{
   };
 
   const leftPanel = createLeftPanel(components, fragments, ifcLoader, highlighter, onModelLoaded);
-  rightPanel.element.prepend(leftPanel.element);
 
   // Selecting an element (tree or 3D click) switches the right panel to the
   // Propiedades view, mirroring an explicit click on the toolbar button.
@@ -190,7 +190,11 @@ async function startApp(): Promise<{
   // del setMode inicial: re-aplicar el modo para que "Navegar" arranque activo.
   toolManager.setMode(toolManager.activeMode);
 
-  await setupLayout(viewport, rightPanel.element, toolbar, attachRightPanelResize);
+  // Frame derecho dividido en dos: "Escena" (carga/árbol de modelos IFC) arriba,
+  // paneles dinámicos (Controles, Renderizado, BCF) abajo.
+  const panelSplit = createPanelSplit(leftPanel.element, rightPanel.element);
+
+  await setupLayout(viewport, panelSplit, toolbar, attachRightPanelResize);
 
   // Force renderer + camera to pick up the real DOM dimensions after layout is mounted.
   world.renderer?.resize(undefined);

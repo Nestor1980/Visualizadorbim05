@@ -44,18 +44,6 @@ bim-panel {
   position: relative;
 }
 
-.panel-brand {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--bim-ui_size-4xl, 1rem);
-  border-bottom: 1px solid var(--border-subtle);
-}
-.panel-brand-logo {
-  max-width: 100%;
-  height: auto;
-}
-
 /* El panel es una columna real del bim-grid (misma jerarquía que el
  * viewport), no un overlay flotante: redimensionarlo cambia --panel-w en
  * el grid y el viewport reacomoda su columna (1fr) solo. */
@@ -71,6 +59,7 @@ bim-panel {
   min-width: 0;
   height: 100%;
   overflow-y: auto;
+  border-radius: 0 !important;
 }
 
 .panel-resize-handle {
@@ -105,6 +94,71 @@ body.welcome-active .panel-pane {
 body.resizing-panel {
   cursor: ew-resize;
   user-select: none;
+}
+
+/* — Split del panel derecho: "Escena" (arriba) / paneles dinámicos (abajo) — */
+.panel-split {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.panel-split-pane {
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+}
+.panel-split-pane--top {
+  flex: 0 0 var(--scene-h, 320px);
+}
+.panel-split-pane--bottom {
+  flex: 1 1 auto;
+}
+
+.panel-split-handle {
+  flex-shrink: 0;
+  height: 4px;
+  cursor: ns-resize;
+  touch-action: none;
+  position: relative;
+}
+.panel-split-handle::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 1.5px;
+  height: 1px;
+  border-radius: 1px;
+  background: transparent;
+  transition: background 0.15s;
+}
+.panel-split-handle:hover::after,
+.panel-split-handle:active::after {
+  background: var(--accent);
+}
+body.resizing-panel-split {
+  cursor: ns-resize;
+  user-select: none;
+}
+
+.panel-frame-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--bim-ui_bg-contrast-80);
+  border-bottom: 1px solid var(--bim-ui_bg-contrast-10);
+}
+.panel-frame-header bim-icon {
+  font-size: 14px;
+  color: var(--accent);
 }
 
 /* — Árbol de tipos (panel izquierdo) — */

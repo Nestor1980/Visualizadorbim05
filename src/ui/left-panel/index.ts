@@ -6,8 +6,8 @@ import { createTreePanel, TreePanel } from "./tree-panel";
 import { saveRecentFile } from "../../ifc/recent-files";
 
 export interface LeftPanel {
-  /** Contenido a insertar al inicio del panel derecho combinado (sin bim-panel propio). */
-  element: HTMLElement;
+  /** Frame "Escena": bim-panel propio con su header, para el split superior del panel derecho. */
+  element: BUI.Panel;
   treePanel: TreePanel;
   triggerLoadIfc: () => void;
   loadIfcBytes: (bytes: Uint8Array, name: string) => Promise<void>;
@@ -73,16 +73,9 @@ export function createLeftPanel(
     return window.matchMedia("(prefers-color-scheme: light)").matches;
   };
 
-  const brandLogo = document.createElement("img");
-  brandLogo.className = "panel-brand-logo";
-  brandLogo.alt = "Visualizador BIM";
-
   const applyTheme = (light: boolean): void => {
     themeToggleBtn.icon  = light ? "material-symbols:dark-mode" : "material-symbols:light-mode";
     themeToggleBtn.label = light ? "Modo oscuro" : "Modo claro";
-    brandLogo.src = light
-      ? "/img/visualizador_bim_logo_light.png"
-      : "/img/visualizador_bim_logo_dark.png";
   };
 
   const updateThemeToggleBtn = (): void => applyTheme(isLightTheme());
@@ -101,11 +94,21 @@ export function createLeftPanel(
   });
   updateThemeToggleBtn();
 
-  const panel = BUI.Component.create<HTMLElement>(() => {
+  const panel = document.createElement("bim-panel") as BUI.Panel;
+  panel.classList.add("scene-panel");
+
+  const header = BUI.Component.create<HTMLElement>(() => {
+    return BUI.html`
+      <div class="panel-frame-header">
+        <bim-icon icon="mage:box-3d-fill"></bim-icon>
+        <span>Escena</span>
+      </div>
+    `;
+  });
+
+  const body = BUI.Component.create<HTMLElement>(() => {
     return BUI.html`
       <div class="left-panel-content">
-        <div class="panel-brand">${brandLogo}</div>
-
         <bim-panel-section label="Apariencia" icon="material-symbols:contrast-rounded">
           ${themeToggleBtn}
         </bim-panel-section>
@@ -119,7 +122,7 @@ export function createLeftPanel(
     `;
   });
 
-  panel.append(treePanel.section);
+  panel.append(header, body, treePanel.section);
 
   return {
     element: panel,

@@ -16,7 +16,6 @@ export function createRightPanel(
   threeRenderer: THREE.WebGLRenderer,
 ): RightPanel {
   const panel = document.createElement("bim-panel") as BUI.Panel;
-  panel.label = "Panel";
 
   const controlsPanel    = createControlsPanel(fragments);
   const renderizadoPanel = createRenderizadoPanel(postproduction, sunLight, threeRenderer);
