@@ -23,7 +23,8 @@ export function createModelsTree(fragments: OBC.FragmentsManager): ModelsTree {
   const modelColorIndex = new Map<string, number>();
   let nextColorIndex = 0;
   let collectionCounter = 0;
-  let closeOpenMenu: (() => void) | null = null;
+  /** Id del modelo que se está arrastrando; nulo fuera de un drag activo. */
+  let draggedModelId: string | null = null;
 
   const root = document.createElement("div");
   root.className = "models-tree";
@@ -46,6 +47,12 @@ export function createModelsTree(fragments: OBC.FragmentsManager): ModelsTree {
     hiddenModels.set(modelId, !visible);
   };
 
+  const moveModelTo = (modelId: string, collectionId: string | null): void => {
+    modelCollection.set(modelId, collectionId);
+    draggedModelId = null;
+    render();
+  };
+
   function makeIconButton(icon: string, title: string, onClick: () => void | Promise<void>): HTMLButtonElement {
     const btn = document.createElement("button");
     btn.type = "button";
@@ -61,62 +68,6 @@ export function createModelsTree(fragments: OBC.FragmentsManager): ModelsTree {
       onClick();
     });
     return btn;
-  }
-
-  function openMoveMenu(anchor: HTMLElement, modelId: string): void {
-    closeOpenMenu?.();
-
-    const menu = document.createElement("div");
-    menu.className = "row-menu";
-
-    const addItem = (label: string, active: boolean, onSelect: () => void) => {
-      const item = document.createElement("button");
-      item.type = "button";
-      item.className = "row-menu-item" + (active ? " is-active" : "");
-      item.textContent = label;
-      item.addEventListener("click", (e) => {
-        e.stopPropagation();
-        onSelect();
-        close();
-      });
-      menu.append(item);
-    };
-
-    const currentCollectionId = modelCollection.get(modelId) ?? null;
-    addItem("Sin colección", currentCollectionId === null, () => {
-      modelCollection.set(modelId, null);
-      render();
-    });
-    for (const col of collections) {
-      addItem(col.name, currentCollectionId === col.id, () => {
-        modelCollection.set(modelId, col.id);
-        col.expanded = true;
-        render();
-      });
-    }
-    if (collections.length === 0) {
-      const hint = document.createElement("div");
-      hint.className = "row-menu-hint";
-      hint.textContent = "Crea una colección primero";
-      menu.append(hint);
-    }
-
-    document.body.append(menu);
-    const rect = anchor.getBoundingClientRect();
-    menu.style.position = "fixed";
-    menu.style.top  = `${rect.bottom + 4}px`;
-    menu.style.left = `${Math.min(rect.left, window.innerWidth - menu.offsetWidth - 8)}px`;
-
-    const close = () => {
-      menu.remove();
-      document.removeEventListener("pointerdown", onOutside, true);
-      if (closeOpenMenu === close) closeOpenMenu = null;
-    };
-    const onOutside = (e: PointerEvent) => {
-      if (!menu.contains(e.target as Node)) close();
-    };
-    requestAnimationFrame(() => document.addEventListener("pointerdown", onOutside, true));
-    closeOpenMenu = close;
   }
 
   function startRename(col: Collection, nameEl: HTMLElement): void {
@@ -145,6 +96,18 @@ export function createModelsTree(fragments: OBC.FragmentsManager): ModelsTree {
     row.className = "models-row" + (nested ? " models-row--nested" : "");
     row.style.backgroundColor = colorFor(modelId);
 
+    row.draggable = true;
+    row.addEventListener("dragstart", (e: DragEvent) => {
+      draggedModelId = modelId;
+      e.dataTransfer?.setData("text/plain", modelId);
+      if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+      row.classList.add("is-dragging");
+    });
+    row.addEventListener("dragend", () => {
+      draggedModelId = null;
+      row.classList.remove("is-dragging");
+    });
+
     const icon = document.createElement("bim-icon") as any;
     icon.icon = "mage:box-3d-fill";
     icon.className = "models-row-icon";
@@ -158,10 +121,6 @@ export function createModelsTree(fragments: OBC.FragmentsManager): ModelsTree {
 
     const actions = document.createElement("div");
     actions.className = "models-row-actions";
-
-    const moveBtn = makeIconButton("material-symbols:drive-file-move-outline", "Mover a colección", () => {
-      openMoveMenu(moveBtn, modelId);
-    });
 
     const hidden = isModelHidden(modelId);
     const eyeBtn = makeIconButton(hidden ? "mdi:eye-off" : "mdi:eye", hidden ? "Mostrar" : "Ocultar", async () => {
@@ -178,7 +137,7 @@ export function createModelsTree(fragments: OBC.FragmentsManager): ModelsTree {
       render();
     });
 
-    actions.append(moveBtn, eyeBtn, deleteBtn);
+    actions.append(eyeBtn, deleteBtn);
     row.append(icon, label, actions);
     return row;
   }
@@ -190,6 +149,26 @@ export function createModelsTree(fragments: OBC.FragmentsManager): ModelsTree {
 
     const wrapper = document.createElement("div");
     wrapper.className = "collection-group";
+
+    wrapper.addEventListener("dragover", (e: DragEvent) => {
+      if (!draggedModelId) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+      wrapper.classList.add("drag-over");
+    });
+    wrapper.addEventListener("dragleave", (e: DragEvent) => {
+      if (!wrapper.contains(e.relatedTarget as Node)) wrapper.classList.remove("drag-over");
+    });
+    wrapper.addEventListener("drop", (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      wrapper.classList.remove("drag-over");
+      const id = draggedModelId ?? e.dataTransfer?.getData("text/plain") ?? null;
+      if (!id || !fragments.list.has(id)) return;
+      col.expanded = true;
+      moveModelTo(id, col.id);
+    });
 
     const row = document.createElement("div");
     row.className = "collection-row";
@@ -254,7 +233,7 @@ export function createModelsTree(fragments: OBC.FragmentsManager): ModelsTree {
       if (memberIds.length === 0) {
         const empty = document.createElement("div");
         empty.className = "collection-empty";
-        empty.textContent = "Vacía — usa \"Mover a colección\" en un modelo";
+        empty.textContent = "Vacía — arrastrá un modelo hasta acá";
         wrapper.append(empty);
       } else {
         for (const id of memberIds) wrapper.append(renderModelRow(id, true));
@@ -265,7 +244,6 @@ export function createModelsTree(fragments: OBC.FragmentsManager): ModelsTree {
   }
 
   function render(): void {
-    closeOpenMenu?.();
     root.innerHTML = "";
 
     const allModelIds = [...fragments.list.keys()];
@@ -283,6 +261,26 @@ export function createModelsTree(fragments: OBC.FragmentsManager): ModelsTree {
     const rootModelIds = allModelIds.filter((id) => (modelCollection.get(id) ?? null) === null);
     for (const id of rootModelIds) root.append(renderModelRow(id, false));
   }
+
+  // Soltar un modelo sobre el fondo del árbol (fuera de cualquier colección)
+  // lo saca de su colección actual. Los drops dentro de una colección hacen
+  // stopPropagation, así que este handler solo ve los que caen "afuera".
+  root.addEventListener("dragover", (e: DragEvent) => {
+    if (!draggedModelId) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+    root.classList.add("drag-over-root");
+  });
+  root.addEventListener("dragleave", (e: DragEvent) => {
+    if (!root.contains(e.relatedTarget as Node)) root.classList.remove("drag-over-root");
+  });
+  root.addEventListener("drop", (e: DragEvent) => {
+    e.preventDefault();
+    root.classList.remove("drag-over-root");
+    const id = draggedModelId ?? e.dataTransfer?.getData("text/plain") ?? null;
+    if (!id || !fragments.list.has(id)) return;
+    moveModelTo(id, null);
+  });
 
   const createCollection = (): void => {
     collectionCounter += 1;

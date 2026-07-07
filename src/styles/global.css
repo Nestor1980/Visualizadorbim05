@@ -27,6 +27,7 @@ html, body {
   height: 100%;
   overflow: hidden;
   background: var(--bg-app);
+  color: var(--text-primary);
   font-family: var(--font-body);
 }
 
@@ -291,6 +292,18 @@ bim-tooltip {
 }
 
 /* — Barra de herramientas y árbol de modelos/colecciones (panel "Escena") — */
+/* bim-panel desliza su contenido dentro de un flex column (.sections) vía
+ * <slot>: sin flex:1 acá, .left-panel-content/.models-tree solo ocupan la
+ * altura de su contenido y dejan un margen "muerto" abajo que no pertenece
+ * al árbol — ahí un drag-and-drop para sacar un modelo de una colección
+ * nunca se soltaba porque el drop caía fuera de .models-tree. */
+.left-panel-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
 .scene-toolbar {
   display: flex;
   gap: 4px;
@@ -301,6 +314,8 @@ bim-tooltip {
 .models-tree {
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
 .models-row,
@@ -381,40 +396,25 @@ bim-tooltip {
   opacity: 0.45;
 }
 
-.row-menu {
-  z-index: 200;
-  min-width: 160px;
-  max-width: 240px;
-  padding: 4px;
-  border-radius: 8px;
-  background: var(--bim-ui_bg-base);
-  border: 1px solid var(--bim-ui_bg-contrast-10);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+.models-row {
+  cursor: grab;
 }
-.row-menu-item {
-  display: block;
-  width: 100%;
-  text-align: left;
-  padding: 6px 8px;
-  border: none;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-size: 11.5px;
-  cursor: pointer;
+.models-row.is-dragging {
+  opacity: 0.4;
+}
+.collection-group {
   border-radius: 4px;
+  outline: 2px solid transparent;
+  outline-offset: -2px;
+  transition: outline-color 0.1s, background-color 0.1s;
 }
-.row-menu-item:hover {
-  background: var(--bim-ui_bg-contrast-10);
+.collection-group.drag-over {
+  outline-color: var(--accent);
+  background: var(--accent-dim);
 }
-.row-menu-item.is-active {
-  color: var(--accent);
-  font-weight: 600;
-}
-.row-menu-hint {
-  padding: 6px 8px;
-  font-size: 10.5px;
-  opacity: 0.5;
+.models-tree.drag-over-root {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
 }
 
 bim-viewport {
