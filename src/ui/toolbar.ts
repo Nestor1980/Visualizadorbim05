@@ -10,10 +10,15 @@ export function createToolbar(
   toolManager: ToolManager,
   selectionManager: SelectionManager,
   openBcfModal: () => void,
+  loadIfcButton: BUI.Button,
 ): BUI.Toolbar {
   const toolbar = BUI.Component.create<BUI.Toolbar>(() => {
     return BUI.html`
       <bim-toolbar vertical>
+
+        <bim-toolbar-section label="Archivo">
+          ${loadIfcButton}
+        </bim-toolbar-section>
 
         <bim-toolbar-section label="Navegación">
           <bim-button tooltip-title="Navegar"

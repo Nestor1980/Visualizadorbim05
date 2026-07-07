@@ -14,13 +14,15 @@ export function createRightPanel(
   postproduction: OBF.Postproduction,
   sunLight: THREE.DirectionalLight,
   threeRenderer: THREE.WebGLRenderer,
+  structureSection: BUI.PanelSection,
+  appearanceSection: BUI.PanelSection,
 ): RightPanel {
   const panel = document.createElement("bim-panel") as BUI.Panel;
 
   const controlsPanel    = createControlsPanel(fragments);
   const renderizadoPanel = createRenderizadoPanel(postproduction, sunLight, threeRenderer);
 
-  panel.append(controlsPanel.section, renderizadoPanel.section);
+  panel.append(controlsPanel.section, structureSection, renderizadoPanel.section, appearanceSection);
 
   return { element: panel };
 }

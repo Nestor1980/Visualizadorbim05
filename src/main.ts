@@ -123,7 +123,6 @@ async function startApp(): Promise<{
   createViewCube(viewport, world, fragments, vcRef);
 
   const selectionManager = new SelectionManager();
-  const rightPanel = createRightPanel(fragments, postproduction, sunLight, threeRenderer);
   const toolOptionsPanel = createToolOptionsPanel(components, fragments, measurer, sectionTool);
   viewport.append(toolOptionsPanel.element);
 
@@ -159,6 +158,12 @@ async function startApp(): Promise<{
 
   const leftPanel = createLeftPanel(components, fragments, ifcLoader, highlighter, onModelLoaded);
 
+  // Panel dinámico de abajo: Controles, Estructuras (árbol espacial), Renderizado y Apariencia.
+  const rightPanel = createRightPanel(
+    fragments, postproduction, sunLight, threeRenderer,
+    leftPanel.treePanel.section, leftPanel.appearanceSection,
+  );
+
   // Selecting an element (tree or 3D click) switches the right panel to the
   // Propiedades view, mirroring an explicit click on the toolbar button.
   const showProperties = () => {
@@ -184,14 +189,17 @@ async function startApp(): Promise<{
   });
 
   const { openModal } = setupBCFSection(components, world, rightPanel.element);
-  const toolbar       = createToolbar(world, fragments, toolManager, selectionManager, openModal);
+  const toolbar       = createToolbar(
+    world, fragments, toolManager, selectionManager, openModal, leftPanel.loadIfcButton,
+  );
 
   // Los botones de la toolbar se registran en el ToolManager al crearla, después
   // del setMode inicial: re-aplicar el modo para que "Navegar" arranque activo.
   toolManager.setMode(toolManager.activeMode);
 
-  // Frame derecho dividido en dos: "Escena" (carga/árbol de modelos IFC) arriba,
-  // paneles dinámicos (Controles, Renderizado, BCF) abajo.
+  // Frame derecho dividido en dos: "Escena" (árbol de modelos IFC cargados,
+  // estilo outliner) arriba, paneles dinámicos (Controles, Estructuras,
+  // Renderizado, Apariencia, BCF) abajo.
   const panelSplit = createPanelSplit(leftPanel.element, rightPanel.element);
 
   await setupLayout(viewport, panelSplit, toolbar, attachRightPanelResize);
