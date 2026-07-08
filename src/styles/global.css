@@ -677,11 +677,19 @@ bim-view-cube:active {
   position: relative;
   width: min(640px, calc(100vw - 2rem));
   max-height: calc(100vh - 2rem);
-  overflow: hidden auto;
-  scrollbar-gutter: stable;
+  /* overflow: hidden en ambos ejes (no "hidden auto") para que el
+   * border-radius siempre recorte de forma consistente entre navegadores;
+   * el scroll real vive en .welcome-scroll, un hijo sin radio propio. */
+  overflow: hidden;
   background: var(--bg-surface);
   border-radius: 12px;
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+}
+
+.welcome-scroll {
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .welcome-top-actions {

@@ -75,36 +75,38 @@ export function showWelcomeScreen({ onLoadIfc, onLoadBytes, onClose }: WelcomeSc
         </button>
       </div>
 
-      <div class="welcome-hero">
-        <img class="welcome-logo" src="/img/visualizador_bim_withe.png" alt="Instituto Autárquico de Planeamiento y Vivienda" />
-        <span class="welcome-version">v1.0.0</span>
-      </div>
-
-      <div class="welcome-body">
-        <div class="welcome-col">
-          <h3>Comenzar</h3>
-          <button class="welcome-action welcome-action-primary" type="button" data-action="load">
-            <iconify-icon icon="mage:box-3d-fill"></iconify-icon>
-            Cargar modelo IFC…
-          </button>
-          <button class="welcome-action" type="button" data-action="dismiss">
-            <iconify-icon icon="material-symbols:note-add-outline"></iconify-icon>
-            Nuevo Proyecto
-          </button>
+      <div class="welcome-scroll">
+        <div class="welcome-hero">
+          <img class="welcome-logo" src="/img/visualizador_bim_withe.png" alt="Instituto Autárquico de Planeamiento y Vivienda" />
+          <span class="welcome-version">v1.0.0</span>
         </div>
 
-        <div class="welcome-col">
-          <h3>Proyectos</h3>
-          <div class="welcome-projects"></div>
+        <div class="welcome-body">
+          <div class="welcome-col">
+            <h3>Comenzar</h3>
+            <button class="welcome-action welcome-action-primary" type="button" data-action="load">
+              <iconify-icon icon="mage:box-3d-fill"></iconify-icon>
+              Cargar modelo IFC…
+            </button>
+            <button class="welcome-action" type="button" data-action="dismiss">
+              <iconify-icon icon="material-symbols:note-add-outline"></iconify-icon>
+              Nuevo Proyecto
+            </button>
+          </div>
 
-          <h3 class="welcome-subheading">Recientes</h3>
-          <div class="welcome-recents">
-            <span class="welcome-empty">Cargando…</span>
+          <div class="welcome-col">
+            <h3>Proyectos</h3>
+            <div class="welcome-projects"></div>
+
+            <h3 class="welcome-subheading">Recientes</h3>
+            <div class="welcome-recents">
+              <span class="welcome-empty">Cargando…</span>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div class="welcome-footer">Instituto Autárquico de Planeamiento y Vivienda — Entre Ríos</div>
+        <div class="welcome-footer">Instituto Autárquico de Planeamiento y Vivienda — Entre Ríos</div>
+      </div>
     </div>
   `;
 

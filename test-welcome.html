@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <link rel="stylesheet" href="/src/styles/themes/theme-er.css" />
+  <link rel="stylesheet" href="/src/styles/global.css" />
+</head>
+<body>
+  <script type="module">
+    import { showWelcomeScreen } from "/src/ui/welcome-screen.ts";
+    showWelcomeScreen({
+      onLoadIfc: () => {},
+      onLoadBytes: async () => {},
+      onClose: () => {},
+    });
+  </script>
+</body>
+</html>

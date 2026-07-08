@@ -162,7 +162,7 @@ export function createDataLayersTree(
   function renderSectionRow(planeId: string): HTMLElement {
     const plane = clipper.list.get(planeId);
     if (!plane) return document.createElement("div");
-    const hidden = !plane.visible;
+    const hidden = !plane.enabled;
 
     const row = document.createElement("div");
     row.className = "models-row models-row--nested data-layer-item-row";
@@ -194,7 +194,7 @@ export function createDataLayersTree(
     actions.className = "models-row-actions";
 
     const eyeBtn = makeIconButton(hidden ? "mdi:eye-off" : "mdi:eye", hidden ? "Mostrar" : "Ocultar", () => {
-      plane.visible = !plane.visible;
+      plane.enabled = !plane.enabled;
       requestRender();
     });
     const deleteBtn = makeIconButton("mdi:delete", "Eliminar corte", () => {
@@ -418,7 +418,7 @@ export function createDataLayersTree(
         }
         for (const id of sectionIds) {
           const plane = clipper.list.get(id);
-          if (plane) plane.visible = !layer.hidden;
+          if (plane) plane.enabled = !layer.hidden;
         }
         requestRender();
       },
