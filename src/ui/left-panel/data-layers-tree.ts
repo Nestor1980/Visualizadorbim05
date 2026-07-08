@@ -326,7 +326,7 @@ export function createDataLayersTree(
     if (expanded) {
       if (itemIds.length === 0) {
         const empty = document.createElement("div");
-        empty.className = "collection-empty";
+        empty.className = "collection-empty data-layer-item-empty";
         empty.textContent =
           kind === "measurement" ? "Sin mediciones" :
           kind === "section"     ? "Sin cortes" :

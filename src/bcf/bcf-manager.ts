@@ -135,17 +135,33 @@ export function setupBCFSection(
   if (assigneeDropdown) assigneeDropdown.searchBox = true;
 
   const modal = BUI.Component.create<HTMLDialogElement>(() => BUI.html`
-    <dialog style="border:none;border-radius:8px;padding:0;background:transparent;box-shadow:0 8px 32px rgba(0,0,0,.4);">
-      <bim-panel style="border-radius:8px;width:22rem;">${topicForm}</bim-panel>
+    <dialog class="bcf-topic-modal">
+      <div class="bcf-topic-modal-header">
+        <span class="bcf-topic-modal-title">Nuevo Topic</span>
+        <button class="bcf-topic-modal-close" type="button" aria-label="Cerrar"
+          @click=${() => modal.close()}>
+          <iconify-icon icon="material-symbols:close"></iconify-icon>
+        </button>
+      </div>
+      <div class="bcf-topic-modal-body">
+        <bim-panel style="border-radius:0;width:22rem;">${topicForm}</bim-panel>
+      </div>
     </dialog>
   `);
   document.body.append(modal);
   updateTopicForm({ onCancel: () => modal.close(), onSubmit: () => modal.close() });
 
+  closeOnBackdropClick(modal);
+  const topicModalHeader = modal.querySelector(".bcf-topic-modal-header") as HTMLElement;
+  makeModalDraggable(modal, topicModalHeader, ".bcf-topic-modal-close");
+
   // — BCF Topics modal (lista + detalle del topic seleccionado) —
   const createTopicBtn = BUI.Component.create(() => BUI.html`
     <bim-button label="Crear Topic BCF" icon="material-symbols:task"
-      @click=${() => modal.showModal()}>
+      @click=${() => {
+        resetModalPosition(modal);
+        modal.showModal();
+      }}>
     </bim-button>
   `);
 

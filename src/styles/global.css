@@ -529,8 +529,13 @@ bim-tooltip {
   padding-left: 26px;
   cursor: default;
 }
-.data-layer-item-row {
-  padding-left: 46px;
+/* La fila de categoría tiene flecha (16px + gap) antes de su ícono, pero la
+ * fila de ítem no: con el mismo delta de padding-left que el resto del árbol,
+ * el ícono del ítem terminaba cayendo casi en la misma columna que el de su
+ * categoría padre. Se compensa ese ancho de flecha para que quede más adentro. */
+.data-layer-item-row,
+.data-layer-item-empty {
+  padding-left: 64px;
 }
 /* Cuando la capa está anidada dentro de una colección, todo un nivel más adentro. */
 .collection-group .data-layer-group > .collection-row {
@@ -539,8 +544,9 @@ bim-tooltip {
 .collection-group .data-layer-group .data-layer-category-row {
   padding-left: 46px;
 }
-.collection-group .data-layer-group .data-layer-item-row {
-  padding-left: 66px;
+.collection-group .data-layer-group .data-layer-item-row,
+.collection-group .data-layer-group .data-layer-item-empty {
+  padding-left: 84px;
 }
 
 /* — Árbol Espacial/Tipos anidado dentro de la fila de un modelo. — */
@@ -1039,6 +1045,59 @@ bim-view-cube:active {
   background: var(--bg-surface-hover);
 }
 .bcf-list-modal-body {
+  max-height: calc(100vh - 10rem);
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+/* — Modal "Nuevo Topic": formulario de creación de topic BCF.
+ * Misma receta de centrado/drag/cierre que .bcf-list-modal. — */
+.bcf-topic-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 12px;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+}
+.bcf-topic-modal::backdrop {
+  background: rgba(0, 0, 0, 0.55);
+}
+.bcf-topic-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border-subtle);
+  cursor: move;
+  user-select: none;
+}
+.bcf-topic-modal-title {
+  font-size: 1rem;
+  font-weight: 700;
+}
+.bcf-topic-modal-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+.bcf-topic-modal-close:hover {
+  background: var(--bg-surface-hover);
+}
+.bcf-topic-modal-body {
   max-height: calc(100vh - 10rem);
   overflow: auto;
   scrollbar-gutter: stable;
