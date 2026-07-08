@@ -56,7 +56,7 @@ export function createScene(viewport: HTMLElement): SceneSetup {
 
   const watermark = document.createElement("img");
   watermark.className = "viewer-watermark";
-  watermark.src = "/img/visualizador_bim_withe.png";
+  watermark.src = "/img/visualizador_bim_logo_dark.png";
   watermark.alt = "";
   viewport.appendChild(watermark);
 
