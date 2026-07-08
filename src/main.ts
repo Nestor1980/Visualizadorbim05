@@ -128,7 +128,7 @@ async function startApp(): Promise<{
   createViewCube(viewport, world, fragments, vcRef);
 
   const selectionManager = new SelectionManager();
-  const toolOptionsPanel = createToolOptionsPanel(components, fragments, measurer, sectionTool);
+  const toolOptionsPanel = createToolOptionsPanel(components, fragments, measurer, sectionTool, worldLabelTool);
   viewport.append(toolOptionsPanel.element);
 
   toolManager.setToolOptionsPanel(toolOptionsPanel);

@@ -301,13 +301,16 @@ export function createDataLayersTree(
       label.mark.visible = !label.mark.visible;
       requestRender();
     });
+    const editBtn = makeIconButton("mdi:pencil-outline", "Editar etiqueta", () => {
+      labels.edit(labelId);
+    });
     const deleteBtn = makeIconButton("mdi:delete", "Eliminar etiqueta", () => {
       if (!confirm(`¿Eliminar la etiqueta "${label.title}"?`)) return;
       labels.deleteLabel(labelId);
       requestRender();
     });
 
-    actions.append(eyeBtn, deleteBtn);
+    actions.append(eyeBtn, editBtn, deleteBtn);
     row.append(icon, labelEl, actions);
     return row;
   }

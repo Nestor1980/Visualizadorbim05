@@ -1118,8 +1118,8 @@ bim-view-cube:active {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
   font-size: 12px;
+  --label-color: #e6553f;
 }
 .world-label-badge {
   pointer-events: auto;
@@ -1127,69 +1127,123 @@ bim-view-cube:active {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
-  background: var(--accent);
+  background: var(--label-color);
   color: #fff;
-  font-size: 14px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  font-size: 13px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
   flex-shrink: 0;
+  z-index: 1;
+  margin-bottom: -6px;
+}
+/* Tarjeta opaca, mismo lenguaje visual que el resto de los paneles flotantes
+ * (bg-elevated + border-subtle + sombra); el color personalizable de la
+ * etiqueta se ve en el badge y en el borde superior a modo de acento. */
+.world-label-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  border-top: 3px solid var(--label-color);
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
 }
 .world-label-title {
   pointer-events: auto;
   cursor: pointer;
   max-width: 12rem;
-  padding: 2px 8px;
-  border-radius: 10px;
-  background: var(--bim-ui_bg-contrast-100, #1a1a1a);
-  color: #fff;
-  font-weight: 600;
+  padding: 8px 10px 2px;
+  font-weight: 700;
+  font-size: 13px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
 }
 .world-label-comment {
   pointer-events: auto;
   cursor: pointer;
   max-width: 16rem;
-  padding: 4px 8px;
-  border-radius: 6px;
-  background: var(--bim-ui_bg-contrast-100, #1a1a1a);
-  color: rgba(255, 255, 255, 0.85);
+  padding: 2px 10px 8px;
   font-size: 11px;
   line-height: 1.4;
+  color: var(--text-secondary);
   white-space: pre-wrap;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
 }
-.world-label[data-state="icon"] .world-label-title,
-.world-label[data-state="icon"] .world-label-comment {
+.world-label[data-state="icon"] .world-label-card {
   display: none;
 }
 .world-label[data-state="title"] .world-label-comment {
   display: none;
 }
+/* Expandida (seleccionada/en edición): el badge queda tapado por la tarjeta
+ * y se ve mal solapado con el input de título, así que se oculta del todo. */
 .world-label[data-state="expanded"] .world-label-badge {
-  outline: 2px solid #fff;
+  display: none;
 }
 .world-label-title-input,
 .world-label-comment-textarea {
   pointer-events: auto;
   font: inherit;
   color: inherit;
-  background: var(--bim-ui_bg-contrast-05);
-  border: 1px solid var(--accent);
-  border-radius: 6px;
+  background: var(--bg-surface-hover);
+  border: 1px solid var(--label-color);
+  border-radius: 4px;
   padding: 3px 6px;
+  margin: 2px 8px;
 }
 .world-label-title-input {
   width: 12rem;
-  font-weight: 600;
+  font-weight: 700;
 }
 .world-label-comment-textarea {
   width: 16rem;
   resize: vertical;
+}
+.world-label-edit-actions {
+  pointer-events: auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px 6px;
+}
+.world-label-edit-actions-group {
+  display: flex;
+  gap: 4px;
+}
+.world-label-edit-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 12px;
+  color: #fff;
+  transition: filter 0.15s;
+}
+.world-label-edit-btn:hover {
+  filter: brightness(1.15);
+}
+.world-label-edit-delete {
+  background: transparent;
+  color: var(--text-secondary);
+}
+.world-label-edit-delete:hover {
+  color: #d9463a;
+  filter: none;
+}
+.world-label-edit-cancel {
+  background: #6b6b6b;
+}
+.world-label-edit-accept {
+  background: #3a9e4f;
 }
 
 /* Ícono fantasma de previsualización: sigue el punto raycasteado bajo el
