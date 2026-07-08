@@ -214,10 +214,26 @@ body.resizing-panel-split {
   box-shadow: inset 3px 0 0 var(--accent);
 }
 .vtabs-content {
+  display: flex;
+  flex-direction: column;
   flex: 1 1 auto;
   min-width: 0;
   height: 100%;
   overflow-y: auto;
+  /* bim-panel-section trae 0.75rem de radio por defecto (pensado para vivir
+   * flotando); acá está encastrado y a ras del riel de solapas, así que lo
+   * aplanamos igual que ya hace .panel-pane bim-panel con el panel entero. */
+  --bim-panel-section--bdrs: 0;
+}
+/* La solapa activa ocupa todo el alto disponible del frame aunque su propio
+ * contenido no llegue a llenarlo (fondo del panel a ras del borde inferior en
+ * vez de cortarse a la altura de los controles); la oculta sigue con
+ * display:none inline desde dynamic-tabs-panel.ts, que pisa esta regla. */
+.vtabs-content > * {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 /* — Barra de botones tipo switcher (vértice/borde/superficie, espacial/tipos) — */
