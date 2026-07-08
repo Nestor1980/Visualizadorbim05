@@ -10,6 +10,7 @@ export interface SceneSetup {
   sunLight: THREE.DirectionalLight;
   threeRenderer: THREE.WebGLRenderer;
   adjustGridToModel: () => void;
+  axisMaterials: THREE.Material[];
 }
 
 export function createScene(viewport: HTMLElement): SceneSetup {
@@ -88,6 +89,7 @@ export function createScene(viewport: HTMLElement): SceneSetup {
     new THREE.LineBasicMaterial({ color: 0x6c9e3d }),
   );
   worldGrid.three.add(xAxis, yAxis);
+  const axisMaterials = [xAxis.material as THREE.Material, yAxis.material as THREE.Material];
 
   world.camera.controls.setLookAt(10, 10, 10, 0, 0, 0);
 
@@ -110,5 +112,5 @@ export function createScene(viewport: HTMLElement): SceneSetup {
     if (!box.isEmpty()) worldGrid.three.position.y = box.min.y;
   };
 
-  return { components, world, fragments, worldGrid, sunLight, threeRenderer, adjustGridToModel };
+  return { components, world, fragments, worldGrid, sunLight, threeRenderer, adjustGridToModel, axisMaterials };
 }

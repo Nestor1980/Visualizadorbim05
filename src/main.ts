@@ -53,7 +53,7 @@ async function startApp(): Promise<{
   const viewport = document.createElement("bim-viewport");
 
   // — Core scene —
-  const { components, world, fragments, worldGrid, sunLight, threeRenderer, adjustGridToModel } =
+  const { components, world, fragments, worldGrid, sunLight, threeRenderer, adjustGridToModel, axisMaterials } =
     createScene(viewport);
 
   fragments.init(await OBC.FragmentsManager.getWorker());
@@ -102,7 +102,7 @@ async function startApp(): Promise<{
   const toolManager = new ToolManager(measurer, highlighter, hoverer, sectionTool);
 
   // — Postprocessing —
-  const postproduction = setupPostprocessing(world, worldGrid, components);
+  const postproduction = setupPostprocessing(world, worldGrid, components, axisMaterials);
   toolManager.setPostproduction(postproduction);
 
   // — Camera helpers —
