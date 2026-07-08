@@ -99,7 +99,12 @@ export class ToolManager {
     this.toolOptionsPanel?.setView(view);
   }
 
-  bindViewportEvents(viewport: HTMLElement, world: OBC.World, fragments: OBC.FragmentsManager): void {
+  bindViewportEvents(
+    viewport: HTMLElement,
+    world: OBC.World,
+    fragments: OBC.FragmentsManager,
+    canvas: HTMLCanvasElement,
+  ): void {
     viewport.addEventListener("dblclick", () => {
       if (this.activeMode === "section") {
         this.sectionTool.clipper.create(world);
@@ -110,51 +115,43 @@ export class ToolManager {
     // Modo "label": un click simple sobre el modelo coloca un WorldLabel en el
     // punto de impacto. Clicks sobre un marcador ya existente (p. ej. para
     // seleccionarlo) no deben disparar una creación nueva.
-    const labelRaycaster = new THREE.Raycaster();
-    const raycastModel = (clientX: number, clientY: number): THREE.Vector3 | null => {
-      const rect = viewport.getBoundingClientRect();
-      const ndc  = new THREE.Vector2(
-        ((clientX - rect.left) / rect.width)  * 2 - 1,
-        -((clientY - rect.top)  / rect.height) * 2 + 1,
-      );
-      labelRaycaster.setFromCamera(ndc, world.camera.three);
-
-      const meshes: THREE.Mesh[] = [];
-      for (const model of fragments.list.values()) {
-        model.object?.traverse((o) => { if (o instanceof THREE.Mesh) meshes.push(o); });
+    //
+    // La geometría de fragments (v3) vive del lado del worker y sus mallas en
+    // el hilo principal no son fiables para un `THREE.Raycaster` manual (le
+    // faltan BVH/índices a varias, y tira excepciones o da "miss" en
+    // superficies visiblemente sólidas). `fragments.raycast(...)` es la API
+    // soportada: delega en el worker y devuelve el hit real más cercano.
+    const raycastModel = async (clientX: number, clientY: number): Promise<THREE.Vector3 | null> => {
+      try {
+        const result = await fragments.raycast({
+          camera: world.camera.three,
+          mouse: new THREE.Vector2(clientX, clientY),
+          dom: canvas,
+        });
+        return result?.point ?? null;
+      } catch (error) {
+        console.error("Error al raycastear el modelo para colocar la etiqueta:", error);
+        return null;
       }
-      // Algunas mallas internas de fragments no exponen un BVH válido y hacen
-      // que el raycast nativo de three.js lance una excepción para esa malla
-      // puntual — se raycastea de a una para que una sola malla rota no tape
-      // los hits válidos del resto.
-      const hits: THREE.Intersection[] = [];
-      for (const mesh of meshes) {
-        try {
-          labelRaycaster.intersectObject(mesh, false, hits);
-        } catch (error) {
-          console.error("Malla ignorada por error de raycast:", error);
-        }
-      }
-      if (hits.length === 0) return null;
-      hits.sort((a, b) => a.distance - b.distance);
-      return hits[0].point;
     };
 
     viewport.addEventListener("click", (event: MouseEvent) => {
       if (this.activeMode !== "label") return;
       if ((event.target as HTMLElement).closest(".world-label")) return;
-      const point = raycastModel(event.clientX, event.clientY);
-      if (point) this.worldLabelTool.createAt(point);
+      console.log("[debug] label click at", event.clientX, event.clientY);
+      raycastModel(event.clientX, event.clientY).then((point) => {
+        console.log("[debug] label click raycast result", point);
+        if (point) this.worldLabelTool.createAt(point);
+      });
     });
 
     // Ícono fantasma que sigue el punto raycasteado bajo el cursor, para
     // mostrar dónde va a quedar la próxima etiqueta antes de hacer click.
-    // El raycast contra todas las mallas es relativamente costoso, así que se
-    // coalesce a un máximo de un cálculo por frame en vez de uno por evento.
+    // El raycast es asíncrono (va al worker), así que se coalesce a un
+    // máximo de un cálculo en vuelo por vez en vez de uno por evento.
     let pendingPreviewEvent: MouseEvent | null = null;
-    let previewRafPending = false;
-    const flushPreview = () => {
-      previewRafPending = false;
+    let previewInFlight = false;
+    const flushPreview = async () => {
       const event = pendingPreviewEvent;
       pendingPreviewEvent = null;
       if (!event || this.activeMode !== "label") return;
@@ -162,14 +159,18 @@ export class ToolManager {
         this.worldLabelTool.previewAt(null);
         return;
       }
-      this.worldLabelTool.previewAt(raycastModel(event.clientX, event.clientY));
+      previewInFlight = true;
+      const point = await raycastModel(event.clientX, event.clientY);
+      previewInFlight = false;
+      if (this.activeMode !== "label") return;
+      this.worldLabelTool.previewAt(point);
+      // Si llegó un mousemove nuevo mientras este raycast estaba en vuelo, procesarlo ahora.
+      if (pendingPreviewEvent) flushPreview();
     };
     viewport.addEventListener("pointermove", (event: MouseEvent) => {
       if (this.activeMode !== "label") return;
       pendingPreviewEvent = event;
-      if (previewRafPending) return;
-      previewRafPending = true;
-      requestAnimationFrame(flushPreview);
+      if (!previewInFlight) flushPreview();
     });
     viewport.addEventListener("pointerleave", () => {
       if (this.activeMode === "label") this.worldLabelTool.previewAt(null);

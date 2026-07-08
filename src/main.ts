@@ -117,7 +117,7 @@ async function startApp(): Promise<{
     });
   }
   setupPivotRaycaster(viewport, world, fragments);
-  toolManager.bindViewportEvents(viewport, world, fragments);
+  toolManager.bindViewportEvents(viewport, world, fragments, threeRenderer.domElement);
 
   // — IFC —
   const ifcLoader = await setupIfcLoader(components);

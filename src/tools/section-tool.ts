@@ -98,6 +98,7 @@ export function createSectionTool(
   };
 
   const rebuildSectionFills = () => {
+    console.log("[section-debug] rebuildSectionFills called. fillSourceMeshes:", fillSourceMeshes.length, "clipper.list size:", (clipper as any).list.size);
     while (sectionFillGroup.children.length)
       sectionFillGroup.remove(sectionFillGroup.children[0]);
     fillMaterials.length = 0;
@@ -169,7 +170,15 @@ export function createSectionTool(
         edgeLines.renderOrder = 5;
         sectionFillGroup.add(edgeLines);
       }
+      console.log("[section-debug]", {
+        fillSourceMeshesCount: fillSourceMeshes.length,
+        edgePositionsLen: edgePositions.length,
+        stencilGroupChildren: stencilGroup.children.length,
+        planeNormal: plane.normal.toArray(),
+        planeConstant: plane.constant,
+      });
     }
+    console.log("[section-debug] sectionFillGroup.children:", sectionFillGroup.children.length);
   };
 
   return {
