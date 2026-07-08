@@ -18,9 +18,6 @@ export function createSectionPanel(sectionTool: SectionTool): SectionSettingsPan
             sectionTool.sectionFillGroup.visible = target.value && sectionTool.clipper.enabled;
           }}">
         </bim-checkbox>
-        <bim-button label="Borrar todos los planos" icon="material-symbols:delete-outline"
-          @click=${() => sectionTool.clipper.deleteAll()}>
-        </bim-button>
       </bim-panel-section>
     `;
   });
