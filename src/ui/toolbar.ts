@@ -97,11 +97,6 @@ export function createToolbar(
               <div style="opacity:0.75;">Doble click para crear. Muestra hatch por categoría IFC.</div>
             </bim-tooltip>
           </bim-button>
-          <bim-button
-            icon="material-symbols:layers-clear"
-            @click=${() => (toolManager as any).sectionTool?.clipper?.deleteAll()}>
-            <bim-tooltip>Borrar planos</bim-tooltip>
-          </bim-button>
         </bim-toolbar-section>
 
         <bim-toolbar-section label="Visibilidad">

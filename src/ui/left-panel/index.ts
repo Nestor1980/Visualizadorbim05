@@ -14,6 +14,8 @@ export interface LeftPanel {
   element: BUI.Panel;
   onElementClick: (handler: (modelId: string, localId: number) => void) => void;
   onTypeGroupClick: (handler: (modelIdMap: OBC.ModelIdMap, typeLabel: string, count: number) => void) => void;
+  onTopicSelect: (handler: (topicGuid: string) => void) => void;
+  onOpenTopicsTable: (handler: () => void) => void;
   clearTypesSelection: () => void;
   triggerLoadIfc: () => void;
   loadIfcBytes: (bytes: Uint8Array, name: string) => Promise<void>;
@@ -27,13 +29,18 @@ export function createLeftPanel(
   onModelLoaded: (model: any, name: string) => Promise<void>,
   measurer: OBF.LengthMeasurement,
   clipper: OBC.Clipper,
+  topics: OBC.BCFTopics,
   world: OBC.World,
 ): LeftPanel {
   const modelsTree = createModelsTree(fragments, components, highlighter);
+  let onTopicSelectCb: ((topicGuid: string) => void) | null = null;
+  let onOpenTopicsTableCb: (() => void) | null = null;
   const dataLayersController = createDataLayersTree(
-    measurer, clipper, world,
+    measurer, clipper, topics, world,
     () => modelsTree.refresh(),
     () => modelsTree.ensureDefaultCollectionId(),
+    (topicGuid) => onTopicSelectCb?.(topicGuid),
+    () => onOpenTopicsTableCb?.(),
   );
   modelsTree.attachDataLayers(dataLayersController);
 
@@ -147,6 +154,8 @@ export function createLeftPanel(
     element: panel,
     onElementClick: modelsTree.onElementClick,
     onTypeGroupClick: modelsTree.onTypeGroupClick,
+    onTopicSelect: (handler) => { onTopicSelectCb = handler; },
+    onOpenTopicsTable: (handler) => { onOpenTopicsTableCb = handler; },
     clearTypesSelection: modelsTree.clearTypesSelection,
     triggerLoadIfc: onLoadClick,
     loadIfcBytes,

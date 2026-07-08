@@ -9,11 +9,12 @@ interface DataLayer {
   expanded: boolean;
   measurementsExpanded: boolean;
   sectionsExpanded: boolean;
+  topicsExpanded: boolean;
   /** Estado del último toggle de visibilidad grupal (no se recalcula desde los miembros). */
   hidden: boolean;
 }
 
-type DraggedItem = { kind: "measurement" | "section"; id: string } | null;
+type DraggedItem = { kind: "measurement" | "section" | "topic"; id: string } | null;
 
 /**
  * Renderiza filas para el árbol de `models-tree.ts` (Colecciones), que es el
@@ -31,9 +32,12 @@ export interface DataLayersController {
 export function createDataLayersTree(
   measurer: OBF.LengthMeasurement,
   clipper: OBC.Clipper,
+  topics: OBC.BCFTopics,
   world: OBC.World,
   requestRender: () => void,
   getDefaultCollectionId: () => string,
+  onTopicSelect: (topicGuid: string) => void,
+  onOpenTopicsTable: () => void,
 ): DataLayersController {
   const dataLayers: DataLayer[] = [];
   let dataLayerCounter = 0;
@@ -42,6 +46,7 @@ export function createDataLayersTree(
   const measurementName = new Map<string, string>();      // lineId -> nombre editable
   const measurementDataLayer = new Map<string, string>(); // lineId -> dataLayerId
   const planeDataLayer = new Map<string, string>();       // planeId -> dataLayerId
+  const topicDataLayer = new Map<string, string>();       // topicGuid -> dataLayerId
   let measurementCounter = 0;
   let sectionCounter = 0;
 
@@ -202,9 +207,55 @@ export function createDataLayersTree(
     return row;
   }
 
+  function renderTopicRow(topicGuid: string): HTMLElement {
+    const topic = topics.list.get(topicGuid);
+    if (!topic) return document.createElement("div");
+
+    const row = document.createElement("div");
+    row.className = "models-row models-row--nested data-layer-item-row";
+    row.draggable = true;
+    row.addEventListener("dragstart", (e: DragEvent) => {
+      draggedItem = { kind: "topic", id: topicGuid };
+      e.dataTransfer?.setData("text/plain", topicGuid);
+      if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+      row.classList.add("is-dragging");
+    });
+    row.addEventListener("dragend", () => {
+      draggedItem = null;
+      row.classList.remove("is-dragging");
+    });
+
+    const icon = document.createElement("bim-icon") as any;
+    icon.icon = "mdi:file-document-outline";
+    icon.className = "models-row-icon";
+
+    const label = document.createElement("span");
+    label.className = "models-row-name";
+    label.textContent = topic.title;
+
+    row.style.cursor = "pointer";
+    row.addEventListener("click", (e) => {
+      if ((e.target as HTMLElement).closest(".models-row-actions")) return;
+      onTopicSelect(topicGuid);
+    });
+
+    const actions = document.createElement("div");
+    actions.className = "models-row-actions";
+
+    const deleteBtn = makeIconButton("mdi:delete", "Eliminar topic BCF", () => {
+      if (!confirm(`¿Eliminar topic "${topic.title}"?`)) return;
+      topics.list.delete(topic.guid);
+      requestRender();
+    });
+
+    actions.append(deleteBtn);
+    row.append(icon, label, actions);
+    return row;
+  }
+
   function renderCategoryRow(
     layer: DataLayer,
-    kind: "measurement" | "section",
+    kind: "measurement" | "section" | "topic",
     label: string,
     icon: string,
     itemIds: string[],
@@ -230,7 +281,8 @@ export function createDataLayersTree(
       wrapper.classList.remove("drag-over");
       if (!draggedItem || draggedItem.kind !== kind) return;
       if (kind === "measurement") measurementDataLayer.set(draggedItem.id, layer.id);
-      else planeDataLayer.set(draggedItem.id, layer.id);
+      else if (kind === "section") planeDataLayer.set(draggedItem.id, layer.id);
+      else topicDataLayer.set(draggedItem.id, layer.id);
       draggedItem = null;
       requestRender();
     });
@@ -264,17 +316,29 @@ export function createDataLayersTree(
     count.textContent = String(itemIds.length);
 
     row.append(arrow, catIcon, catLabel, count);
+
+    if (kind === "topic") {
+      row.append(makeIconButton("mdi:table", "Ver tabla de BCF Topics", onOpenTopicsTable));
+    }
+
     wrapper.append(row);
 
     if (expanded) {
       if (itemIds.length === 0) {
         const empty = document.createElement("div");
         empty.className = "collection-empty";
-        empty.textContent = kind === "measurement" ? "Sin mediciones" : "Sin cortes";
+        empty.textContent =
+          kind === "measurement" ? "Sin mediciones" :
+          kind === "section"     ? "Sin cortes" :
+          "Sin BCF Topics";
         wrapper.append(empty);
       } else {
         for (const id of itemIds) {
-          wrapper.append(kind === "measurement" ? renderMeasurementRow(id) : renderSectionRow(id));
+          wrapper.append(
+            kind === "measurement" ? renderMeasurementRow(id) :
+            kind === "section"     ? renderSectionRow(id) :
+            renderTopicRow(id),
+          );
         }
       }
     }
@@ -288,6 +352,9 @@ export function createDataLayersTree(
       .map(([id]) => id);
     const sectionIds = [...planeDataLayer.entries()]
       .filter(([id, layerId]) => layerId === layer.id && clipper.list.has(id))
+      .map(([id]) => id);
+    const topicIds = [...topicDataLayer.entries()]
+      .filter(([id, layerId]) => layerId === layer.id && topics.list.has(id))
       .map(([id]) => id);
 
     const wrapper = document.createElement("div");
@@ -382,6 +449,10 @@ export function createDataLayersTree(
         layer, "section", "Vista de cortes", "material-symbols:cut", sectionIds,
         layer.sectionsExpanded, () => { layer.sectionsExpanded = !layer.sectionsExpanded; },
       ));
+      wrapper.append(renderCategoryRow(
+        layer, "topic", "BCF Topics", "mdi:file-document-multiple-outline", topicIds,
+        layer.topicsExpanded, () => { layer.topicsExpanded = !layer.topicsExpanded; },
+      ));
     }
 
     return wrapper;
@@ -400,6 +471,7 @@ export function createDataLayersTree(
       expanded: true,
       measurementsExpanded: true,
       sectionsExpanded: true,
+      topicsExpanded: true,
       hidden: false,
     };
     dataLayers.push(layer);
@@ -470,6 +542,13 @@ export function createDataLayersTree(
   });
   clipper.list.onItemDeleted.add((id) => { planeDataLayer.delete(id); requestRender(); });
   clipper.list.onCleared.add(() => { pruneStaleEntries(); requestRender(); });
+
+  topics.list.onItemSet.add(({ key }) => {
+    const layer = ensureDefaultDataLayer();
+    if (!topicDataLayer.has(key)) topicDataLayer.set(key, layer.id);
+    requestRender();
+  });
+  topics.list.onItemDeleted.add((key) => { topicDataLayer.delete(key); requestRender(); });
 
   return { renderForCollection, createDataLayer, moveDataLayerTo, onCollectionRemoved, isDraggingDataLayer };
 }

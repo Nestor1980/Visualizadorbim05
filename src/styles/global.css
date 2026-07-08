@@ -858,3 +858,57 @@ bim-view-cube:active {
   font-size: 0.75rem;
   color: var(--text-muted);
 }
+
+/* — Modal "BCF Topics": lista de topics + acciones (crear/exportar/importar).
+ * Misma receta de centrado/drag/cierre que .settings-modal. — */
+.bcf-list-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 12px;
+  width: min(52rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 4rem);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+}
+.bcf-list-modal::backdrop {
+  background: rgba(0, 0, 0, 0.55);
+}
+.bcf-list-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border-subtle);
+  cursor: move;
+  user-select: none;
+}
+.bcf-list-modal-title {
+  font-size: 1rem;
+  font-weight: 700;
+}
+.bcf-list-modal-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+.bcf-list-modal-close:hover {
+  background: var(--bg-surface-hover);
+}
+.bcf-list-modal-body {
+  max-height: calc(100vh - 10rem);
+  overflow: auto;
+}

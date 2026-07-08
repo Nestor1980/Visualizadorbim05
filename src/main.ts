@@ -160,7 +160,7 @@ async function startApp(): Promise<{
 
   const leftPanel = createLeftPanel(
     components, fragments, ifcLoader, highlighter, onModelLoaded,
-    measurer, sectionTool.clipper, world,
+    measurer, sectionTool.clipper, topics, world,
   );
 
   // Panel dinámico de abajo: Renderizado.
@@ -190,7 +190,9 @@ async function startApp(): Promise<{
     toolOptionsPanel.applySelection(modelIdMap).catch(console.error);
   });
 
-  const { openModal } = setupBCFSection(components, world, rightPanel.element);
+  const { openModal, openTopicsModal, selectTopic } = setupBCFSection(components, world, rightPanel.element);
+  leftPanel.onTopicSelect((topicGuid) => selectTopic(topicGuid));
+  leftPanel.onOpenTopicsTable(() => openTopicsModal());
   const toolbar        = createToolbar(world, fragments, toolManager, selectionManager, openModal);
   const settingsModal   = createSettingsModal();
   const projectToolbar  = createProjectToolbar(fragments, settingsModal.openModal);
