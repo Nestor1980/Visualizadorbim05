@@ -13,7 +13,7 @@ export function createRenderizadoPanel(
 ): RenderizadoPanel {
   const section = BUI.Component.create<BUI.PanelSection>(() => {
     return BUI.html`
-      <bim-panel-section label="Renderizado" icon="material-symbols:photo-camera">
+      <bim-panel-section label="Renderizado" icon="material-symbols:photo-camera" .fixed=${false}>
         <bim-checkbox checked label="Postproducción"
           @change="${({ target }: { target: BUI.Checkbox }) => { postproduction.enabled = target.value; }}">
         </bim-checkbox>

@@ -190,7 +190,7 @@ async function startApp(): Promise<{
     toolOptionsPanel.applySelection(modelIdMap).catch(console.error);
   });
 
-  const { openModal, openTopicsModal, selectTopic } = setupBCFSection(components, world, rightPanel.element);
+  const { openModal, openTopicsModal, selectTopic } = setupBCFSection(components, world, rightPanel);
   leftPanel.onTopicSelect((topicGuid) => selectTopic(topicGuid));
   leftPanel.onOpenTopicsTable(() => openTopicsModal());
   const toolbar        = createToolbar(world, fragments, toolManager, selectionManager, openModal);

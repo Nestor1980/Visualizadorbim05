@@ -2,6 +2,9 @@ import * as OBC from "@thatopen/components";
 import * as CUI from "@thatopen/ui-obc";
 import * as BUI from "@thatopen/ui";
 import { makeModalDraggable, resetModalPosition, closeOnBackdropClick } from "../ui/draggable-modal";
+import type { RightPanel } from "../ui/right-panel/index";
+
+const BCF_TOPIC_TAB_ID = "bcf-topic";
 
 const TOPIC_USERS: CUI.TopicUserStyles = {
   "arquitecto@proyecto.com": { name: "Arquitecto Principal", picture: "https://i.pravatar.cc/150?img=3" },
@@ -11,7 +14,7 @@ const TOPIC_USERS: CUI.TopicUserStyles = {
 export function setupBCFSection(
   components: OBC.Components,
   world: OBC.World,
-  rightPanel: BUI.Panel,
+  rightPanel: RightPanel,
 ): {
   modal: HTMLDialogElement;
   openModal: () => void;
@@ -22,37 +25,45 @@ export function setupBCFSection(
   const viewpoints = components.get(OBC.Viewpoints);
 
   const [topicsList] = CUI.tables.topicsList({ components, dataStyles: { users: TOPIC_USERS } });
-  let currentTopicPanel: HTMLElement | null = null;
 
   // El detalle del topic (Información/Comentarios/Viewpoints/Relacionados) se
-  // muestra en el panel dinámico (rightPanel), no dentro del modal de lista —
-  // el modal solo aloja la tabla y las acciones globales (crear/exportar/importar).
+  // muestra como solapa dinámica del panel derecho, no dentro del modal de
+  // lista — el modal solo aloja la tabla y las acciones globales
+  // (crear/exportar/importar).
   const showTopicPanel = (topic: OBC.Topic) => {
-    if (currentTopicPanel) currentTopicPanel.remove();
-
     const [information]   = CUI.sections.topicInformation({ components, topic, styles: { users: TOPIC_USERS } });
     const [vpSection]     = CUI.sections.topicViewpoints({ components, topic, world });
     const [relatedTopics] = CUI.sections.topicRelations({ components, topic });
     const [comments]      = CUI.sections.topicComments({ topic, styles: TOPIC_USERS });
 
-    currentTopicPanel = BUI.Component.create(() => BUI.html`
-      <bim-panel label="${topic.title}">
-        <bim-panel-section label="Acciones" icon="material-symbols:settings">
+    const content = BUI.Component.create<HTMLElement>(() => BUI.html`
+      <div class="bcf-topic-panel">
+        <div class="panel-frame-header">
+          <bim-icon icon="material-symbols:task"></bim-icon>
+          <span>${topic.title}</span>
+        </div>
+        <bim-panel-section label="Acciones" icon="material-symbols:settings" .fixed=${false}>
           <bim-button label="Eliminar Topic" icon="material-symbols:delete"
             @click=${() => {
               topics.list.delete(topic.guid);
-              if (currentTopicPanel) currentTopicPanel.remove();
-              currentTopicPanel = null;
+              rightPanel.removeTab(BCF_TOPIC_TAB_ID);
             }}>
           </bim-button>
         </bim-panel-section>
-        <bim-panel-section label="Información"         icon="ph:info-bold">              ${information}   </bim-panel-section>
-        <bim-panel-section label="Comentarios"         icon="majesticons:comment-line">   ${comments}      </bim-panel-section>
-        <bim-panel-section label="Viewpoints"          icon="tabler:camera">              ${vpSection}     </bim-panel-section>
-        <bim-panel-section label="Topics Relacionados" icon="tabler:link">                ${relatedTopics} </bim-panel-section>
-      </bim-panel>
+        <bim-panel-section label="Información"         icon="ph:info-bold"            .fixed=${false}>${information}   </bim-panel-section>
+        <bim-panel-section label="Comentarios"         icon="majesticons:comment-line" .fixed=${false}>${comments}      </bim-panel-section>
+        <bim-panel-section label="Viewpoints"          icon="tabler:camera"            .fixed=${false}>${vpSection}     </bim-panel-section>
+        <bim-panel-section label="Topics Relacionados" icon="tabler:link"              .fixed=${false}>${relatedTopics} </bim-panel-section>
+      </div>
     `);
-    rightPanel.append(currentTopicPanel);
+
+    rightPanel.addTab({
+      id: BCF_TOPIC_TAB_ID,
+      label: topic.title,
+      icon: "material-symbols:task",
+      content,
+      fixed: false,
+    });
   };
 
   const focusTopicViewpoint = (topic: OBC.Topic): void => {
@@ -109,7 +120,7 @@ export function setupBCFSection(
         if (!topic) return;
         if (!confirm(`¿Eliminar topic "${topic.title}"?`)) return;
         topics.list.delete(topic.guid);
-        if (currentTopicPanel) { currentTopicPanel.remove(); currentTopicPanel = null; }
+        rightPanel.removeTab(BCF_TOPIC_TAB_ID);
       });
       row.style.position = "relative";
       row.addEventListener("mouseover", () => { deleteBtn.style.opacity = "1"; });

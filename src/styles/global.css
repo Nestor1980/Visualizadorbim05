@@ -161,6 +161,65 @@ body.resizing-panel-split {
   color: var(--accent);
 }
 
+/* — Panel dinámico (abajo del split): riel de solapas verticales al estilo
+ * del editor de Propiedades de Blender. Renderizado es la única solapa fija
+ * (siempre en el riel); el resto se agrega/quita en caliente vía
+ * dynamic-tabs-panel.ts (ej. detalle de un topic BCF seleccionado). */
+.vtabs {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+.vtabs-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 2px;
+  width: 40px;
+  padding: 8px 4px;
+  overflow-y: auto;
+  background: var(--bim-ui_bg-contrast-05);
+  border-right: 1px solid var(--bim-ui_bg-contrast-10);
+}
+.vtabs-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--bim-ui_bg-contrast-60);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.vtabs-tab bim-icon {
+  font-size: 18px;
+}
+.vtabs-tab:hover {
+  background: var(--bim-ui_bg-contrast-20);
+  color: var(--bim-ui_bg-contrast-100);
+}
+.vtabs-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.vtabs-tab.active {
+  background: var(--bim-ui_bg-contrast-20);
+  color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.vtabs-content {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  overflow-y: auto;
+}
+
 /* — Barra de botones tipo switcher (vértice/borde/superficie, espacial/tipos) — */
 .tree-switcher {
   display: flex;

@@ -1,24 +1,37 @@
 import * as THREE from "three";
 import * as OBF from "@thatopen/components-front";
-import * as BUI from "@thatopen/ui";
 import { createRenderizadoPanel } from "./renderizado-panel";
+import { createDynamicTabsPanel, type DynamicPanelTab } from "./dynamic-tabs-panel";
 
 export interface RightPanel {
-  element: BUI.Panel;
+  element: HTMLElement;
+  addTab: (tab: DynamicPanelTab) => void;
+  removeTab: (id: string) => void;
 }
 
+/**
+ * Panel derecho "dinámico": un riel de solapas verticales (ver
+ * dynamic-tabs-panel.ts) donde Renderizado es la única solapa fija — el
+ * resto (ej. detalle de un topic BCF) se agrega/quita en caliente vía
+ * addTab/removeTab según lo que esté ocurriendo en la escena.
+ */
 export function createRightPanel(
   postproduction: OBF.Postproduction,
   sunLight: THREE.DirectionalLight,
   threeRenderer: THREE.WebGLRenderer,
 ): RightPanel {
-  const panel = document.createElement("bim-panel") as BUI.Panel;
+  const dynamicPanel = createDynamicTabsPanel();
 
   const renderizadoPanel = createRenderizadoPanel(postproduction, sunLight, threeRenderer);
+  dynamicPanel.addTab({
+    id: "renderizado",
+    label: "Renderizado",
+    icon: "material-symbols:photo-camera",
+    content: renderizadoPanel.section,
+    fixed: true,
+  });
 
-  panel.append(renderizadoPanel.section);
-
-  return { element: panel };
+  return { element: dynamicPanel.element, addTab: dynamicPanel.addTab, removeTab: dynamicPanel.removeTab };
 }
 
 export const PANEL_MIN_WIDTH = 280;
