@@ -1,20 +1,20 @@
 import * as OBC from "@thatopen/components";
 import * as OBF from "@thatopen/components-front";
 import * as BUI from "@thatopen/ui";
-import { createTreePanel, TreePanel } from "./tree-panel";
 import { createModelsTree } from "./models-tree";
 import { createDataLayersTree } from "./data-layers-tree";
 import { saveRecentFile } from "../../ifc/recent-files";
-import { ensureExplicitThemeClass, createThemeToggleButton } from "../theme";
+import { ensureExplicitThemeClass } from "../theme";
 
 export interface LeftPanel {
   /** Frame "Escena": bim-panel propio con su header, para el split superior del panel derecho.
    *  Muestra una barra de herramientas (colecciones / cargar IFC) y el árbol de
-   *  modelos IFC cargados, agrupables en colecciones (estilo outliner). */
+   *  modelos IFC cargados, agrupables en colecciones (estilo outliner), cada uno
+   *  explorable como árbol (Espacial / Tipos) desde su propia fila. */
   element: BUI.Panel;
-  treePanel: TreePanel;
-  /** Sección "Apariencia" (toggle de tema), para montar en el panel dinámico de abajo. */
-  appearanceSection: BUI.PanelSection;
+  onElementClick: (handler: (modelId: string, localId: number) => void) => void;
+  onTypeGroupClick: (handler: (modelIdMap: OBC.ModelIdMap, typeLabel: string, count: number) => void) => void;
+  clearTypesSelection: () => void;
   triggerLoadIfc: () => void;
   loadIfcBytes: (bytes: Uint8Array, name: string) => Promise<void>;
 }
@@ -29,7 +29,7 @@ export function createLeftPanel(
   clipper: OBC.Clipper,
   world: OBC.World,
 ): LeftPanel {
-  const modelsTree = createModelsTree(fragments);
+  const modelsTree = createModelsTree(fragments, components, highlighter);
   const dataLayersController = createDataLayersTree(
     measurer, clipper, world,
     () => modelsTree.refresh(),
@@ -114,54 +114,7 @@ export function createLeftPanel(
     `;
   });
 
-  const treePanel = createTreePanel(components, fragments, highlighter);
-
-  const isLightTheme = (): boolean => {
-    const html = document.documentElement;
-    if (html.classList.contains("bim-ui-light")) return true;
-    if (html.classList.contains("bim-ui-dark")) return false;
-    return window.matchMedia("(prefers-color-scheme: light)").matches;
-  };
-
-  // BUI.Manager.toggleTheme() decide el próximo tema mirando únicamente si
-  // <html> ya tiene la clase "bim-ui-light" o "bim-ui-dark": si no tiene
-  // ninguna (estado inicial, antes del primer click), agrega "bim-ui-light"
-  // sin mirar el tema ambiente real — así el sistema esté en modo oscuro, el
-  // primer toggle "atascaba" el tema en claro y desincronizaba el ícono/label
-  // del botón. Fijar la clase explícita una sola vez al iniciar hace que ese
-  // primer toggle (y todos los siguientes) alternen de forma predecible.
-  const ensureExplicitThemeClass = (): void => {
-    const html = document.documentElement;
-    if (html.classList.contains("bim-ui-light") || html.classList.contains("bim-ui-dark")) return;
-    html.classList.add(isLightTheme() ? "bim-ui-light" : "bim-ui-dark");
-  };
   ensureExplicitThemeClass();
-
-  const applyTheme = (light: boolean): void => {
-    themeToggleBtn.icon  = light ? "material-symbols:dark-mode" : "material-symbols:light-mode";
-    themeToggleBtn.label = light ? "Modo oscuro" : "Modo claro";
-  };
-
-  const updateThemeToggleBtn = (): void => applyTheme(isLightTheme());
-
-  // animate=false evita el overlay de "wipe" circular (el flash de pantalla
-  // completa) que aplica @thatopen/ui por defecto; el cambio de variables CSS
-  // ya se transiciona de forma suave y minimalista vía global.css.
-  const onThemeToggleClick = () => {
-    const nextLight = !isLightTheme();
-    BUI.Manager.toggleTheme(false);
-    applyTheme(nextLight);
-  };
-
-  const themeToggleBtn = BUI.Component.create<BUI.Button>(() => {
-    return BUI.html`<bim-button @click=${onThemeToggleClick}></bim-button>`;
-  });
-  updateThemeToggleBtn();
-
-  const appearanceSection = document.createElement("bim-panel-section") as BUI.PanelSection;
-  appearanceSection.label = "Apariencia";
-  appearanceSection.icon  = "material-symbols:contrast-rounded";
-  appearanceSection.append(themeToggleBtn);
 
   const panel = document.createElement("bim-panel") as BUI.Panel;
   panel.classList.add("scene-panel");
@@ -192,8 +145,9 @@ export function createLeftPanel(
 
   return {
     element: panel,
-    treePanel,
-    appearanceSection,
+    onElementClick: modelsTree.onElementClick,
+    onTypeGroupClick: modelsTree.onTypeGroupClick,
+    clearTypesSelection: modelsTree.clearTypesSelection,
     triggerLoadIfc: onLoadClick,
     loadIfcBytes,
   };

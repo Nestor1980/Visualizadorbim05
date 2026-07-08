@@ -1,7 +1,10 @@
 import * as OBC from "@thatopen/components";
 import * as BUI from "@thatopen/ui";
 
-export function createProjectToolbar(fragments: OBC.FragmentsManager): BUI.Toolbar {
+export function createProjectToolbar(
+  fragments: OBC.FragmentsManager,
+  openSettingsModal: () => void,
+): BUI.Toolbar {
   const exportFrag = async () => {
     const [model] = fragments.list.values();
     if (!model) return;
@@ -27,6 +30,13 @@ export function createProjectToolbar(fragments: OBC.FragmentsManager): BUI.Toolb
             icon="material-symbols:download"
             @click=${() => exportFrag()}>
             <bim-tooltip>Exportar como .frag</bim-tooltip>
+          </bim-button>
+        </bim-toolbar-section>
+        <bim-toolbar-section>
+          <bim-button
+            icon="material-symbols:menu"
+            @click=${() => openSettingsModal()}>
+            <bim-tooltip>Configuración</bim-tooltip>
           </bim-button>
         </bim-toolbar-section>
       </bim-toolbar>

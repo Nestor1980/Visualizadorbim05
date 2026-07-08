@@ -11,23 +11,28 @@ export interface PropertiesPanel {
   resetScrollTop: () => void;
 }
 
-const TAB_SCROLL_STEP = 120;
-
-function injectTabBarStyles(): void {
+function injectCollapsibleStyles(): void {
   const s = document.createElement("style");
   s.textContent = `
-    .sel-tab-bar::-webkit-scrollbar { display:none }
-    .sel-tab-nav-btn {
-      flex-shrink:0; width:24px; border:none; cursor:pointer;
-      background:var(--bim-ui_bg-contrast-20);
-      color:var(--bim-ui_bg-contrast-80);
-      font-size:13px; line-height:1; display:flex;
-      align-items:center; justify-content:center;
-      transition:background 0.15s, opacity 0.15s;
-      border-radius:3px; margin-bottom:2px;
+    .sel-collapsible { border-bottom:1px solid var(--bim-ui_bg-contrast-20); }
+    .sel-collapsible:last-child { border-bottom:none; }
+    .sel-collapsible-header {
+      width:100%; display:flex; align-items:center; gap:6px;
+      padding:8px 6px; border:none; cursor:pointer; text-align:left;
+      background:var(--bim-ui_bg-contrast-10); color:var(--bim-ui_bg-contrast-90);
+      font-size:11px; font-weight:600; letter-spacing:0.2px;
+      font-family:inherit; transition:background 0.15s;
     }
-    .sel-tab-nav-btn:hover { background:var(--bim-ui_bg-contrast-30); }
-    .sel-tab-nav-btn:disabled { opacity:0.25; cursor:default; }
+    .sel-collapsible-header:hover { background:var(--bim-ui_bg-contrast-20); }
+    .sel-collapsible-chevron {
+      display:inline-flex; transition:transform 0.15s; font-size:9px;
+      color:var(--bim-ui_bg-contrast-60); flex-shrink:0;
+    }
+    .sel-collapsible.is-open > .sel-collapsible-header > .sel-collapsible-chevron {
+      transform:rotate(90deg);
+    }
+    .sel-collapsible-body { display:none; padding:4px 2px; }
+    .sel-collapsible.is-open > .sel-collapsible-body { display:block; }
   `;
   document.head.append(s);
 }
@@ -54,23 +59,36 @@ function renderPropertiesTable(properties: Record<string, string>): string {
   return `<table style="width:100%;border-collapse:collapse;"><tbody>${rows}</tbody></table>`;
 }
 
+function createCollapsible(label: string, expanded: boolean): { wrapper: HTMLElement; body: HTMLElement } {
+  const wrapper = document.createElement("div");
+  wrapper.className = `sel-collapsible${expanded ? " is-open" : ""}`;
+
+  const header = document.createElement("button");
+  header.className = "sel-collapsible-header";
+  header.innerHTML = `<span class="sel-collapsible-chevron">&#9656;</span><span>${label}</span>`;
+  header.addEventListener("click", () => wrapper.classList.toggle("is-open"));
+
+  const body = document.createElement("div");
+  body.className = "sel-collapsible-body";
+
+  wrapper.append(header, body);
+  return { wrapper, body };
+}
+
 export function createPropertiesPanel(
   components: OBC.Components,
   fragments: OBC.FragmentsManager,
 ): PropertiesPanel {
-  injectTabBarStyles();
+  injectCollapsibleStyles();
 
   const [itemsDataTable, updateItemsData] = CUI.tables.itemsData({
     components, modelIdMap: {}, emptySelectionWarning: true,
   });
-  (itemsDataTable as HTMLElement).style.maxHeight = "40vh";
-  (itemsDataTable as HTMLElement).style.overflowY = "auto";
+  (itemsDataTable as HTMLElement).style.maxHeight = "none";
+  (itemsDataTable as HTMLElement).style.overflowY = "visible";
   (itemsDataTable as HTMLElement).style.fontSize  = "11px";
 
-  let activeKey     = "general";
-  let renderGen     = 0;
-  const tabButtons  = new Map<string, HTMLButtonElement>();
-  const tabPanels   = new Map<string, HTMLElement>();
+  let renderGen = 0;
 
   // — Section —
   const section = document.createElement("bim-panel-section") as BUI.PanelSection;
@@ -82,115 +100,16 @@ export function createPropertiesPanel(
   // siendo clickeable cuando este panel flota en el viewport.
   section.fixed     = false;
 
-  // — Tab bar wrapper —
-  const tabBarWrapper = document.createElement("div");
-  tabBarWrapper.style.cssText = [
-    "display:flex", "align-items:stretch", "gap:2px",
-    "border-bottom:2px solid var(--bim-ui_bg-contrast-20)",
-    "margin-bottom:4px", "padding-top:4px",
-  ].join(";");
+  // — Contenedor vertical de secciones colapsables —
+  const sectionsContainer = document.createElement("div");
+  sectionsContainer.style.cssText = "overflow-y:auto;max-height:60vh;";
 
-  const btnPrev = document.createElement("button");
-  btnPrev.className = "sel-tab-nav-btn";
-  btnPrev.innerHTML = "&#8249;";
-  btnPrev.title = "Anterior";
+  // — Sección General (persistente, contiene itemsDataTable) —
+  const generalCollapsible = createCollapsible("General", true);
+  generalCollapsible.body.append(itemsDataTable);
 
-  const btnNext = document.createElement("button");
-  btnNext.className = "sel-tab-nav-btn";
-  btnNext.innerHTML = "&#8250;";
-  btnNext.title = "Siguiente";
-
-  const tabBar = document.createElement("div");
-  tabBar.classList.add("sel-tab-bar");
-  tabBar.style.cssText = [
-    "display:flex", "gap:2px", "flex:1",
-    "overflow-x:auto", "scroll-behavior:smooth", "scrollbar-width:none",
-  ].join(";");
-
-  const updateNavBtns = () => {
-    btnPrev.disabled = tabBar.scrollLeft <= 0;
-    btnNext.disabled = tabBar.scrollLeft + tabBar.clientWidth >= tabBar.scrollWidth - 1;
-    const hasOverflow = tabBar.scrollWidth > tabBar.clientWidth + 2;
-    btnPrev.style.display = hasOverflow ? "" : "none";
-    btnNext.style.display = hasOverflow ? "" : "none";
-  };
-
-  btnPrev.addEventListener("click", () => tabBar.scrollBy({ left: -TAB_SCROLL_STEP, behavior: "smooth" }));
-  btnNext.addEventListener("click", () => tabBar.scrollBy({ left:  TAB_SCROLL_STEP, behavior: "smooth" }));
-  tabBar.addEventListener("scroll", updateNavBtns);
-  tabBarWrapper.append(btnPrev, tabBar, btnNext);
-
-  const tabContent = document.createElement("div");
-  tabContent.style.cssText = "overflow-y:auto;max-height:45vh;";
-
-  // — Helpers —
-  const createPanel = () => {
-    const p = document.createElement("div");
-    p.style.cssText = "padding:4px 2px;font-family:inherit;display:none;";
-    return p;
-  };
-
-  const makeTabBtn = (label: string, key: string): HTMLButtonElement => {
-    const btn = document.createElement("button");
-    btn.textContent = label;
-    btn.dataset.tab = key;
-    Object.assign(btn.style, {
-      flexShrink: "0",
-      padding: "5px 12px", border: "none", cursor: "pointer",
-      borderRadius: "4px 4px 0 0", fontSize: "11px", fontWeight: "600",
-      letterSpacing: "0.3px", transition: "background 0.15s, color 0.15s, border-color 0.15s",
-      background: "var(--bim-ui_bg-contrast-10)",
-      color: "var(--bim-ui_bg-contrast-80)",
-      borderBottom: "2px solid transparent",
-      marginBottom: "-2px",
-      fontFamily: "inherit", whiteSpace: "nowrap",
-    });
-    btn.addEventListener("click", () => activateTab(key));
-    return btn;
-  };
-
-  const activateTab = (key: string) => {
-    activeKey = key;
-    tabButtons.forEach((btn, k) => {
-      const isActive = k === key;
-      Object.assign(btn.style, {
-        background:   isActive ? "var(--bim-ui_bg-contrast-20)" : "var(--bim-ui_bg-contrast-10)",
-        color:        isActive ? "var(--bim-ui_bg-contrast-100)" : "var(--bim-ui_bg-contrast-80)",
-        borderBottom: isActive ? "2px solid var(--accent, #adda01)" : "2px solid transparent",
-        fontWeight:   isActive ? "700" : "600",
-      });
-      if (isActive) btn.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" });
-    });
-    tabPanels.forEach((panel, k) => {
-      panel.style.display = k === key ? "" : "none";
-      if (k === key) panel.scrollTop = 0;
-    });
-  };
-
-  const clearTabs = () => {
-    tabBar.innerHTML = "";
-    tabButtons.clear();
-    tabPanels.forEach(p => p.remove());
-    tabPanels.clear();
-    tabContent.innerHTML = "";
-  };
-
-  const renderPlaceholder = (panel: HTMLElement, message: string) => {
-    panel.innerHTML = `
-      <div style="color:var(--bim-ui_bg-contrast-40);font-size:11px;
-        text-align:center;padding:20px 8px;line-height:1.5;">${message}</div>`;
-  };
-
-  // — General panel (persistent, owns itemsDataTable) —
-  const generalPanel = createPanel();
-  generalPanel.append(itemsDataTable);
-  tabPanels.set("general", generalPanel);
-
-  // Initialize with General tab
-  tabBar.append(makeTabBtn("General", "general"));
-  tabButtons.set("general", tabBar.lastElementChild as HTMLButtonElement);
-  tabContent.append(generalPanel);
-  section.append(tabBarWrapper, tabContent);
+  sectionsContainer.append(generalCollapsible.wrapper);
+  section.append(sectionsContainer);
 
   const collapseIntoSection = () => {
     section.collapsed = false;
@@ -199,21 +118,25 @@ export function createPropertiesPanel(
     );
   };
 
+  const clearPsetSections = () => {
+    [...sectionsContainer.children].forEach(child => {
+      if (child !== generalCollapsible.wrapper) child.remove();
+    });
+  };
+
+  const renderPlaceholder = (body: HTMLElement, message: string) => {
+    body.innerHTML = `
+      <div style="color:var(--bim-ui_bg-contrast-40);font-size:11px;
+        text-align:center;padding:20px 8px;line-height:1.5;">${message}</div>`;
+  };
+
   // — Public methods —
   const renderForSelection = async (modelIdMap: OBC.ModelIdMap): Promise<void> => {
     const myGen = ++renderGen;
-    activeKey = "general";
 
-    clearTabs();
-
-    const genBtn = makeTabBtn("General", "general");
-    tabBar.append(genBtn);
-    tabButtons.set("general", genBtn);
-    generalPanel.style.display = "";
-    generalPanel.scrollTop = 0;
-    tabContent.append(generalPanel);
-    tabPanels.set("general", generalPanel);
-    activateTab("general");
+    clearPsetSections();
+    generalCollapsible.wrapper.style.display = "";
+    generalCollapsible.wrapper.classList.add("is-open");
 
     const entries = Object.entries(modelIdMap);
     const [modelId, ids] = entries[0] ?? [];
@@ -225,28 +148,16 @@ export function createPropertiesPanel(
     if (myGen !== renderGen) return;
 
     if (propertySets.length > 0) {
-      propertySets.forEach((set, index) => {
-        const key   = `pset-${index}-${set.name.replace(/\s+/g, "-")}`;
-        const panel = createPanel();
-        panel.innerHTML = renderPropertiesTable(set.properties);
-        tabContent.append(panel);
-        tabPanels.set(key, panel);
-        const btn = makeTabBtn(set.name, key);
-        tabBar.append(btn);
-        tabButtons.set(key, btn);
+      propertySets.forEach(set => {
+        const { wrapper, body } = createCollapsible(set.name, false);
+        body.innerHTML = renderPropertiesTable(set.properties);
+        sectionsContainer.append(wrapper);
       });
     } else {
-      const placeholder = createPanel();
-      renderPlaceholder(placeholder, "Este elemento no tiene Property Sets definidos.");
-      tabContent.append(placeholder);
-      tabPanels.set("no-psets", placeholder);
-      const btn = makeTabBtn("Sin Psets", "no-psets");
-      tabBar.append(btn);
-      tabButtons.set("no-psets", btn);
+      const { wrapper, body } = createCollapsible("Sin Psets", false);
+      renderPlaceholder(body, "Este elemento no tiene Property Sets definidos.");
+      sectionsContainer.append(wrapper);
     }
-
-    tabPanels.forEach((panel, k) => { panel.style.display = k === "general" ? "" : "none"; });
-    requestAnimationFrame(updateNavBtns);
   };
 
   const renderForTypeGroup = async (
@@ -255,24 +166,19 @@ export function createPropertiesPanel(
     count: number,
   ): Promise<void> => {
     const myGen = ++renderGen;
-    activeKey = "general";
 
-    clearTabs();
+    clearPsetSections();
+    generalCollapsible.wrapper.style.display = "none";
 
-    const summaryPanel = createPanel();
-    summaryPanel.innerHTML = `
+    const { wrapper: summaryWrapper, body: summaryBody } = createCollapsible("General", true);
+    summaryBody.innerHTML = `
       <div style="color:var(--bim-ui_bg-contrast-60);font-size:11px;
         padding:10px 8px;line-height:1.6;">
         <strong style="color:var(--bim-ui_bg-contrast-100);">${count} ${typeLabel}</strong>
         elements selected.<br>
-        <span style="opacity:0.7;">Shared property sets are shown in the tabs below.</span>
+        <span style="opacity:0.7;">Shared property sets are shown below.</span>
       </div>`;
-    tabContent.append(summaryPanel);
-    tabPanels.set("general", summaryPanel);
-    const genBtn = makeTabBtn("General", "general");
-    tabBar.append(genBtn);
-    tabButtons.set("general", genBtn);
-    activateTab("general");
+    sectionsContainer.append(summaryWrapper);
 
     collapseIntoSection();
 
@@ -284,24 +190,15 @@ export function createPropertiesPanel(
     const sharedPsets = await getSharedPropertySets(modelId, localIds, fragments);
     if (myGen !== renderGen) return;
 
-    sharedPsets.forEach((set, index) => {
-      const key   = `pset-${index}-${set.name.replace(/\s+/g, "-")}`;
-      const panel = createPanel();
-      panel.innerHTML = renderPropertiesTable(set.properties);
-      tabContent.append(panel);
-      tabPanels.set(key, panel);
-      tabBar.append(makeTabBtn(set.name, key));
-      tabButtons.set(key, tabBar.lastElementChild as HTMLButtonElement);
+    sharedPsets.forEach(set => {
+      const { wrapper, body } = createCollapsible(set.name, false);
+      body.innerHTML = renderPropertiesTable(set.properties);
+      sectionsContainer.append(wrapper);
     });
-
-    tabPanels.forEach((panel, k) => { panel.style.display = k === "general" ? "" : "none"; });
-    requestAnimationFrame(updateNavBtns);
   };
 
   const resetScrollTop = () => {
-    (itemsDataTable as HTMLElement).scrollTop = 0;
-    tabContent.scrollTop = 0;
-    generalPanel.scrollTop = 0;
+    sectionsContainer.scrollTop = 0;
   };
 
   return {

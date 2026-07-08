@@ -1,5 +1,7 @@
 import * as OBC from "@thatopen/components";
+import * as OBF from "@thatopen/components-front";
 import type { DataLayersController } from "./data-layers-tree";
+import { createModelTreeView, ModelTreeView, TreeViewMode } from "./tree-panel";
 
 interface Collection {
   id: string;
@@ -15,16 +17,32 @@ export interface ModelsTree {
   ensureDefaultCollectionId: () => string;
   attachDataLayers: (controller: DataLayersController) => void;
   refresh: () => void;
+  onElementClick: (handler: (modelId: string, localId: number) => void) => void;
+  onTypeGroupClick: (handler: (modelIdMap: OBC.ModelIdMap, typeLabel: string, count: number) => void) => void;
+  clearTypesSelection: () => void;
 }
 
 /** Paleta de matices para diferenciar renglones de modelos a simple vista. */
 const ROW_HUES = [210, 150, 280, 32, 340, 95, 260, 8];
 
-export function createModelsTree(fragments: OBC.FragmentsManager): ModelsTree {
+interface ModelTreeState {
+  view: ModelTreeView | null;
+  expanded: boolean;
+  treeView: TreeViewMode;
+}
+
+export function createModelsTree(
+  fragments: OBC.FragmentsManager,
+  components: OBC.Components,
+  highlighter: OBF.Highlighter,
+): ModelsTree {
   const collections: Collection[] = [];
   const modelCollection = new Map<string, string | null>();
   const hiddenModels = new Map<string, boolean>();
   const modelColorIndex = new Map<string, number>();
+  const modelTreeState = new Map<string, ModelTreeState>();
+  let onElementClickCb: ((modelId: string, localId: number) => void) | null = null;
+  let onTypeGroupClickCb: ((map: OBC.ModelIdMap, typeLabel: string, count: number) => void) | null = null;
   let nextColorIndex = 0;
   let collectionCounter = 0;
   /** Id del modelo que se está arrastrando; nulo fuera de un drag activo. */
@@ -47,6 +65,33 @@ export function createModelsTree(fragments: OBC.FragmentsManager): ModelsTree {
   };
 
   const isModelHidden = (modelId: string): boolean => hiddenModels.get(modelId) ?? false;
+
+  const ensureModelTreeState = (modelId: string): ModelTreeState => {
+    let state = modelTreeState.get(modelId);
+    if (!state) {
+      state = { view: null, expanded: false, treeView: "spatial" };
+      modelTreeState.set(modelId, state);
+    }
+    return state;
+  };
+
+  const ensureModelTreeView = (modelId: string): ModelTreeView | null => {
+    const state = ensureModelTreeState(modelId);
+    if (state.view) return state.view;
+    const model = fragments.list.get(modelId);
+    if (!model) return null;
+    const view = createModelTreeView(components, model, highlighter);
+    view.onElementClick((mId, lId) => onElementClickCb?.(mId, lId));
+    view.onTypeGroupClick((map, label, count) => onTypeGroupClickCb?.(map, label, count));
+    view.setView(state.treeView);
+    state.view = view;
+    return view;
+  };
+
+  const disposeModelTree = (modelId: string): void => {
+    modelTreeState.get(modelId)?.view?.dispose();
+    modelTreeState.delete(modelId);
+  };
 
   const setModelVisible = async (modelId: string, visible: boolean): Promise<void> => {
     const model = fragments.list.get(modelId);
@@ -116,6 +161,25 @@ export function createModelsTree(fragments: OBC.FragmentsManager): ModelsTree {
       row.classList.remove("is-dragging");
     });
 
+    const treeState = ensureModelTreeState(modelId);
+
+    const arrow = document.createElement("button");
+    arrow.type = "button";
+    arrow.className = "types-arrow" + (treeState.expanded ? " expanded" : "");
+    arrow.setAttribute("aria-label", treeState.expanded ? "Colapsar estructura" : "Expandir estructura");
+    arrow.setAttribute("aria-expanded", String(treeState.expanded));
+    const arrowIcon = document.createElement("bim-icon") as any;
+    arrowIcon.icon = "material-symbols:chevron-right";
+    const arrowTooltip = document.createElement("bim-tooltip") as any;
+    arrowTooltip.textContent = treeState.expanded ? "Colapsar estructura" : "Expandir estructura";
+    arrow.append(arrowIcon, arrowTooltip);
+    arrow.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (!treeState.expanded) ensureModelTreeView(modelId);
+      treeState.expanded = !treeState.expanded;
+      render();
+    });
+
     const icon = document.createElement("bim-icon") as any;
     icon.icon = "mage:box-3d-fill";
     icon.className = "models-row-icon";
@@ -130,6 +194,18 @@ export function createModelsTree(fragments: OBC.FragmentsManager): ModelsTree {
     const actions = document.createElement("div");
     actions.className = "models-row-actions";
 
+    const viewToggleBtn = makeIconButton(
+      treeState.treeView === "spatial" ? "material-symbols:account-tree" : "material-symbols:category",
+      treeState.treeView === "spatial" ? "Ver estructura espacial (click para ver por tipos)" : "Ver estructura por tipos (click para ver espacial)",
+      () => {
+        treeState.treeView = treeState.treeView === "spatial" ? "types" : "spatial";
+        const view = ensureModelTreeView(modelId);
+        view?.setView(treeState.treeView);
+        treeState.expanded = true;
+        render();
+      },
+    );
+
     const hidden = isModelHidden(modelId);
     const eyeBtn = makeIconButton(hidden ? "mdi:eye-off" : "mdi:eye", hidden ? "Mostrar" : "Ocultar", async () => {
       await setModelVisible(modelId, isModelHidden(modelId));
@@ -141,13 +217,21 @@ export function createModelsTree(fragments: OBC.FragmentsManager): ModelsTree {
       modelCollection.delete(modelId);
       hiddenModels.delete(modelId);
       modelColorIndex.delete(modelId);
+      disposeModelTree(modelId);
       await fragments.core.disposeModel(modelId);
       render();
     });
 
-    actions.append(eyeBtn, deleteBtn);
-    row.append(icon, label, actions);
-    return row;
+    actions.append(viewToggleBtn, eyeBtn, deleteBtn);
+    row.append(arrow, icon, label, actions);
+
+    const group = document.createElement("div");
+    group.className = "models-row-group";
+    group.append(row);
+    if (treeState.expanded && treeState.view) {
+      group.append(treeState.view.element);
+    }
+    return group;
   }
 
   function renderCollectionRow(col: Collection): HTMLElement {
@@ -355,5 +439,10 @@ export function createModelsTree(fragments: OBC.FragmentsManager): ModelsTree {
     ensureDefaultCollectionId: () => ensureDefaultCollection().id,
     attachDataLayers: (controller) => { dataLayersController = controller; render(); },
     refresh: render,
+    onElementClick: (cb) => { onElementClickCb = cb; },
+    onTypeGroupClick: (cb) => { onTypeGroupClickCb = cb; },
+    clearTypesSelection: () => {
+      for (const state of modelTreeState.values()) state.view?.clearSelection();
+    },
   };
 }

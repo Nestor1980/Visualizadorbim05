@@ -161,7 +161,7 @@ body.resizing-panel-split {
   color: var(--accent);
 }
 
-/* — Árbol de tipos (panel izquierdo) — */
+/* — Barra de botones tipo switcher (vértice/borde/superficie, espacial/tipos) — */
 .tree-switcher {
   display: flex;
   gap: 4px;
@@ -196,6 +196,7 @@ body.resizing-panel-split {
   color: var(--bim-ui_bg-contrast-100);
 }
 
+/* — Árbol de tipos (panel izquierdo) — */
 .types-empty {
   color: var(--bim-ui_bg-contrast-40);
   font-size: 11px;
@@ -434,6 +435,18 @@ bim-tooltip {
 }
 .collection-group .data-layer-group .data-layer-item-row {
   padding-left: 66px;
+}
+
+/* — Árbol Espacial/Tipos anidado dentro de la fila de un modelo. — */
+.models-row-group {
+  display: flex;
+  flex-direction: column;
+}
+.model-tree-container {
+  padding-left: 20px;
+}
+.collection-group .models-row-group .model-tree-container {
+  padding-left: 46px;
 }
 
 bim-viewport {
@@ -735,4 +748,113 @@ bim-view-cube:active {
   border-top: 1px solid var(--border-subtle);
   color: var(--text-muted);
   font-size: 0.75rem;
+}
+
+/* — Modal "Configuración": sidebar de categorías + panel de contenido,
+ * misma idea que las preferencias de Blender (imagen de referencia). — */
+.settings-modal {
+  /* Centrado explícito: el reset global (`* { margin: 0 }`) anula el
+   * `margin: auto` que el navegador usa por defecto para centrar un
+   * <dialog> modal, así que lo hacemos a mano con fixed + transform. El
+   * drag (ver settings-modal.ts) pasa a top/left en px y anula el transform. */
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 12px;
+  width: min(640px, calc(100vw - 2rem));
+  max-height: calc(100vh - 4rem);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+}
+.settings-modal::backdrop {
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.settings-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border-subtle);
+  cursor: move;
+  user-select: none;
+}
+.settings-modal-title {
+  font-size: 1rem;
+  font-weight: 700;
+}
+.settings-modal-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+.settings-modal-close:hover {
+  background: var(--bg-surface-hover);
+}
+
+.settings-modal-body {
+  display: flex;
+  min-height: 320px;
+  max-height: calc(100vh - 10rem);
+}
+
+.settings-sidebar {
+  flex: 0 0 180px;
+  padding: 0.75rem;
+  overflow-y: auto;
+  border-right: 1px solid var(--border-subtle);
+}
+.settings-sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+.settings-sidebar-item--active {
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.settings-content {
+  flex: 1 1 auto;
+  padding: 1.25rem;
+  overflow-y: auto;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.5rem 0;
+}
+.settings-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.settings-row-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.settings-row-desc {
+  font-size: 0.75rem;
+  color: var(--text-muted);
 }

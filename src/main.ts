@@ -20,6 +20,7 @@ import { createLeftPanel }    from "./ui/left-panel/index";
 import { createToolOptionsPanel } from "./ui/tool-options-panel";
 import { createToolbar }          from "./ui/toolbar";
 import { createProjectToolbar }   from "./ui/project-toolbar";
+import { createSettingsModal }    from "./ui/settings-modal";
 import { setupLayout }            from "./ui/layout";
 import { createPanelSplit }       from "./ui/panel-split";
 import { setupBCFSection }        from "./bcf/bcf-manager";
@@ -162,11 +163,8 @@ async function startApp(): Promise<{
     measurer, sectionTool.clipper, world,
   );
 
-  // Panel dinámico de abajo: Estructuras (árbol espacial), Renderizado y Apariencia.
-  const rightPanel = createRightPanel(
-    postproduction, sunLight, threeRenderer,
-    leftPanel.treePanel.section, leftPanel.appearanceSection,
-  );
+  // Panel dinámico de abajo: Renderizado.
+  const rightPanel = createRightPanel(postproduction, sunLight, threeRenderer);
 
   // Selecting an element (tree or 3D click) switches the right panel to the
   // Propiedades view, mirroring an explicit click on the toolbar button.
@@ -174,27 +172,28 @@ async function startApp(): Promise<{
     if (toolManager.activeMode !== "properties") toolManager.setMode("properties");
   };
 
-  leftPanel.treePanel.onElementClick((modelId, localId) => {
-    leftPanel.treePanel.clearTypesSelection();
+  leftPanel.onElementClick((modelId, localId) => {
+    leftPanel.clearTypesSelection();
     showProperties();
     toolOptionsPanel.applySelection({ [modelId]: new Set([localId]) }).catch(console.error);
   });
 
-  leftPanel.treePanel.onTypeGroupClick((modelIdMap, typeLabel, count) => {
+  leftPanel.onTypeGroupClick((modelIdMap, typeLabel, count) => {
     showProperties();
     toolOptionsPanel.applyTypeSelection(modelIdMap, typeLabel, count).catch(console.error);
   });
 
   highlighter.events["select"].onHighlight.add((modelIdMap) => {
     if (!Object.keys(modelIdMap).length) return;
-    leftPanel.treePanel.clearTypesSelection();
+    leftPanel.clearTypesSelection();
     showProperties();
     toolOptionsPanel.applySelection(modelIdMap).catch(console.error);
   });
 
   const { openModal } = setupBCFSection(components, world, rightPanel.element);
   const toolbar        = createToolbar(world, fragments, toolManager, selectionManager, openModal);
-  const projectToolbar  = createProjectToolbar(fragments);
+  const settingsModal   = createSettingsModal();
+  const projectToolbar  = createProjectToolbar(fragments, settingsModal.openModal);
 
   // Los botones de la toolbar se registran en el ToolManager al crearla, después
   // del setMode inicial: re-aplicar el modo para que "Navegar" arranque activo.
@@ -205,8 +204,8 @@ async function startApp(): Promise<{
   floatingToolbars.append(toolbar, projectToolbar);
 
   // Frame derecho dividido en dos: "Escena" (árbol de modelos IFC cargados,
-  // estilo outliner) arriba, paneles dinámicos (Controles, Estructuras,
-  // Renderizado, Apariencia, BCF) abajo.
+  // estilo outliner, con exploración Espacial/Tipos por modelo) arriba,
+  // paneles dinámicos (Renderizado, BCF) abajo.
   const panelSplit = createPanelSplit(leftPanel.element, rightPanel.element);
 
   await setupLayout(viewport, panelSplit, floatingToolbars, attachRightPanelResize);

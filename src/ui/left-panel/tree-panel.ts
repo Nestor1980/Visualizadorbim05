@@ -1,15 +1,20 @@
 import * as OBC from "@thatopen/components";
 import * as CUI from "@thatopen/ui-obc";
 import * as OBF from "@thatopen/components-front";
-import * as BUI from "@thatopen/ui";
+import * as FRAGS from "@thatopen/fragments";
 import { IFC_LABEL, IFC_ICON } from "../../config/constants";
 
-export interface TreePanel {
-  section: BUI.PanelSection;
-  update: (models: IterableIterator<any>) => void;
+export type TreeViewMode = "spatial" | "types";
+
+export interface ModelTreeView {
+  /** Contiene la tabla espacial y el árbol de tipos; alterna cuál se ve vía setView. */
+  element: HTMLElement;
+  setView: (view: TreeViewMode) => void;
+  getView: () => TreeViewMode;
   onElementClick: (handler: (modelId: string, localId: number) => void) => void;
   onTypeGroupClick: (handler: (modelIdMap: OBC.ModelIdMap, typeLabel: string, count: number) => void) => void;
-  clearTypesSelection: () => void;
+  clearSelection: () => void;
+  dispose: () => void;
 }
 
 const SKIP_FULL  = new Set(["IFCPROJECT"]);
@@ -61,19 +66,6 @@ function toCompactTree(nodes: any[]): any[] {
   });
 }
 
-function makeTreeViewBtn(iconName: string, label: string): HTMLButtonElement {
-  const btn = document.createElement("button");
-  btn.type = "button";
-  btn.className = "tree-view-btn";
-  const ico = document.createElement("bim-icon") as any;
-  ico.icon = iconName;
-  ico.style.fontSize = "13px";
-  const lbl = document.createElement("span");
-  lbl.textContent = label;
-  btn.append(ico, lbl);
-  return btn;
-}
-
 /** Activa un handler de click también con Enter/Espacio cuando la fila tiene el foco. */
 function makeRowAccessible(row: HTMLElement): void {
   row.tabIndex = 0;
@@ -86,14 +78,17 @@ function makeRowAccessible(row: HTMLElement): void {
   });
 }
 
-export function createTreePanel(
+export function createModelTreeView(
   components: OBC.Components,
-  fragments: OBC.FragmentsManager,
+  model: FRAGS.FragmentsModel,
   highlighter: OBF.Highlighter,
-): TreePanel {
-  const [spatialTree, updateSpatialTree] = CUI.tables.spatialTree({
-    components, models: fragments.list.values(), selectHighlighterName: "select",
-  });
+): ModelTreeView {
+  // autoUpdate=false es obligatorio: con el default (true), @thatopen/ui-obc
+  // engancha listeners no removibles sobre fragments.list que reconstruyen
+  // esta tabla con TODOS los modelos cargados, no solo con el nuestro.
+  const [spatialTree, , spatialUtils] = CUI.tables.spatialTree({
+    components, models: [model], selectHighlighterName: "select",
+  }, false);
 
   spatialTree.style.maxHeight = "40vh";
   spatialTree.style.overflowY = "auto";
@@ -244,30 +239,38 @@ export function createTreePanel(
     renderTypesTree();
   };
 
-  // Intercept CUI's data setter to apply toCompactTree transform
+  // bim-table define "data" como un accesor plano en su propio prototipo (no
+  // vía @property() de Lit), pero Lit igual valida en cada performUpdate() que
+  // ningún campo reactivo quede "sombreado" por una propiedad own-instance. Si
+  // se define "data" con Object.defineProperty directamente sobre la instancia
+  // (como hacía la versión anterior de este hook) esa validación lo detecta
+  // como class-field-shadowing y lanza un error que aborta el render entero,
+  // dejando el shadow DOM vacío para siempre (ver lit.dev/msg/class-field-shadowing).
+  // En cambio, loadFunction es un campo plano sin ningún tracking reactivo:
+  // envolverlo para aplicar toCompactTree/buildTypesTree sobre el resultado, y
+  // dejar que loadData() siga asignando "data" a través de su setter real, es
+  // seguro y no dispara esa validación.
   const tbl = spatialTree as any;
-  const tblProto = Object.getPrototypeOf(tbl);
-  const originalDescriptor = Object.getOwnPropertyDescriptor(tblProto, "data")
-    ?? Object.getOwnPropertyDescriptor(Object.getPrototypeOf(tblProto), "data");
-
-  if (originalDescriptor?.set) {
-    Object.defineProperty(tbl, "data", {
-      get() { return originalDescriptor.get!.call(this); },
-      set(rawData: any[]) {
-        const needsTransform = Array.isArray(rawData) && rawData.length > 0
-          && rawData.some((n: any) => {
-            const name: string = n?.data?.Name ?? "";
-            return /^IFC[A-Z]+$/i.test(name) || name.endsWith(".ifc");
-          });
-        const finalData = needsTransform ? toCompactTree(rawData) : rawData;
-        originalDescriptor.set!.call(this, finalData);
-        if (needsTransform) {
-          requestAnimationFrame(() => { spatialTree.expanded = true; });
-          buildTypesTree(rawData);
-        }
-      },
-      configurable: true,
-    });
+  const originalLoadFunction = tbl.loadFunction as (() => Promise<any[]>) | undefined;
+  if (originalLoadFunction) {
+    tbl.loadFunction = async () => {
+      const rawData = await originalLoadFunction();
+      const needsTransform = Array.isArray(rawData) && rawData.length > 0
+        && rawData.some((n: any) => {
+          const name: string = n?.data?.Name ?? "";
+          return /^IFC[A-Z]+$/i.test(name) || name.endsWith(".ifc");
+        });
+      if (needsTransform) {
+        requestAnimationFrame(() => { spatialTree.expanded = true; });
+        buildTypesTree(rawData);
+      }
+      return needsTransform ? toCompactTree(rawData) : rawData;
+    };
+    // El primer loadData(true), disparado por CUI.tables.spatialTree() al
+    // montar la tabla, ya arrancó con la loadFunction original (sin
+    // transformar): se relanza acá para que la versión envuelta reemplace ese
+    // resultado con el árbol ya compactado.
+    tbl.loadData(true);
   }
 
   // — Spatial tree click —
@@ -283,46 +286,33 @@ export function createTreePanel(
     onElementClickCb?.(modelId, localId);
   });
 
-  // — View switcher —
-  const section = document.createElement("bim-panel-section") as BUI.PanelSection;
-  section.label     = "Estructuras";
-  section.icon      = "material-symbols:account-tree";
-  section.collapsed = false;
+  let currentView: TreeViewMode = "spatial";
 
-  const switcherBar = document.createElement("div");
-  switcherBar.className = "tree-switcher";
+  const element = document.createElement("div");
+  element.className = "model-tree-container";
+  element.append(spatialTree, typesContainer);
 
-  const btnSpatial = makeTreeViewBtn("material-symbols:account-tree", "Espacial");
-  const btnTypes   = makeTreeViewBtn("material-symbols:category", "Tipos");
-  switcherBar.append(btnSpatial, btnTypes);
-
-  let currentView: "spatial" | "types" = "spatial";
-
-  const switchView = (view: "spatial" | "types") => {
+  const setView = (view: TreeViewMode) => {
     currentView = view;
     (spatialTree as HTMLElement).style.display = view === "spatial" ? "" : "none";
     typesContainer.style.display = view === "types" ? "" : "none";
-    btnSpatial.classList.toggle("active", view === "spatial");
-    btnTypes.classList.toggle("active", view === "types");
   };
-
-  btnSpatial.addEventListener("click", () => switchView("spatial"));
-  btnTypes.addEventListener("click",   () => switchView("types"));
-  switchView("spatial");
+  setView("spatial");
   renderTypesTree();
 
-  section.append(switcherBar, spatialTree, typesContainer);
-
-  fragments.list.onItemSet.add(() => {
-    updateSpatialTree({ models: fragments.list.values() });
-    section.collapsed = false;
-  });
-
   return {
-    section,
-    update: (models) => updateSpatialTree({ models }),
+    element,
+    setView,
+    getView: () => currentView,
     onElementClick: (cb) => { onElementClickCb = cb; },
     onTypeGroupClick: (cb) => { onTypeGroupClickCb = cb; },
-    clearTypesSelection: () => selectTypesRow(null),
+    clearSelection: () => selectTypesRow(null),
+    dispose: () => {
+      spatialUtils.dispose();
+      typesData.clear();
+      selectedTypesRow = null;
+      onElementClickCb = null;
+      onTypeGroupClickCb = null;
+    },
   };
 }
