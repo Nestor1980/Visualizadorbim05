@@ -4,10 +4,11 @@ import * as FRAGS from "@thatopen/fragments";
 import * as THREE from "three";
 import type { SectionTool } from "./section-tool";
 import { measureFaceEdges } from "./measurement-tool";
+import type { WorldLabelTool } from "./world-label-tool";
 import type * as BUI from "@thatopen/ui";
 import type { ToolOptionsView } from "../ui/tool-options-panel";
 
-export type ToolMode = "navigate" | "measure" | "section" | "properties";
+export type ToolMode = "navigate" | "measure" | "section" | "label" | "properties";
 
 interface ToolOptionsPanelLike {
   setView: (view: ToolOptionsView) => void;
@@ -26,12 +27,14 @@ export class ToolManager {
   navigateBtnEl: BUI.Button | null = null;
   measureBtnEl: BUI.Button | null = null;
   sectionBtnEl: BUI.Button | null = null;
+  labelBtnEl: BUI.Button | null = null;
   propertiesBtnEl: BUI.Button | null = null;
 
   private measurer: OBF.LengthMeasurement;
   private highlighter: OBF.Highlighter;
   private hoverer: OBF.Hoverer;
   private sectionTool: SectionTool;
+  private worldLabelTool: WorldLabelTool;
   private postproduction: { enabled: boolean } | null = null;
   private toolOptionsPanel: ToolOptionsPanelLike | null = null;
 
@@ -40,11 +43,13 @@ export class ToolManager {
     highlighter: OBF.Highlighter,
     hoverer: OBF.Hoverer,
     sectionTool: SectionTool,
+    worldLabelTool: WorldLabelTool,
   ) {
-    this.measurer    = measurer;
-    this.highlighter = highlighter;
-    this.hoverer     = hoverer;
-    this.sectionTool = sectionTool;
+    this.measurer      = measurer;
+    this.highlighter   = highlighter;
+    this.hoverer       = hoverer;
+    this.sectionTool   = sectionTool;
+    this.worldLabelTool = worldLabelTool;
   }
 
   setPostproduction(pp: { enabled: boolean }): void {
@@ -73,11 +78,13 @@ export class ToolManager {
       this.sectionTool.clipper.enabled          = true;
       this.sectionTool.sectionFillGroup.visible = true;
     }
+    if (mode !== "label") this.worldLabelTool.previewAt(null);
 
     const modeButtons: Record<ToolMode, BUI.Button | null> = {
       navigate:   this.navigateBtnEl,
       measure:    this.measureBtnEl,
       section:    this.sectionBtnEl,
+      label:      this.labelBtnEl,
       properties: this.propertiesBtnEl,
     };
     for (const [btnMode, btn] of Object.entries(modeButtons)) {
@@ -92,12 +99,80 @@ export class ToolManager {
     this.toolOptionsPanel?.setView(view);
   }
 
-  bindViewportEvents(viewport: HTMLElement, world: OBC.World): void {
+  bindViewportEvents(viewport: HTMLElement, world: OBC.World, fragments: OBC.FragmentsManager): void {
     viewport.addEventListener("dblclick", () => {
       if (this.activeMode === "section") {
         this.sectionTool.clipper.create(world);
         this.sectionTool.rebuildSectionFills();
       }
+    });
+
+    // Modo "label": un click simple sobre el modelo coloca un WorldLabel en el
+    // punto de impacto. Clicks sobre un marcador ya existente (p. ej. para
+    // seleccionarlo) no deben disparar una creación nueva.
+    const labelRaycaster = new THREE.Raycaster();
+    const raycastModel = (clientX: number, clientY: number): THREE.Vector3 | null => {
+      const rect = viewport.getBoundingClientRect();
+      const ndc  = new THREE.Vector2(
+        ((clientX - rect.left) / rect.width)  * 2 - 1,
+        -((clientY - rect.top)  / rect.height) * 2 + 1,
+      );
+      labelRaycaster.setFromCamera(ndc, world.camera.three);
+
+      const meshes: THREE.Mesh[] = [];
+      for (const model of fragments.list.values()) {
+        model.object?.traverse((o) => { if (o instanceof THREE.Mesh) meshes.push(o); });
+      }
+      // Algunas mallas internas de fragments no exponen un BVH válido y hacen
+      // que el raycast nativo de three.js lance una excepción para esa malla
+      // puntual — se raycastea de a una para que una sola malla rota no tape
+      // los hits válidos del resto.
+      const hits: THREE.Intersection[] = [];
+      for (const mesh of meshes) {
+        try {
+          labelRaycaster.intersectObject(mesh, false, hits);
+        } catch (error) {
+          console.error("Malla ignorada por error de raycast:", error);
+        }
+      }
+      if (hits.length === 0) return null;
+      hits.sort((a, b) => a.distance - b.distance);
+      return hits[0].point;
+    };
+
+    viewport.addEventListener("click", (event: MouseEvent) => {
+      if (this.activeMode !== "label") return;
+      if ((event.target as HTMLElement).closest(".world-label")) return;
+      const point = raycastModel(event.clientX, event.clientY);
+      if (point) this.worldLabelTool.createAt(point);
+    });
+
+    // Ícono fantasma que sigue el punto raycasteado bajo el cursor, para
+    // mostrar dónde va a quedar la próxima etiqueta antes de hacer click.
+    // El raycast contra todas las mallas es relativamente costoso, así que se
+    // coalesce a un máximo de un cálculo por frame en vez de uno por evento.
+    let pendingPreviewEvent: MouseEvent | null = null;
+    let previewRafPending = false;
+    const flushPreview = () => {
+      previewRafPending = false;
+      const event = pendingPreviewEvent;
+      pendingPreviewEvent = null;
+      if (!event || this.activeMode !== "label") return;
+      if ((event.target as HTMLElement).closest(".world-label")) {
+        this.worldLabelTool.previewAt(null);
+        return;
+      }
+      this.worldLabelTool.previewAt(raycastModel(event.clientX, event.clientY));
+    };
+    viewport.addEventListener("pointermove", (event: MouseEvent) => {
+      if (this.activeMode !== "label") return;
+      pendingPreviewEvent = event;
+      if (previewRafPending) return;
+      previewRafPending = true;
+      requestAnimationFrame(flushPreview);
+    });
+    viewport.addEventListener("pointerleave", () => {
+      if (this.activeMode === "label") this.worldLabelTool.previewAt(null);
     });
 
     // En modo "measure", un click sobre un snap válido (vértice/borde/superficie,

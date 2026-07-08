@@ -99,6 +99,21 @@ export function createToolbar(
           </bim-button>
         </bim-toolbar-section>
 
+        <bim-toolbar-section label="Etiqueta">
+          <bim-button
+            icon="mdi:note-plus-outline"
+            ${BUI.ref((el: Element | undefined) => { toolManager.labelBtnEl = el as BUI.Button ?? null; })}
+            @click=${() => {
+              if (toolManager.activeMode === "label") toolManager.setMode("navigate");
+              else toolManager.setMode("label");
+            }}>
+            <bim-tooltip>
+              <div style="font-weight:600;">Etiqueta</div>
+              <div style="opacity:0.75;">Click para dejar una etiqueta con comentario</div>
+            </bim-tooltip>
+          </bim-button>
+        </bim-toolbar-section>
+
         <bim-toolbar-section label="Visibilidad">
           <bim-button
             icon="material-symbols:filter-center-focus"

@@ -1102,3 +1102,109 @@ bim-view-cube:active {
   overflow: auto;
   scrollbar-gutter: stable;
 }
+
+/* — WorldLabel: marcador CSS2D anclado a una coordenada del modelo.
+ * Tres estados según data-state: "icon" (lejos), "title" (cerca) y
+ * "expanded" (seleccionado, título + comentario).
+ *
+ * El elemento raíz es intencionalmente pointer-events:none — su bounding box
+ * (columna flex con badge+título+comentario apilados y centrados en el punto
+ * 3D) es más grande que lo que realmente se ve, y si fuera clickeable ahí
+ * "tapaba" el modelo debajo, impidiendo colocar otra etiqueta cerca. Solo las
+ * partes visibles (badge/título/comentario/inputs) son clickeables. */
+.world-label {
+  pointer-events: none;
+  user-select: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+.world-label-badge {
+  pointer-events: auto;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 14px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  flex-shrink: 0;
+}
+.world-label-title {
+  pointer-events: auto;
+  cursor: pointer;
+  max-width: 12rem;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--bim-ui_bg-contrast-100, #1a1a1a);
+  color: #fff;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+.world-label-comment {
+  pointer-events: auto;
+  cursor: pointer;
+  max-width: 16rem;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--bim-ui_bg-contrast-100, #1a1a1a);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+.world-label[data-state="icon"] .world-label-title,
+.world-label[data-state="icon"] .world-label-comment {
+  display: none;
+}
+.world-label[data-state="title"] .world-label-comment {
+  display: none;
+}
+.world-label[data-state="expanded"] .world-label-badge {
+  outline: 2px solid #fff;
+}
+.world-label-title-input,
+.world-label-comment-textarea {
+  pointer-events: auto;
+  font: inherit;
+  color: inherit;
+  background: var(--bim-ui_bg-contrast-05);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 3px 6px;
+}
+.world-label-title-input {
+  width: 12rem;
+  font-weight: 600;
+}
+.world-label-comment-textarea {
+  width: 16rem;
+  resize: vertical;
+}
+
+/* Ícono fantasma de previsualización: sigue el punto raycasteado bajo el
+ * cursor en modo "label", nunca es interactivo. */
+.world-label-preview {
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: transparent;
+  border: 2px dashed var(--accent);
+  color: var(--accent);
+  font-size: 14px;
+  opacity: 0.85;
+}

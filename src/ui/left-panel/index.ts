@@ -3,6 +3,7 @@ import * as OBF from "@thatopen/components-front";
 import * as BUI from "@thatopen/ui";
 import { createModelsTree } from "./models-tree";
 import { createDataLayersTree } from "./data-layers-tree";
+import type { WorldLabelTool } from "../../tools/world-label-tool";
 import { saveRecentFile } from "../../ifc/recent-files";
 import { ensureExplicitThemeClass } from "../theme";
 
@@ -30,13 +31,14 @@ export function createLeftPanel(
   measurer: OBF.LengthMeasurement,
   clipper: OBC.Clipper,
   topics: OBC.BCFTopics,
+  labels: WorldLabelTool,
   world: OBC.World,
 ): LeftPanel {
   const modelsTree = createModelsTree(fragments, components, highlighter);
   let onTopicSelectCb: ((topicGuid: string) => void) | null = null;
   let onOpenTopicsTableCb: (() => void) | null = null;
   const dataLayersController = createDataLayersTree(
-    measurer, clipper, topics, world,
+    measurer, clipper, topics, labels, world,
     () => modelsTree.refresh(),
     () => modelsTree.ensureDefaultCollectionId(),
     (topicGuid) => onTopicSelectCb?.(topicGuid),

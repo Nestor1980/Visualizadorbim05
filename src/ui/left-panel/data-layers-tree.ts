@@ -1,5 +1,6 @@
 import * as OBC from "@thatopen/components";
 import * as OBF from "@thatopen/components-front";
+import type { WorldLabelTool } from "../../tools/world-label-tool";
 
 interface DataLayer {
   id: string;
@@ -10,11 +11,12 @@ interface DataLayer {
   measurementsExpanded: boolean;
   sectionsExpanded: boolean;
   topicsExpanded: boolean;
+  labelsExpanded: boolean;
   /** Estado del último toggle de visibilidad grupal (no se recalcula desde los miembros). */
   hidden: boolean;
 }
 
-type DraggedItem = { kind: "measurement" | "section" | "topic"; id: string } | null;
+type DraggedItem = { kind: "measurement" | "section" | "topic" | "label"; id: string } | null;
 
 /**
  * Renderiza filas para el árbol de `models-tree.ts` (Colecciones), que es el
@@ -33,6 +35,7 @@ export function createDataLayersTree(
   measurer: OBF.LengthMeasurement,
   clipper: OBC.Clipper,
   topics: OBC.BCFTopics,
+  labels: WorldLabelTool,
   world: OBC.World,
   requestRender: () => void,
   getDefaultCollectionId: () => string,
@@ -47,6 +50,7 @@ export function createDataLayersTree(
   const measurementDataLayer = new Map<string, string>(); // lineId -> dataLayerId
   const planeDataLayer = new Map<string, string>();       // planeId -> dataLayerId
   const topicDataLayer = new Map<string, string>();       // topicGuid -> dataLayerId
+  const labelDataLayer = new Map<string, string>();       // labelId -> dataLayerId
   let measurementCounter = 0;
   let sectionCounter = 0;
 
@@ -253,9 +257,64 @@ export function createDataLayersTree(
     return row;
   }
 
+  function renderLabelRow(labelId: string): HTMLElement {
+    const label = labels.list.get(labelId);
+    if (!label) return document.createElement("div");
+    const hidden = !label.mark.visible;
+
+    const row = document.createElement("div");
+    row.className = "models-row models-row--nested data-layer-item-row";
+    row.draggable = true;
+    row.addEventListener("dragstart", (e: DragEvent) => {
+      draggedItem = { kind: "label", id: labelId };
+      e.dataTransfer?.setData("text/plain", labelId);
+      if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+      row.classList.add("is-dragging");
+    });
+    row.addEventListener("dragend", () => {
+      draggedItem = null;
+      row.classList.remove("is-dragging");
+    });
+
+    const icon = document.createElement("bim-icon") as any;
+    icon.icon = "mdi:note-text-outline";
+    icon.className = "models-row-icon";
+
+    const labelEl = document.createElement("span");
+    labelEl.className = "models-row-name";
+    labelEl.textContent = label.title;
+    labelEl.addEventListener("dblclick", (e) => {
+      e.stopPropagation();
+      startRename(label.title, labelEl, (value) => labels.rename(labelId, value));
+    });
+
+    row.style.cursor = "pointer";
+    row.addEventListener("click", (e) => {
+      if ((e.target as HTMLElement).closest(".models-row-actions")) return;
+      labels.select(labelId);
+    });
+
+    const actions = document.createElement("div");
+    actions.className = "models-row-actions";
+
+    const eyeBtn = makeIconButton(hidden ? "mdi:eye-off" : "mdi:eye", hidden ? "Mostrar" : "Ocultar", () => {
+      label.mark.visible = !label.mark.visible;
+      requestRender();
+    });
+    const deleteBtn = makeIconButton("mdi:delete", "Eliminar etiqueta", () => {
+      if (!confirm(`¿Eliminar la etiqueta "${label.title}"?`)) return;
+      labels.deleteLabel(labelId);
+      requestRender();
+    });
+
+    actions.append(eyeBtn, deleteBtn);
+    row.append(icon, labelEl, actions);
+    return row;
+  }
+
   function renderCategoryRow(
     layer: DataLayer,
-    kind: "measurement" | "section" | "topic",
+    kind: "measurement" | "section" | "topic" | "label",
     label: string,
     icon: string,
     itemIds: string[],
@@ -282,7 +341,8 @@ export function createDataLayersTree(
       if (!draggedItem || draggedItem.kind !== kind) return;
       if (kind === "measurement") measurementDataLayer.set(draggedItem.id, layer.id);
       else if (kind === "section") planeDataLayer.set(draggedItem.id, layer.id);
-      else topicDataLayer.set(draggedItem.id, layer.id);
+      else if (kind === "topic") topicDataLayer.set(draggedItem.id, layer.id);
+      else labelDataLayer.set(draggedItem.id, layer.id);
       draggedItem = null;
       requestRender();
     });
@@ -330,14 +390,16 @@ export function createDataLayersTree(
         empty.textContent =
           kind === "measurement" ? "Sin mediciones" :
           kind === "section"     ? "Sin cortes" :
-          "Sin BCF Topics";
+          kind === "topic"       ? "Sin BCF Topics" :
+          "Sin etiquetas";
         wrapper.append(empty);
       } else {
         for (const id of itemIds) {
           wrapper.append(
             kind === "measurement" ? renderMeasurementRow(id) :
             kind === "section"     ? renderSectionRow(id) :
-            renderTopicRow(id),
+            kind === "topic"       ? renderTopicRow(id) :
+            renderLabelRow(id),
           );
         }
       }
@@ -355,6 +417,9 @@ export function createDataLayersTree(
       .map(([id]) => id);
     const topicIds = [...topicDataLayer.entries()]
       .filter(([id, layerId]) => layerId === layer.id && topics.list.has(id))
+      .map(([id]) => id);
+    const labelIds = [...labelDataLayer.entries()]
+      .filter(([id, layerId]) => layerId === layer.id && labels.list.has(id))
       .map(([id]) => id);
 
     const wrapper = document.createElement("div");
@@ -420,17 +485,22 @@ export function createDataLayersTree(
           const plane = clipper.list.get(id);
           if (plane) plane.enabled = !layer.hidden;
         }
+        for (const id of labelIds) {
+          const worldLabel = labels.list.get(id);
+          if (worldLabel) worldLabel.mark.visible = !layer.hidden;
+        }
         requestRender();
       },
     );
 
-    const deleteBtn = makeIconButton("mdi:delete", "Eliminar capa de datos (borra sus mediciones y cortes)", () => {
-      if (!confirm(`¿Eliminar "${layer.name}" y todas sus mediciones/cortes?`)) return;
+    const deleteBtn = makeIconButton("mdi:delete", "Eliminar capa de datos (borra sus mediciones, cortes y etiquetas)", () => {
+      if (!confirm(`¿Eliminar "${layer.name}" y todas sus mediciones/cortes/etiquetas?`)) return;
       for (const id of measurementIds) {
         const line = findLineById(id);
         if (line) measurer.list.delete(line);
       }
       for (const id of sectionIds) clipper.delete(world, id);
+      for (const id of labelIds) labels.deleteLabel(id);
       const idx = dataLayers.indexOf(layer);
       if (idx >= 0) dataLayers.splice(idx, 1);
       requestRender();
@@ -453,6 +523,10 @@ export function createDataLayersTree(
         layer, "topic", "BCF Topics", "mdi:file-document-multiple-outline", topicIds,
         layer.topicsExpanded, () => { layer.topicsExpanded = !layer.topicsExpanded; },
       ));
+      wrapper.append(renderCategoryRow(
+        layer, "label", "Etiquetas", "material-symbols:sticky-note-2-outline", labelIds,
+        layer.labelsExpanded, () => { layer.labelsExpanded = !layer.labelsExpanded; },
+      ));
     }
 
     return wrapper;
@@ -472,6 +546,7 @@ export function createDataLayersTree(
       measurementsExpanded: true,
       sectionsExpanded: true,
       topicsExpanded: true,
+      labelsExpanded: true,
       hidden: false,
     };
     dataLayers.push(layer);
@@ -549,6 +624,13 @@ export function createDataLayersTree(
     requestRender();
   });
   topics.list.onItemDeleted.add((key) => { topicDataLayer.delete(key); requestRender(); });
+
+  labels.onItemAdded.add((label) => {
+    const layer = ensureDefaultDataLayer();
+    if (!labelDataLayer.has(label.id)) labelDataLayer.set(label.id, layer.id);
+    requestRender();
+  });
+  labels.onItemDeleted.add((id) => { labelDataLayer.delete(id); requestRender(); });
 
   return { renderForCollection, createDataLayer, moveDataLayerTo, onCollectionRemoved, isDraggingDataLayer };
 }

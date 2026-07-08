@@ -1,3 +1,4 @@
+import * as THREE from "three";
 import * as BUI from "@thatopen/ui";
 import type { SectionTool } from "../../tools/section-tool";
 
@@ -18,6 +19,16 @@ export function createSectionPanel(sectionTool: SectionTool): SectionSettingsPan
             sectionTool.sectionFillGroup.visible = target.value && sectionTool.clipper.enabled;
           }}">
         </bim-checkbox>
+        <bim-color-input label="Color de relleno" color=#${sectionTool.fillColor.getHexString()}
+          @input="${({ target }: { target: BUI.ColorInput }) => {
+            sectionTool.setFillColor(new THREE.Color(target.color));
+          }}">
+        </bim-color-input>
+        <bim-color-input label="Color de borde" color=#${sectionTool.edgeColor.getHexString()}
+          @input="${({ target }: { target: BUI.ColorInput }) => {
+            sectionTool.setEdgeColor(new THREE.Color(target.color));
+          }}">
+        </bim-color-input>
       </bim-panel-section>
     `;
   });

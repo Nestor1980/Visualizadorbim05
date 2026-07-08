@@ -12,6 +12,7 @@ import { setupPivotRaycaster }    from "./camera/pivot-raycaster";
 import { createViewCube }         from "./camera/view-cube";
 import { createSectionTool }      from "./tools/section-tool";
 import { createMeasurementTool }  from "./tools/measurement-tool";
+import { createWorldLabelTool }   from "./tools/world-label-tool";
 import { ToolManager }            from "./tools/tool-manager";
 import { setupIfcLoader }                  from "./ifc/loader";
 import { setupModelProcessor, processModel } from "./ifc/model-processor";
@@ -97,9 +98,10 @@ async function startApp(): Promise<{
   });
 
   // — Tools —
-  const sectionTool = createSectionTool(components, world);
-  const measurer    = createMeasurementTool(components, world);
-  const toolManager = new ToolManager(measurer, highlighter, hoverer, sectionTool);
+  const sectionTool    = createSectionTool(components, world);
+  const measurer       = createMeasurementTool(components, world);
+  const worldLabelTool = createWorldLabelTool(world, viewport);
+  const toolManager    = new ToolManager(measurer, highlighter, hoverer, sectionTool, worldLabelTool);
 
   // — Postprocessing —
   const postproduction = setupPostprocessing(world, worldGrid, components, axisMaterials);
@@ -111,10 +113,11 @@ async function startApp(): Promise<{
     world.camera.controls.addEventListener("update", () => {
       fragments.core.update();
       if (vcRef.el) vcRef.el.updateOrientation();
+      worldLabelTool.updateLOD();
     });
   }
   setupPivotRaycaster(viewport, world, fragments);
-  toolManager.bindViewportEvents(viewport, world);
+  toolManager.bindViewportEvents(viewport, world, fragments);
 
   // — IFC —
   const ifcLoader = await setupIfcLoader(components);
@@ -160,7 +163,7 @@ async function startApp(): Promise<{
 
   const leftPanel = createLeftPanel(
     components, fragments, ifcLoader, highlighter, onModelLoaded,
-    measurer, sectionTool.clipper, topics, world,
+    measurer, sectionTool.clipper, topics, worldLabelTool, world,
   );
 
   // Panel dinámico de abajo: Renderizado.
