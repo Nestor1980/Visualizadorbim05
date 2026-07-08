@@ -32,7 +32,7 @@ export function createScene(viewport: HTMLElement): SceneSetup {
 
   // — Scene & lighting —
   world.scene.setup();
-  world.scene.three.background = new THREE.Color(0xc8deff);
+  world.scene.three.background = new THREE.Color(0x4a4a4a);
   world.scene.three.add(new THREE.AmbientLight(0xffffff, 0.55));
 
   const sunLight = new THREE.DirectionalLight(0xfff5e0, 1.0);
@@ -52,6 +52,14 @@ export function createScene(viewport: HTMLElement): SceneSetup {
   world.scene.three.add(fillLight);
   world.scene.three.add(new THREE.HemisphereLight(0xc8e0ff, 0xd4c8a0, 0.35));
 
+  (world.renderer as OBF.PostproductionRenderer).showLogo = false;
+
+  const watermark = document.createElement("img");
+  watermark.className = "viewer-watermark";
+  watermark.src = "/img/visualizador_bim_withe.png";
+  watermark.alt = "";
+  viewport.appendChild(watermark);
+
   const threeRenderer = (world.renderer as OBF.PostproductionRenderer).three;
   threeRenderer.shadowMap.enabled    = true;
   threeRenderer.shadowMap.type       = THREE.PCFSoftShadowMap;
@@ -59,6 +67,27 @@ export function createScene(viewport: HTMLElement): SceneSetup {
 
   const grids     = components.get(OBC.Grids);
   const worldGrid = grids.create(world);
+  worldGrid.config.color = new THREE.Color(0x707070);
+
+  // Ejes X/Y (rojo/verde) al estilo Blender, atados al mismo plano que la
+  // grilla: al vivir como hijos de worldGrid.three heredan su position.y
+  // cuando adjustGridToModel() la reubica sobre el modelo cargado.
+  const axisLength = 500;
+  const xAxis = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(-axisLength, 0, 0),
+      new THREE.Vector3(axisLength, 0, 0),
+    ]),
+    new THREE.LineBasicMaterial({ color: 0xc4514f }),
+  );
+  const yAxis = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(0, 0, -axisLength),
+      new THREE.Vector3(0, 0, axisLength),
+    ]),
+    new THREE.LineBasicMaterial({ color: 0x6c9e3d }),
+  );
+  worldGrid.three.add(xAxis, yAxis);
 
   world.camera.controls.setLookAt(10, 10, 10, 0, 0, 0);
 

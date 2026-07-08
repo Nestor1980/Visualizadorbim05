@@ -31,6 +31,31 @@ html, body {
   font-family: var(--font-body);
 }
 
+/* Scrollbars del DOM "de luz" (paneles propios, fuera de los shadow roots
+ * bim-*): mismo look que @thatopen/ui ya aplica dentro de sus componentes
+ * (thin, thumb redondeado con --bim-ui_bg-contrast-60), para que no se note
+ * el salto al pasar de un scroll a otro. scrollbar-gutter:stable reserva el
+ * ancho del thumb de antemano así nunca se dibuja encima del texto/íconos
+ * pegados al borde derecho de una fila. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--bim-ui_bg-contrast-60) transparent;
+}
+*::-webkit-scrollbar {
+  width: 0.4rem;
+  height: 0.4rem;
+}
+*::-webkit-scrollbar-thumb {
+  border-radius: 0.25rem;
+  background-color: var(--bim-ui_bg-contrast-60);
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--bim-ui_bg-contrast-80);
+}
+*::-webkit-scrollbar-track {
+  background-color: transparent;
+}
+
 bim-grid {
   position: fixed;
   inset: 0;
@@ -59,7 +84,7 @@ bim-panel {
   flex: 1 1 auto;
   min-width: 0;
   height: 100%;
-  overflow-y: auto;
+  overflow-y: hidden;
   border-radius: 0 !important;
 }
 
@@ -179,7 +204,9 @@ body.resizing-panel-split {
   gap: 2px;
   width: 40px;
   padding: 8px 4px;
+  overflow-x: hidden;
   overflow-y: auto;
+  scrollbar-gutter: stable;
   background: var(--bim-ui_bg-contrast-05);
   border-right: 1px solid var(--bim-ui_bg-contrast-10);
 }
@@ -219,7 +246,9 @@ body.resizing-panel-split {
   flex: 1 1 auto;
   min-width: 0;
   height: 100%;
+  overflow-x: hidden;
   overflow-y: auto;
+  scrollbar-gutter: stable;
   /* bim-panel-section trae 0.75rem de radio por defecto (pensado para vivir
    * flotando); acá está encastrado y a ras del riel de solapas, así que lo
    * aplanamos igual que ya hace .panel-pane bim-panel con el panel entero. */
@@ -391,6 +420,8 @@ bim-tooltip {
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .models-row,
@@ -528,6 +559,18 @@ bim-viewport {
   position: relative;
 }
 
+.viewer-watermark {
+  position: absolute;
+  left: 0.75rem;
+  bottom: 0.75rem;
+  width: 12rem;
+  height: auto;
+  pointer-events: none;
+  user-select: none;
+  opacity: 0.85;
+  z-index: 1;
+}
+
 .floating-toolbars {
   position: absolute;
   top: 1.5rem;
@@ -556,6 +599,7 @@ bim-toolbar {
   width: 260px;
   max-height: calc(100% - 3rem);
   overflow-y: auto;
+  scrollbar-gutter: stable;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -634,6 +678,7 @@ bim-view-cube:active {
   width: min(640px, calc(100vw - 2rem));
   max-height: calc(100vh - 2rem);
   overflow: hidden auto;
+  scrollbar-gutter: stable;
   background: var(--bg-surface);
   border-radius: 12px;
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
@@ -890,6 +935,7 @@ bim-view-cube:active {
   flex: 0 0 180px;
   padding: 0.75rem;
   overflow-y: auto;
+  scrollbar-gutter: stable;
   border-right: 1px solid var(--border-subtle);
 }
 .settings-sidebar-item {
@@ -910,6 +956,7 @@ bim-view-cube:active {
   flex: 1 1 auto;
   padding: 1.25rem;
   overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .settings-row {
@@ -986,4 +1033,5 @@ bim-view-cube:active {
 .bcf-list-modal-body {
   max-height: calc(100vh - 10rem);
   overflow: auto;
+  scrollbar-gutter: stable;
 }
