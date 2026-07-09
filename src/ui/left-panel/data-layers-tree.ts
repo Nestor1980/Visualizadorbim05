@@ -351,15 +351,17 @@ export function createDataLayersTree(
     const labelEl = document.createElement("span");
     labelEl.className = "models-row-name";
     labelEl.textContent = name;
-    labelEl.addEventListener("dblclick", (e) => {
-      e.stopPropagation();
-      startRename(name, labelEl, (value) => drawName.set(strokeId, value));
-    });
 
     row.style.cursor = "pointer";
     row.addEventListener("click", (e) => {
       if ((e.target as HTMLElement).closest(".models-row-actions")) return;
       drawings.select(strokeId);
+    });
+    // Doble click: llevar la cámara de vuelta a como estaba parada cuando se
+    // dibujó este trazo (cada trazo guarda su propia posición/target de cámara).
+    row.addEventListener("dblclick", (e) => {
+      if ((e.target as HTMLElement).closest(".models-row-actions")) return;
+      drawings.focus(strokeId);
     });
 
     const actions = document.createElement("div");

@@ -11,6 +11,9 @@ export interface DrawStroke {
   width: number;
   points: THREE.Vector3[];
   line: Line2;
+  /** Posición y target de la cámara al momento de dibujar este trazo (ver `focus`). */
+  cameraPosition: THREE.Vector3;
+  cameraTarget: THREE.Vector3;
 }
 
 export interface DrawTool {
@@ -19,8 +22,7 @@ export interface DrawTool {
   onItemDeleted: OBC.Event<string>;
   onSelectionChange: OBC.Event<DrawStroke | null>;
   readonly active: boolean;
-  /** Calcula el plano de dibujo (perpendicular a la cámara, pasa por el origen) y
-   *  lo deja fijo para toda la sesión de dibujo. Llamar al entrar al modo "draw". */
+  /** Marca el modo dibujo como activo. Llamar al entrar al modo "draw". */
   activate: () => void;
   /** Descarta el trazo a medio dibujar (si lo hay). Llamar al salir del modo "draw". */
   deactivate: () => void;
@@ -38,6 +40,8 @@ export interface DrawTool {
   beginStroke: (clientX: number, clientY: number) => void;
   extendStroke: (clientX: number, clientY: number) => void;
   endStroke: () => void;
+  /** Anima la cámara de vuelta a como estaba parada cuando se dibujó este trazo. */
+  focus: (id: string) => void;
 }
 
 const DEFAULT_COLOR = "#e6553f";
@@ -88,7 +92,6 @@ export function createDrawTool(world: OBC.World, canvas: HTMLCanvasElement): Dra
   let activeWidth = DEFAULT_WIDTH;
   let active = false;
 
-  const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
   const raycaster = new THREE.Raycaster();
 
   // Los trazos viven en una escena aparte, nunca en world.scene.three: si
@@ -128,10 +131,14 @@ export function createDrawTool(world: OBC.World, canvas: HTMLCanvasElement): Dra
   const resizeObserver = new ResizeObserver(() => updateResolution());
   resizeObserver.observe(canvas);
 
-  function computePlane(): void {
+  /** Plano perpendicular a la dirección de cámara actual, pasando por el origen
+   *  del mundo — cada trazo calcula el suyo propio al empezar (ver beginStroke),
+   *  así que dos trazos dibujados desde ángulos de cámara distintos quedan cada
+   *  uno en su propio plano. */
+  function computeCameraPlane(): THREE.Plane {
     const direction = new THREE.Vector3();
     world.camera.three.getWorldDirection(direction);
-    plane.setFromNormalAndCoplanarPoint(direction, new THREE.Vector3(0, 0, 0));
+    return new THREE.Plane().setFromNormalAndCoplanarPoint(direction, new THREE.Vector3(0, 0, 0));
   }
 
   function pointToNdc(clientX: number, clientY: number): THREE.Vector2 {
@@ -142,10 +149,18 @@ export function createDrawTool(world: OBC.World, canvas: HTMLCanvasElement): Dra
     );
   }
 
-  function planePointFromEvent(clientX: number, clientY: number): THREE.Vector3 | null {
+  function planePointFromEvent(clientX: number, clientY: number, plane: THREE.Plane): THREE.Vector3 | null {
     raycaster.setFromCamera(pointToNdc(clientX, clientY), world.camera.three);
     const target = new THREE.Vector3();
     return raycaster.ray.intersectPlane(plane, target) ? target : null;
+  }
+
+  function focus(id: string): void {
+    const stroke = list.get(id);
+    if (!stroke) return;
+    const { cameraPosition: p, cameraTarget: t } = stroke;
+    const camera = world.camera as OBC.OrthoPerspectiveCamera;
+    camera.controls.setLookAt(p.x, p.y, p.z, t.x, t.y, t.z, true);
   }
 
   function createLine(color: string, width: number): Line2 {
@@ -250,17 +265,22 @@ export function createDrawTool(world: OBC.World, canvas: HTMLCanvasElement): Dra
   let rawPoints: THREE.Vector3[] = [];
   let smoothedPoints: THREE.Vector3[] = [];
   let currentLine: Line2 | null = null;
+  let currentPlane: THREE.Plane | null = null;
+  let currentCameraPosition: THREE.Vector3 | null = null;
+  let currentCameraTarget: THREE.Vector3 | null = null;
 
   function abortCurrentStroke(): void {
     if (currentLine) disposeLine(currentLine);
-    currentLine    = null;
+    currentLine           = null;
+    currentPlane          = null;
+    currentCameraPosition = null;
+    currentCameraTarget   = null;
     rawPoints      = [];
     smoothedPoints = [];
   }
 
   function activate(): void {
     active = true;
-    computePlane();
   }
 
   function deactivate(): void {
@@ -270,8 +290,13 @@ export function createDrawTool(world: OBC.World, canvas: HTMLCanvasElement): Dra
 
   function beginStroke(clientX: number, clientY: number): void {
     if (!active) return;
-    const point = planePointFromEvent(clientX, clientY);
+    const plane = computeCameraPlane();
+    const point = planePointFromEvent(clientX, clientY, plane);
     if (!point) return;
+    const camera = world.camera as OBC.OrthoPerspectiveCamera;
+    currentPlane          = plane;
+    currentCameraPosition = camera.controls.getPosition(new THREE.Vector3());
+    currentCameraTarget   = camera.controls.getTarget(new THREE.Vector3());
     rawPoints      = [point];
     smoothedPoints = [point.clone()];
     currentLine = createLine(activeColor, activeWidth);
@@ -280,8 +305,8 @@ export function createDrawTool(world: OBC.World, canvas: HTMLCanvasElement): Dra
   }
 
   function extendStroke(clientX: number, clientY: number): void {
-    if (!active || !currentLine) return;
-    const point = planePointFromEvent(clientX, clientY);
+    if (!active || !currentLine || !currentPlane) return;
+    const point = planePointFromEvent(clientX, clientY, currentPlane);
     if (!point) return;
     const last = rawPoints[rawPoints.length - 1];
     if (last && last.distanceTo(point) < MIN_POINT_DISTANCE) return;
@@ -294,7 +319,7 @@ export function createDrawTool(world: OBC.World, canvas: HTMLCanvasElement): Dra
   }
 
   function endStroke(): void {
-    if (!currentLine) return;
+    if (!currentLine || !currentCameraPosition || !currentCameraTarget) return;
     if (smoothedPoints.length < 2) {
       abortCurrentStroke();
       return;
@@ -303,9 +328,13 @@ export function createDrawTool(world: OBC.World, canvas: HTMLCanvasElement): Dra
     const id = `stroke-${Date.now()}-${strokeCounter}`;
     const stroke: DrawStroke = {
       id, color: activeColor, width: activeWidth, points: smoothedPoints.slice(), line: currentLine,
+      cameraPosition: currentCameraPosition, cameraTarget: currentCameraTarget,
     };
     list.set(id, stroke);
-    currentLine    = null;
+    currentLine            = null;
+    currentPlane           = null;
+    currentCameraPosition  = null;
+    currentCameraTarget    = null;
     rawPoints      = [];
     smoothedPoints = [];
     onItemAdded.trigger(stroke);
@@ -318,6 +347,6 @@ export function createDrawTool(world: OBC.World, canvas: HTMLCanvasElement): Dra
     setActiveColor, getActiveColor,
     setActiveWidth, getActiveWidth,
     select, deselect, deleteStroke, deleteSelected,
-    pickStrokeAt, beginStroke, extendStroke, endStroke,
+    pickStrokeAt, beginStroke, extendStroke, endStroke, focus,
   };
 }
