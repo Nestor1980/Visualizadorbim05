@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import * as OBC from "@thatopen/components";
+import * as OBF from "@thatopen/components-front";
 
 const DEFAULT_FILL_COLOR = 0xC0B8A8;
 const DEFAULT_EDGE_COLOR = 0x2B2B2B;
@@ -13,6 +14,11 @@ export interface SectionTool {
   setFillColor: (color: THREE.ColorRepresentation) => void;
   setEdgeColor: (color: THREE.ColorRepresentation) => void;
   rebuildSectionFills: () => void;
+  /** Disco fantasma que anticipa, bajo el cursor, dónde y con qué
+   *  orientación quedaría el próximo plano de corte. Se actualiza en cada
+   *  movimiento del mouse en modo "section"; `hidePreview` lo oculta. */
+  updatePreview: () => Promise<void>;
+  hidePreview: () => void;
 }
 
 // Devuelve, por cada triángulo que el plano atraviesa, el segmento de recta
@@ -181,9 +187,103 @@ export function createSectionTool(
     console.log("[section-debug] sectionFillGroup.children:", sectionFillGroup.children.length);
   };
 
+  // ─── Previsualización del plano de corte ─────────────────────────────────
+  // Mismo lenguaje visual que el ícono fantasma de etiquetas (marco punteado
+  // + ícono, ver .world-label-preview): un marco cuadrado con el ícono de
+  // corte al centro y una flecha orbitándolo que apunta hacia la dirección
+  // del corte, siguiendo el punto raycasteado bajo el cursor.
+  const raycasters = components.get(OBC.Raycasters);
+
+  let previewMark: OBF.Mark | null = null;
+  let previewArrowEl: HTMLElement | null = null;
+  const ensurePreviewMark = (): OBF.Mark => {
+    if (previewMark) return previewMark;
+    const el = document.createElement("div");
+    el.className = "section-preview";
+
+    const arrow = document.createElement("bim-icon") as any;
+    arrow.className = "section-preview-arrow";
+    arrow.icon = "mdi:arrow-up-bold";
+    previewArrowEl = arrow;
+
+    const cutIcon = document.createElement("bim-icon") as any;
+    cutIcon.icon = "material-symbols:cut";
+
+    el.append(arrow, cutIcon);
+    previewMark = new OBF.Mark(world, el);
+    previewMark.visible = false;
+    return previewMark;
+  };
+
+  // Replica la conversión normal-local -> normal-mundo que usa Clipper al
+  // crear el plano real (Clipper.getWorldNormal es privado), para que la
+  // previsualización coincida exactamente con el plano que se va a crear.
+  const computeWorldNormal = (intersect: any, localNormal: THREE.Vector3): THREE.Vector3 => {
+    const object = intersect.object as THREE.Object3D | undefined;
+    if (!object) return localNormal.clone().normalize();
+    let transform = object.matrixWorld.clone();
+    if (object instanceof THREE.InstancedMesh && intersect.instanceId !== undefined) {
+      const instanceTransform = new THREE.Matrix4();
+      object.getMatrixAt(intersect.instanceId, instanceTransform);
+      transform = instanceTransform.multiply(transform);
+    }
+    const normalMatrix = new THREE.Matrix3().getNormalMatrix(transform);
+    return localNormal.clone().applyMatrix3(normalMatrix).normalize();
+  };
+
+  // Ángulo en pantalla al que debe apuntar la flecha: proyecta un punto
+  // desplazado a lo largo de la normal y lo compara contra la proyección del
+  // punto de impacto, así la flecha (un ícono 2D que siempre mira a cámara)
+  // refleja la orientación 3D real vista desde el ángulo de cámara actual.
+  const NORMAL_PROBE_DISTANCE = 0.5;
+  const screenArrowAngleDeg = (point: THREE.Vector3, worldNormal: THREE.Vector3): number => {
+    const canvas = world.renderer!.three.domElement;
+    const width  = canvas.clientWidth  || 1;
+    const height = canvas.clientHeight || 1;
+    const camera = world.camera.three;
+
+    const toScreen = (p: THREE.Vector3) => {
+      const ndc = p.clone().project(camera);
+      return { x: (ndc.x * 0.5 + 0.5) * width, y: (1 - (ndc.y * 0.5 + 0.5)) * height };
+    };
+
+    const a = toScreen(point);
+    const b = toScreen(point.clone().addScaledVector(worldNormal, NORMAL_PROBE_DISTANCE));
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    if (Math.abs(dx) < 1e-6 && Math.abs(dy) < 1e-6) return 0;
+    return Math.atan2(dx, -dy) * (180 / Math.PI);
+  };
+
+  const hidePreview = (): void => {
+    if (previewMark) previewMark.visible = false;
+  };
+
+  const updatePreview = async (): Promise<void> => {
+    if (!clipper.enabled) {
+      hidePreview();
+      return;
+    }
+    const caster = raycasters.get(world);
+    const intersect: any = await caster.castRay();
+    const localNormal: THREE.Vector3 | undefined = intersect?.normal ?? intersect?.face?.normal;
+    if (!intersect || !localNormal) {
+      hidePreview();
+      return;
+    }
+    const worldNormal = computeWorldNormal(intersect, localNormal).negate();
+    const mark = ensurePreviewMark();
+    mark.three.position.copy(intersect.point);
+    if (previewArrowEl) {
+      const angle = screenArrowAngleDeg(intersect.point, worldNormal);
+      previewArrowEl.style.transform = `translateX(-50%) rotate(${angle}deg)`;
+    }
+    mark.visible = true;
+  };
+
   return {
     clipper, sectionFillGroup, fillSourceMeshes,
     fillColor, edgeColor, setFillColor, setEdgeColor,
-    rebuildSectionFills,
+    rebuildSectionFills, updatePreview, hidePreview,
   };
 }

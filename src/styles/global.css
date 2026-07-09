@@ -386,13 +386,34 @@ body.resizing-panel-split {
  * sin flex-direction (fila por defecto): con dos <div> hijos (título +
  * descripción) quedaban lado a lado, cada uno colapsado a un ancho mínimo y
  * partido en columnas de una sola palabra. Lo pasamos a columna y le damos
- * un ancho mínimo para que el texto respire. */
+ * un ancho mínimo para que el texto respire.
+ *
+ * Mismo lenguaje visual que el resto de los paneles flotantes (bg-elevated +
+ * border-subtle + sombra, ver .world-label-card / menús contextuales) en vez
+ * del gris genérico de @thatopen/ui, y con tokens semánticos se resuelve
+ * solo para ambos temas. El :host propio del shadow root ya trae background/
+ * border-radius/box-shadow/padding/font-size con especificidad de clase
+ * (0,1,0), mayor que el selector de tipo "bim-tooltip" (0,0,1) sin importar
+ * el orden de carga — por eso esas propiedades necesitan !important (mismo
+ * patrón que bim-grid/.panel-pane bim-panel más arriba).
+ *
+ * El font-size default de bim-tooltip es var(--bim-ui_size-xs, 0.875rem):
+ * --bim-ui_size-xs SÍ está definida globalmente por @thatopen/ui (0.4375rem
+ * ≈ 7px), pero como token de espaciado, no de tipografía — el fallback de
+ * 0.875rem nunca se usa y el texto queda ilegible. Lo fijamos a mano. */
 bim-tooltip {
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   min-width: 150px;
   max-width: 260px;
   line-height: 1.4;
+  padding: 10px 14px !important;
+  font-size: 12px !important;
+  background: var(--bg-elevated) !important;
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5) !important;
 }
 
 /* — Barra de herramientas y árbol de modelos/colecciones (panel "Escena") — */
@@ -1152,6 +1173,47 @@ bim-view-cube:active {
   border-radius: 8px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
 }
+.world-label-title-row {
+  display: flex;
+  align-items: flex-start;
+}
+.world-label-title-row .world-label-title,
+.world-label-title-row .world-label-title-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.world-label-color-input {
+  display: none;
+  pointer-events: auto;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  margin: 8px 10px 0 0;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  flex-shrink: 0;
+}
+/* Solo visible en modo edición (título/comentario convertidos en inputs);
+ * si no, compite visualmente con el badge de color al solo ver/seleccionar. */
+.world-label-editing .world-label-color-input {
+  display: inline-block;
+}
+.world-label-color-input::-webkit-color-swatch-wrapper {
+  padding: 0;
+  border-radius: 50%;
+}
+.world-label-color-input::-webkit-color-swatch {
+  border: 1px solid var(--border-subtle);
+  border-radius: 50%;
+}
+.world-label-color-input::-moz-color-swatch {
+  border: 1px solid var(--border-subtle);
+  border-radius: 50%;
+}
 .world-label-title {
   pointer-events: auto;
   cursor: pointer;
@@ -1179,8 +1241,10 @@ bim-view-cube:active {
 .world-label[data-state="title"] .world-label-comment {
   display: none;
 }
-/* Expandida (seleccionada/en edición): el badge queda tapado por la tarjeta
- * y se ve mal solapado con el input de título, así que se oculta del todo. */
+/* El badge (ícono de nota) solo tiene sentido en el estado "icon" (lejos,
+ * sin espacio para texto); en "title" y "expanded" ya se ve el título, así
+ * que mostrarlo también se ve como un ícono duplicado flotando encima. */
+.world-label[data-state="title"] .world-label-badge,
 .world-label[data-state="expanded"] .world-label-badge {
   display: none;
 }
@@ -1261,4 +1325,34 @@ bim-view-cube:active {
   color: var(--accent);
   font-size: 14px;
   opacity: 0.85;
+}
+
+/* Ícono fantasma de previsualización del plano de corte: mismo lenguaje
+ * visual que .world-label-preview (marco punteado + ícono), pero cuadrado
+ * y con una flecha que orbita el marco señalando la dirección del corte. */
+.section-preview {
+  pointer-events: none;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
+  background: transparent;
+  border: 2px dashed var(--accent);
+  color: var(--accent);
+  font-size: 14px;
+  opacity: 0.85;
+}
+.section-preview-arrow {
+  position: absolute;
+  top: -18px;
+  left: 50%;
+  font-size: 16px;
+  /* El JS actualiza `rotate(...)`; el origen queda fijo en el centro del
+   * marco para que la flecha orbite alrededor del ícono en vez de girar
+   * sobre sí misma. */
+  transform-origin: 50% 31px;
+  transform: translateX(-50%) rotate(0deg);
 }

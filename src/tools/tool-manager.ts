@@ -5,10 +5,11 @@ import * as THREE from "three";
 import type { SectionTool } from "./section-tool";
 import { measureFaceEdges } from "./measurement-tool";
 import type { WorldLabelTool } from "./world-label-tool";
+import type { DrawTool } from "./draw-tool";
 import type * as BUI from "@thatopen/ui";
 import type { ToolOptionsView } from "../ui/tool-options-panel";
 
-export type ToolMode = "navigate" | "measure" | "section" | "label" | "properties";
+export type ToolMode = "navigate" | "measure" | "section" | "label" | "draw" | "properties";
 
 interface ToolOptionsPanelLike {
   setView: (view: ToolOptionsView) => void;
@@ -28,6 +29,7 @@ export class ToolManager {
   measureBtnEl: BUI.Button | null = null;
   sectionBtnEl: BUI.Button | null = null;
   labelBtnEl: BUI.Button | null = null;
+  drawBtnEl: BUI.Button | null = null;
   propertiesBtnEl: BUI.Button | null = null;
 
   private measurer: OBF.LengthMeasurement;
@@ -35,8 +37,10 @@ export class ToolManager {
   private hoverer: OBF.Hoverer;
   private sectionTool: SectionTool;
   private worldLabelTool: WorldLabelTool;
+  private drawTool: DrawTool;
   private postproduction: { enabled: boolean } | null = null;
   private toolOptionsPanel: ToolOptionsPanelLike | null = null;
+  private camera: OBC.OrthoPerspectiveCamera | null = null;
 
   constructor(
     measurer: OBF.LengthMeasurement,
@@ -44,12 +48,14 @@ export class ToolManager {
     hoverer: OBF.Hoverer,
     sectionTool: SectionTool,
     worldLabelTool: WorldLabelTool,
+    drawTool: DrawTool,
   ) {
     this.measurer      = measurer;
     this.highlighter   = highlighter;
     this.hoverer       = hoverer;
     this.sectionTool   = sectionTool;
     this.worldLabelTool = worldLabelTool;
+    this.drawTool       = drawTool;
   }
 
   setPostproduction(pp: { enabled: boolean }): void {
@@ -68,6 +74,7 @@ export class ToolManager {
     this.hoverer.enabled                       = false;
     this.sectionTool.clipper.enabled           = false;
     this.sectionTool.sectionFillGroup.visible  = false;
+    if (mode !== "section") this.sectionTool.hidePreview();
 
     if (mode === "navigate" || mode === "properties") {
       this.highlighter.enabled = true;
@@ -80,11 +87,15 @@ export class ToolManager {
     }
     if (mode !== "label") this.worldLabelTool.previewAt(null);
 
+    if (mode === "draw") this.drawTool.activate();
+    else if (this.drawTool.active) this.drawTool.deactivate();
+
     const modeButtons: Record<ToolMode, BUI.Button | null> = {
       navigate:   this.navigateBtnEl,
       measure:    this.measureBtnEl,
       section:    this.sectionBtnEl,
       label:      this.labelBtnEl,
+      draw:       this.drawBtnEl,
       properties: this.propertiesBtnEl,
     };
     for (const [btnMode, btn] of Object.entries(modeButtons)) {
@@ -94,6 +105,7 @@ export class ToolManager {
     const view: ToolOptionsView =
       mode === "measure"    ? "measure" :
       mode === "section"    ? "section" :
+      mode === "draw"       ? "draw" :
       mode === "properties" ? "properties" :
       null;
     this.toolOptionsPanel?.setView(view);
@@ -105,11 +117,62 @@ export class ToolManager {
     fragments: OBC.FragmentsManager,
     canvas: HTMLCanvasElement,
   ): void {
-    viewport.addEventListener("dblclick", () => {
+    this.camera = world.camera as OBC.OrthoPerspectiveCamera;
+
+    // Arrastrar el gizmo de un plano ya creado también termina en un mouseup
+    // sobre el viewport, que el navegador sigue con un evento "click" nativo
+    // aunque hubo movimiento de por medio. Sin este flag ese click se leía
+    // como "crear plano nuevo" en el punto donde soltaste el arrastre.
+    let suppressNextSectionClick = false;
+    let isDraggingSectionPlane   = false;
+    this.sectionTool.clipper.onBeforeDrag.add(() => {
+      isDraggingSectionPlane = true;
+      this.sectionTool.hidePreview();
+    });
+    this.sectionTool.clipper.onAfterDrag.add(() => {
+      isDraggingSectionPlane = false;
+      suppressNextSectionClick = true;
+    });
+
+    viewport.addEventListener("click", () => {
       if (this.activeMode === "section") {
+        if (suppressNextSectionClick) {
+          suppressNextSectionClick = false;
+          return;
+        }
         this.sectionTool.clipper.create(world);
         this.sectionTool.rebuildSectionFills();
       }
+    });
+
+    // Disco fantasma que anticipa, bajo el cursor, dónde quedaría el próximo
+    // plano de corte. El raycast es asíncrono, así que se coalesce a un
+    // máximo de un cálculo en vuelo por vez (igual que el preview de label).
+    let sectionPreviewPending  = false;
+    let sectionPreviewInFlight = false;
+    const flushSectionPreview = async () => {
+      if (this.activeMode !== "section" || isDraggingSectionPlane) {
+        sectionPreviewPending = false;
+        return;
+      }
+      sectionPreviewInFlight = true;
+      await this.sectionTool.updatePreview();
+      sectionPreviewInFlight = false;
+      if (sectionPreviewPending) {
+        sectionPreviewPending = false;
+        flushSectionPreview();
+      }
+    };
+    viewport.addEventListener("pointermove", () => {
+      if (this.activeMode !== "section" || isDraggingSectionPlane) return;
+      if (sectionPreviewInFlight) {
+        sectionPreviewPending = true;
+        return;
+      }
+      flushSectionPreview();
+    });
+    viewport.addEventListener("pointerleave", () => {
+      if (this.activeMode === "section") this.sectionTool.hidePreview();
     });
 
     // Modo "label": un click simple sobre el modelo coloca un WorldLabel en el
@@ -176,6 +239,50 @@ export class ToolManager {
       if (this.activeMode === "label") this.worldLabelTool.previewAt(null);
     });
 
+    // Modo "draw": arrastrar dibuja un trazo a mano alzada sobre el plano fijado
+    // al entrar al modo (perpendicular a cámara, por el origen). Un pointerdown
+    // sobre un trazo ya existente lo selecciona en vez de empezar uno nuevo; uno
+    // sobre vacío deselecciona y arranca el trazo. Fuera de un arrastre de
+    // dibujo la cámara sigue navegable con normalidad (zoom, pan, orbit por
+    // botón derecho) — solo se congela mientras dura el trazo en sí.
+    //
+    // Este listener se registra en fase de CAPTURA (a diferencia del resto de
+    // este archivo) porque camera-controls decide la acción a aplicar (orbit)
+    // apenas ve el pointerdown sobre el propio canvas, en su fase de burbuja —
+    // que corre antes que un listener nuestro en "viewport" (un ancestro) si
+    // este fuera también de burbuja. Capturando en el ancestro nos adelantamos:
+    // deshabilitar la cámara acá SÍ llega a tiempo para este gesto.
+    let isDrawingStroke = false;
+    viewport.addEventListener("pointerdown", (event: PointerEvent) => {
+      if (event.button !== 0 || this.activeMode !== "draw") return;
+      // La toolbar y el panel de opciones flotan dentro de "viewport" (para
+      // posicionarse por CSS sobre el canvas), así que un click en esos
+      // controles también pasa por acá — sin este filtro, clickear "Navegar"
+      // deseleccionaba el trazo activo y arrancaba un trazo espurio.
+      if (event.target !== canvas) return;
+
+      const hitId = this.drawTool.pickStrokeAt(event.clientX, event.clientY);
+      if (hitId) {
+        this.drawTool.select(hitId);
+        return;
+      }
+      this.drawTool.deselect();
+
+      this.camera?.setUserInput(false);
+      isDrawingStroke = true;
+      this.drawTool.beginStroke(event.clientX, event.clientY);
+
+      window.addEventListener("pointerup", () => {
+        isDrawingStroke = false;
+        this.camera?.setUserInput(true);
+        this.drawTool.endStroke();
+      }, { once: true });
+    }, { capture: true });
+    viewport.addEventListener("pointermove", (event: PointerEvent) => {
+      if (this.activeMode !== "draw" || !isDrawingStroke) return;
+      this.drawTool.extendStroke(event.clientX, event.clientY);
+    });
+
     // En modo "measure", un click sobre un snap válido (vértice/borde/superficie,
     // según measurer.snappings) coloca el punto de medición en lugar de dejar
     // que camera-controls arranque el orbit; sin snap válido bajo el cursor el
@@ -219,6 +326,8 @@ export class ToolManager {
       if (isEditableTarget(event)) return;
       if (this.activeMode === "measure") {
         this.measurer.delete();
+      } else if (this.activeMode === "draw") {
+        this.drawTool.deleteSelected();
       } else if (this.activeMode === "section") {
         this.sectionTool.clipper.delete(world);
         this.sectionTool.rebuildSectionFills();

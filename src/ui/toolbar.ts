@@ -94,7 +94,7 @@ export function createToolbar(
             }}>
             <bim-tooltip>
               <div style="font-weight:600;">Plano de corte</div>
-              <div style="opacity:0.75;">Doble click para crear. Muestra hatch por categoría IFC.</div>
+              <div style="opacity:0.75;">Click para crear. Muestra hatch por categoría IFC.</div>
             </bim-tooltip>
           </bim-button>
         </bim-toolbar-section>
@@ -110,6 +110,21 @@ export function createToolbar(
             <bim-tooltip>
               <div style="font-weight:600;">Etiqueta</div>
               <div style="opacity:0.75;">Click para dejar una etiqueta con comentario</div>
+            </bim-tooltip>
+          </bim-button>
+        </bim-toolbar-section>
+
+        <bim-toolbar-section label="Dibujo">
+          <bim-button
+            icon="mdi:draw"
+            ${BUI.ref((el: Element | undefined) => { toolManager.drawBtnEl = el as BUI.Button ?? null; })}
+            @click=${() => {
+              if (toolManager.activeMode === "draw") toolManager.setMode("navigate");
+              else toolManager.setMode("draw");
+            }}>
+            <bim-tooltip>
+              <div style="font-weight:600;">Dibujo</div>
+              <div style="opacity:0.75;">Arrastra para dibujar a mano alzada sobre un plano fijo frente a la cámara</div>
             </bim-tooltip>
           </bim-button>
         </bim-toolbar-section>

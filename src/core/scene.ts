@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import * as OBC from "@thatopen/components";
 import * as OBF from "@thatopen/components-front";
+import CameraControls from "camera-controls";
 
 export interface SceneSetup {
   components: OBC.Components;
@@ -99,6 +100,18 @@ export function createScene(viewport: HTMLElement): SceneSetup {
   cc.truckSpeed          = 2.0;
   cc.smoothTime          = 0.15;
   cc.draggingSmoothTime  = 0.05;
+
+  // Orbit con el botón central (rueda) en vez del izquierdo, que queda libre
+  // para selección/herramientas; el scroll sigue haciendo zoom (default).
+  cc.mouseButtons.left   = CameraControls.ACTION.NONE;
+  cc.mouseButtons.middle = CameraControls.ACTION.ROTATE;
+
+  // camera-controls no hace preventDefault en pointerdown (para poder seguir
+  // el drag fuera de un iframe), así que sin esto el botón central dispara
+  // además el autoscroll nativo del navegador y compite con el orbit.
+  viewport.addEventListener("mousedown", (event) => {
+    if (event.button === 1) event.preventDefault();
+  });
 
   world.camera.updateAspect();
   world.renderer.onResize.add(() => world.camera.updateAspect());

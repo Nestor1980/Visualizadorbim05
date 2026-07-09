@@ -343,7 +343,23 @@ export function createModelsTree(
     return wrapper;
   }
 
+  function disarmTooltips(): void {
+    // @thatopen/ui reubica el bim-tooltip visible fuera de su fila (a un
+    // overlay global bajo <body>) y no cancela su temporizador ni limpia su
+    // estado si la fila original se destruye antes de que el mouse salga —
+    // como "mouseleave" nunca llega a dispararse sobre un nodo ya removido,
+    // el tooltip queda huérfano en pantalla (o aparece más tarde desde un
+    // timer pendiente). Este árbol se reconstruye entero en cada cambio, así
+    // que apagamos cualquier tooltip pendiente/visible antes de destruirlo.
+    document.querySelectorAll("bim-tooltip").forEach((el) => {
+      const tooltip = el as HTMLElement & { timeoutId?: number };
+      clearTimeout(tooltip.timeoutId);
+      tooltip.removeAttribute("visible");
+    });
+  }
+
   function render(): void {
+    disarmTooltips();
     root.innerHTML = "";
 
     const allModelIds = [...fragments.list.keys()];

@@ -1,6 +1,7 @@
 import * as OBC from "@thatopen/components";
 import * as OBF from "@thatopen/components-front";
 import type { WorldLabelTool } from "../../tools/world-label-tool";
+import type { DrawTool } from "../../tools/draw-tool";
 
 interface DataLayer {
   id: string;
@@ -12,11 +13,12 @@ interface DataLayer {
   sectionsExpanded: boolean;
   topicsExpanded: boolean;
   labelsExpanded: boolean;
+  drawingsExpanded: boolean;
   /** Estado del último toggle de visibilidad grupal (no se recalcula desde los miembros). */
   hidden: boolean;
 }
 
-type DraggedItem = { kind: "measurement" | "section" | "topic" | "label"; id: string } | null;
+type DraggedItem = { kind: "measurement" | "section" | "topic" | "label" | "draw"; id: string } | null;
 
 /**
  * Renderiza filas para el árbol de `models-tree.ts` (Colecciones), que es el
@@ -36,6 +38,7 @@ export function createDataLayersTree(
   clipper: OBC.Clipper,
   topics: OBC.BCFTopics,
   labels: WorldLabelTool,
+  drawings: DrawTool,
   world: OBC.World,
   requestRender: () => void,
   getDefaultCollectionId: () => string,
@@ -51,8 +54,11 @@ export function createDataLayersTree(
   const planeDataLayer = new Map<string, string>();       // planeId -> dataLayerId
   const topicDataLayer = new Map<string, string>();       // topicGuid -> dataLayerId
   const labelDataLayer = new Map<string, string>();       // labelId -> dataLayerId
+  const drawDataLayer = new Map<string, string>();        // strokeId -> dataLayerId
+  const drawName = new Map<string, string>();             // strokeId -> nombre editable
   let measurementCounter = 0;
   let sectionCounter = 0;
+  let drawCounter = 0;
 
   let draggedItem: DraggedItem = null;
   let draggedDataLayerId: string | null = null;
@@ -74,6 +80,9 @@ export function createDataLayersTree(
 
     const livePlaneIds = new Set(clipper.list.keys());
     for (const id of [...planeDataLayer.keys()]) if (!livePlaneIds.has(id)) planeDataLayer.delete(id);
+
+    for (const id of [...drawDataLayer.keys()]) if (!drawings.list.has(id)) drawDataLayer.delete(id);
+    for (const id of [...drawName.keys()]) if (!drawings.list.has(id)) drawName.delete(id);
   }
 
   function makeIconButton(icon: string, title: string, onClick: () => void | Promise<void>): HTMLButtonElement {
@@ -315,9 +324,64 @@ export function createDataLayersTree(
     return row;
   }
 
+  function renderDrawRow(strokeId: string): HTMLElement {
+    const stroke = drawings.list.get(strokeId);
+    if (!stroke) return document.createElement("div");
+    const name = drawName.get(strokeId) ?? strokeId;
+    const hidden = !stroke.line.visible;
+
+    const row = document.createElement("div");
+    row.className = "models-row models-row--nested data-layer-item-row";
+    row.draggable = true;
+    row.addEventListener("dragstart", (e: DragEvent) => {
+      draggedItem = { kind: "draw", id: strokeId };
+      e.dataTransfer?.setData("text/plain", strokeId);
+      if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+      row.classList.add("is-dragging");
+    });
+    row.addEventListener("dragend", () => {
+      draggedItem = null;
+      row.classList.remove("is-dragging");
+    });
+
+    const icon = document.createElement("bim-icon") as any;
+    icon.icon = "mdi:draw";
+    icon.className = "models-row-icon";
+
+    const labelEl = document.createElement("span");
+    labelEl.className = "models-row-name";
+    labelEl.textContent = name;
+    labelEl.addEventListener("dblclick", (e) => {
+      e.stopPropagation();
+      startRename(name, labelEl, (value) => drawName.set(strokeId, value));
+    });
+
+    row.style.cursor = "pointer";
+    row.addEventListener("click", (e) => {
+      if ((e.target as HTMLElement).closest(".models-row-actions")) return;
+      drawings.select(strokeId);
+    });
+
+    const actions = document.createElement("div");
+    actions.className = "models-row-actions";
+
+    const eyeBtn = makeIconButton(hidden ? "mdi:eye-off" : "mdi:eye", hidden ? "Mostrar" : "Ocultar", () => {
+      stroke.line.visible = !stroke.line.visible;
+      requestRender();
+    });
+    const deleteBtn = makeIconButton("mdi:delete", "Eliminar trazo", () => {
+      drawings.deleteStroke(strokeId);
+      requestRender();
+    });
+
+    actions.append(eyeBtn, deleteBtn);
+    row.append(icon, labelEl, actions);
+    return row;
+  }
+
   function renderCategoryRow(
     layer: DataLayer,
-    kind: "measurement" | "section" | "topic" | "label",
+    kind: "measurement" | "section" | "topic" | "label" | "draw",
     label: string,
     icon: string,
     itemIds: string[],
@@ -345,6 +409,7 @@ export function createDataLayersTree(
       if (kind === "measurement") measurementDataLayer.set(draggedItem.id, layer.id);
       else if (kind === "section") planeDataLayer.set(draggedItem.id, layer.id);
       else if (kind === "topic") topicDataLayer.set(draggedItem.id, layer.id);
+      else if (kind === "draw") drawDataLayer.set(draggedItem.id, layer.id);
       else labelDataLayer.set(draggedItem.id, layer.id);
       draggedItem = null;
       requestRender();
@@ -394,6 +459,7 @@ export function createDataLayersTree(
           kind === "measurement" ? "Sin mediciones" :
           kind === "section"     ? "Sin cortes" :
           kind === "topic"       ? "Sin BCF Topics" :
+          kind === "draw"        ? "Sin trazos" :
           "Sin etiquetas";
         wrapper.append(empty);
       } else {
@@ -402,6 +468,7 @@ export function createDataLayersTree(
             kind === "measurement" ? renderMeasurementRow(id) :
             kind === "section"     ? renderSectionRow(id) :
             kind === "topic"       ? renderTopicRow(id) :
+            kind === "draw"        ? renderDrawRow(id) :
             renderLabelRow(id),
           );
         }
@@ -423,6 +490,9 @@ export function createDataLayersTree(
       .map(([id]) => id);
     const labelIds = [...labelDataLayer.entries()]
       .filter(([id, layerId]) => layerId === layer.id && labels.list.has(id))
+      .map(([id]) => id);
+    const drawIds = [...drawDataLayer.entries()]
+      .filter(([id, layerId]) => layerId === layer.id && drawings.list.has(id))
       .map(([id]) => id);
 
     const wrapper = document.createElement("div");
@@ -492,18 +562,23 @@ export function createDataLayersTree(
           const worldLabel = labels.list.get(id);
           if (worldLabel) worldLabel.mark.visible = !layer.hidden;
         }
+        for (const id of drawIds) {
+          const stroke = drawings.list.get(id);
+          if (stroke) stroke.line.visible = !layer.hidden;
+        }
         requestRender();
       },
     );
 
-    const deleteBtn = makeIconButton("mdi:delete", "Eliminar capa de datos (borra sus mediciones, cortes y etiquetas)", () => {
-      if (!confirm(`¿Eliminar "${layer.name}" y todas sus mediciones/cortes/etiquetas?`)) return;
+    const deleteBtn = makeIconButton("mdi:delete", "Eliminar capa de datos (borra sus mediciones, cortes, etiquetas y dibujos)", () => {
+      if (!confirm(`¿Eliminar "${layer.name}" y todas sus mediciones/cortes/etiquetas/dibujos?`)) return;
       for (const id of measurementIds) {
         const line = findLineById(id);
         if (line) measurer.list.delete(line);
       }
       for (const id of sectionIds) clipper.delete(world, id);
       for (const id of labelIds) labels.deleteLabel(id);
+      for (const id of drawIds) drawings.deleteStroke(id);
       const idx = dataLayers.indexOf(layer);
       if (idx >= 0) dataLayers.splice(idx, 1);
       requestRender();
@@ -530,6 +605,10 @@ export function createDataLayersTree(
         layer, "label", "Etiquetas", "material-symbols:sticky-note-2-outline", labelIds,
         layer.labelsExpanded, () => { layer.labelsExpanded = !layer.labelsExpanded; },
       ));
+      wrapper.append(renderCategoryRow(
+        layer, "draw", "Dibujo", "mdi:draw", drawIds,
+        layer.drawingsExpanded, () => { layer.drawingsExpanded = !layer.drawingsExpanded; },
+      ));
     }
 
     return wrapper;
@@ -550,6 +629,7 @@ export function createDataLayersTree(
       sectionsExpanded: true,
       topicsExpanded: true,
       labelsExpanded: true,
+      drawingsExpanded: true,
       hidden: false,
     };
     dataLayers.push(layer);
@@ -634,6 +714,17 @@ export function createDataLayersTree(
     requestRender();
   });
   labels.onItemDeleted.add((id) => { labelDataLayer.delete(id); requestRender(); });
+
+  drawings.onItemAdded.add((stroke) => {
+    const layer = ensureDefaultDataLayer();
+    if (!drawDataLayer.has(stroke.id)) drawDataLayer.set(stroke.id, layer.id);
+    if (!drawName.has(stroke.id)) {
+      drawCounter += 1;
+      drawName.set(stroke.id, `Trazo ${drawCounter}`);
+    }
+    requestRender();
+  });
+  drawings.onItemDeleted.add((id) => { drawDataLayer.delete(id); drawName.delete(id); requestRender(); });
 
   return { renderForCollection, createDataLayer, moveDataLayerTo, onCollectionRemoved, isDraggingDataLayer };
 }

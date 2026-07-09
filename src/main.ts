@@ -13,6 +13,7 @@ import { createViewCube }         from "./camera/view-cube";
 import { createSectionTool }      from "./tools/section-tool";
 import { createMeasurementTool }  from "./tools/measurement-tool";
 import { createWorldLabelTool }   from "./tools/world-label-tool";
+import { createDrawTool }         from "./tools/draw-tool";
 import { ToolManager }            from "./tools/tool-manager";
 import { setupIfcLoader }                  from "./ifc/loader";
 import { setupModelProcessor, processModel } from "./ifc/model-processor";
@@ -101,7 +102,8 @@ async function startApp(): Promise<{
   const sectionTool    = createSectionTool(components, world);
   const measurer       = createMeasurementTool(components, world);
   const worldLabelTool = createWorldLabelTool(world, viewport);
-  const toolManager    = new ToolManager(measurer, highlighter, hoverer, sectionTool, worldLabelTool);
+  const drawTool       = createDrawTool(world, threeRenderer.domElement);
+  const toolManager    = new ToolManager(measurer, highlighter, hoverer, sectionTool, worldLabelTool, drawTool);
 
   // — Postprocessing —
   const postproduction = setupPostprocessing(world, worldGrid, components, axisMaterials);
@@ -128,7 +130,7 @@ async function startApp(): Promise<{
   createViewCube(viewport, world, fragments, vcRef);
 
   const selectionManager = new SelectionManager();
-  const toolOptionsPanel = createToolOptionsPanel(components, fragments, measurer, sectionTool, worldLabelTool);
+  const toolOptionsPanel = createToolOptionsPanel(components, fragments, measurer, sectionTool, worldLabelTool, drawTool);
   viewport.append(toolOptionsPanel.element);
 
   toolManager.setToolOptionsPanel(toolOptionsPanel);
@@ -163,7 +165,7 @@ async function startApp(): Promise<{
 
   const leftPanel = createLeftPanel(
     components, fragments, ifcLoader, highlighter, onModelLoaded,
-    measurer, sectionTool.clipper, topics, worldLabelTool, world,
+    measurer, sectionTool.clipper, topics, worldLabelTool, drawTool, world,
   );
 
   // Panel dinámico de abajo: Renderizado.

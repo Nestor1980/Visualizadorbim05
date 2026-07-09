@@ -62,6 +62,8 @@ export function createWorldLabelTool(world: OBC.World, viewport: HTMLElement): W
 
   function applyColor(label: WorldLabel): void {
     label.element.style.setProperty("--label-color", label.color);
+    const picker = label.element.querySelector<HTMLInputElement>(".world-label-color-input");
+    if (picker && picker.value !== label.color) picker.value = label.color;
   }
 
   function deselect(): void {
@@ -113,6 +115,20 @@ export function createWorldLabelTool(world: OBC.World, viewport: HTMLElement): W
     });
   }
 
+  function createColorPicker(label: WorldLabel): HTMLInputElement {
+    const input = document.createElement("input");
+    input.type      = "color";
+    input.className = "world-label-color-input";
+    input.value     = label.color;
+    input.title     = "Color de la etiqueta";
+    input.addEventListener("click", (e) => { e.stopPropagation(); select(label.id); });
+    input.addEventListener("input", (e) => {
+      e.stopPropagation();
+      setColor(label.id, (e.target as HTMLInputElement).value);
+    });
+    return input;
+  }
+
   function renderComment(label: WorldLabel, commentEl: HTMLElement): void {
     commentEl.textContent = label.comment;
     commentEl.className = "world-label-comment";
@@ -126,6 +142,7 @@ export function createWorldLabelTool(world: OBC.World, viewport: HTMLElement): W
   function enterEditMode(label: WorldLabel): void {
     select(label.id);
     label.element.dataset.state = "expanded";
+    label.element.classList.add("world-label-editing");
 
     const titleField   = label.element.querySelector(".world-label-title, .world-label-title-input");
     const commentField = label.element.querySelector(".world-label-comment, .world-label-comment-textarea");
@@ -197,6 +214,7 @@ export function createWorldLabelTool(world: OBC.World, viewport: HTMLElement): W
       titleInput.replaceWith(newTitleEl);
       commentInput.replaceWith(newCommentEl);
       actions.remove();
+      label.element.classList.remove("world-label-editing");
       applyState(label);
     };
     const commit = () => finishEdit(true);
@@ -254,10 +272,13 @@ export function createWorldLabelTool(world: OBC.World, viewport: HTMLElement): W
     const card = document.createElement("div");
     card.className = "world-label-card";
 
+    const titleRow = document.createElement("div");
+    titleRow.className = "world-label-title-row";
+
     const titleEl   = document.createElement("div");
     const commentEl = document.createElement("div");
 
-    card.append(titleEl, commentEl);
+    card.append(titleRow, commentEl);
     element.append(badge, card);
 
     const mark = new OBF.Mark(world, element);
@@ -275,6 +296,7 @@ export function createWorldLabelTool(world: OBC.World, viewport: HTMLElement): W
       mark,
       element,
     };
+    titleRow.append(titleEl, createColorPicker(label));
     applyColor(label);
     renderTitle(label, titleEl);
     renderComment(label, commentEl);
