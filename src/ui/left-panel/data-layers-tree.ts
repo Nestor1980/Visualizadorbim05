@@ -1,9 +1,10 @@
+import * as THREE from "three";
 import * as OBC from "@thatopen/components";
 import * as OBF from "@thatopen/components-front";
 import type { WorldLabelTool } from "../../tools/world-label-tool";
 import type { DrawTool } from "../../tools/draw-tool";
 
-interface DataLayer {
+export interface DataLayer {
   id: string;
   name: string;
   /** Colección que contiene esta capa; null = suelta (nivel raíz), igual que un modelo sin colección. */
@@ -16,6 +17,33 @@ interface DataLayer {
   drawingsExpanded: boolean;
   /** Estado del último toggle de visibilidad grupal (no se recalcula desde los miembros). */
   hidden: boolean;
+}
+
+type Vec3Tuple = [number, number, number];
+
+/** Estado serializable de las capas de datos y todo lo que anidan, para
+ *  guardar/restaurar un proyecto. Los ítems no guardan su id interno: al
+ *  recrearlos reciben uno nuevo y se reasignan a `layerId` justo después. */
+export interface SerializedDataLayers {
+  layers: DataLayer[];
+  measurements: {
+    layerId: string; name: string; start: Vec3Tuple; end: Vec3Tuple;
+    units: string; rounding: number; visible: boolean;
+  }[];
+  sections: {
+    layerId: string; title: string; origin: Vec3Tuple; normal: Vec3Tuple; enabled: boolean;
+  }[];
+  /** El guid de un BCF Topic sobrevive al export/import BCF, así que acá no
+   *  hace falta reasignar nada: se guarda el guid original tal cual. */
+  topics: { layerId: string; topicGuid: string }[];
+  labels: {
+    layerId: string; title: string; comment: string; color: string;
+    position: Vec3Tuple; visible: boolean;
+  }[];
+  drawings: {
+    layerId: string; name: string; color: string; width: number; points: Vec3Tuple[];
+    visible: boolean; cameraPosition: Vec3Tuple; cameraTarget: Vec3Tuple;
+  }[];
 }
 
 type DraggedItem = { kind: "measurement" | "section" | "topic" | "label" | "draw"; id: string } | null;
@@ -31,6 +59,11 @@ export interface DataLayersController {
   moveDataLayerTo: (layerId: string, collectionId: string | null) => void;
   onCollectionRemoved: (collectionId: string) => void;
   isDraggingDataLayer: () => string | null;
+  serialize: () => SerializedDataLayers;
+  /** Reemplaza capas de datos, mediciones, cortes, etiquetas y trazos actuales
+   *  por los guardados. Los BCF topics deben estar cargados (`topics.load`)
+   *  ANTES de llamar a esto, para que la reasignación por guid encuentre el topic. */
+  restore: (data: SerializedDataLayers) => void;
 }
 
 export function createDataLayersTree(
@@ -47,7 +80,10 @@ export function createDataLayersTree(
 ): DataLayersController {
   const dataLayers: DataLayer[] = [];
   let dataLayerCounter = 0;
-  let defaultDataLayerId: string | null = null;
+  /** Id de la capa de datos activa: las mediciones/cortes/topics/etiquetas/
+   *  trazos nuevos se anidan ahí. Siempre hay una sola (mientras exista al
+   *  menos una capa) y no se puede desactivar directamente, solo activar otra. */
+  let activeDataLayerId: string | null = null;
 
   const measurementName = new Map<string, string>();      // lineId -> nombre editable
   const measurementDataLayer = new Map<string, string>(); // lineId -> dataLayerId
@@ -100,6 +136,31 @@ export function createDataLayersTree(
       onClick();
     });
     return btn;
+  }
+
+  /** Checkbox "Capa de datos activa": las mediciones/cortes/topics/etiquetas/
+   *  trazos nuevos se anidan en la capa activa. Solo una puede estarlo, y no
+   *  se puede desmarcar la actual directamente (solo activando otra). */
+  function makeActiveCheckbox(layer: DataLayer): HTMLInputElement {
+    const isActive = layer.id === activeDataLayerId;
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.className = "layer-active-checkbox";
+    checkbox.checked = isActive;
+    checkbox.setAttribute("aria-label", "Capa de datos activa");
+    checkbox.title = isActive
+      ? "Capa activa (las mediciones nuevas caen acá)"
+      : "Marcar como capa de datos activa";
+    checkbox.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (layer.id === activeDataLayerId) {
+        e.preventDefault();
+        return;
+      }
+      activeDataLayerId = layer.id;
+      requestRender();
+    });
+    return checkbox;
   }
 
   function startRename(initialValue: string, nameEl: HTMLElement, onCommit: (value: string) => void): void {
@@ -454,26 +515,14 @@ export function createDataLayersTree(
     wrapper.append(row);
 
     if (expanded) {
-      if (itemIds.length === 0) {
-        const empty = document.createElement("div");
-        empty.className = "collection-empty data-layer-item-empty";
-        empty.textContent =
-          kind === "measurement" ? "Sin mediciones" :
-          kind === "section"     ? "Sin cortes" :
-          kind === "topic"       ? "Sin BCF Topics" :
-          kind === "draw"        ? "Sin trazos" :
-          "Sin etiquetas";
-        wrapper.append(empty);
-      } else {
-        for (const id of itemIds) {
-          wrapper.append(
-            kind === "measurement" ? renderMeasurementRow(id) :
-            kind === "section"     ? renderSectionRow(id) :
-            kind === "topic"       ? renderTopicRow(id) :
-            kind === "draw"        ? renderDrawRow(id) :
-            renderLabelRow(id),
-          );
-        }
+      for (const id of itemIds) {
+        wrapper.append(
+          kind === "measurement" ? renderMeasurementRow(id) :
+          kind === "section"     ? renderSectionRow(id) :
+          kind === "topic"       ? renderTopicRow(id) :
+          kind === "draw"        ? renderDrawRow(id) :
+          renderLabelRow(id),
+        );
       }
     }
 
@@ -514,6 +563,33 @@ export function createDataLayersTree(
     row.addEventListener("dragend", () => {
       draggedDataLayerId = null;
       row.classList.remove("is-dragging");
+    });
+
+    // Permite soltar un ítem directo sobre la fila de la capa (no solo sobre
+    // su categoría) para poder reasignarlo aunque esa categoría esté vacía
+    // y por lo tanto oculta.
+    row.addEventListener("dragover", (e: DragEvent) => {
+      if (!draggedItem) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+      row.classList.add("drag-over");
+    });
+    row.addEventListener("dragleave", (e: DragEvent) => {
+      if (!row.contains(e.relatedTarget as Node)) row.classList.remove("drag-over");
+    });
+    row.addEventListener("drop", (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      row.classList.remove("drag-over");
+      if (!draggedItem) return;
+      if (draggedItem.kind === "measurement") measurementDataLayer.set(draggedItem.id, layer.id);
+      else if (draggedItem.kind === "section") planeDataLayer.set(draggedItem.id, layer.id);
+      else if (draggedItem.kind === "topic") topicDataLayer.set(draggedItem.id, layer.id);
+      else if (draggedItem.kind === "draw") drawDataLayer.set(draggedItem.id, layer.id);
+      else labelDataLayer.set(draggedItem.id, layer.id);
+      draggedItem = null;
+      requestRender();
     });
 
     const arrow = document.createElement("button");
@@ -583,34 +659,47 @@ export function createDataLayersTree(
       for (const id of drawIds) drawings.deleteStroke(id);
       const idx = dataLayers.indexOf(layer);
       if (idx >= 0) dataLayers.splice(idx, 1);
+      if (activeDataLayerId === layer.id) activeDataLayerId = dataLayers[0]?.id ?? null;
       requestRender();
     });
 
-    actions.append(eyeBtn, deleteBtn);
+    const activeCheckbox = makeActiveCheckbox(layer);
+
+    actions.append(activeCheckbox, eyeBtn, deleteBtn);
     row.append(arrow, layerIcon, nameEl, actions);
     wrapper.append(row);
 
     if (layer.expanded) {
-      wrapper.append(renderCategoryRow(
-        layer, "measurement", "Mediciones", "solar:ruler-bold", measurementIds,
-        layer.measurementsExpanded, () => { layer.measurementsExpanded = !layer.measurementsExpanded; },
-      ));
-      wrapper.append(renderCategoryRow(
-        layer, "section", "Vista de cortes", "material-symbols:cut", sectionIds,
-        layer.sectionsExpanded, () => { layer.sectionsExpanded = !layer.sectionsExpanded; },
-      ));
-      wrapper.append(renderCategoryRow(
-        layer, "topic", "BCF Topics", "mdi:file-document-multiple-outline", topicIds,
-        layer.topicsExpanded, () => { layer.topicsExpanded = !layer.topicsExpanded; },
-      ));
-      wrapper.append(renderCategoryRow(
-        layer, "label", "Etiquetas", "material-symbols:sticky-note-2-outline", labelIds,
-        layer.labelsExpanded, () => { layer.labelsExpanded = !layer.labelsExpanded; },
-      ));
-      wrapper.append(renderCategoryRow(
-        layer, "draw", "Dibujo", "mdi:draw", drawIds,
-        layer.drawingsExpanded, () => { layer.drawingsExpanded = !layer.drawingsExpanded; },
-      ));
+      if (measurementIds.length > 0) {
+        wrapper.append(renderCategoryRow(
+          layer, "measurement", "Mediciones", "solar:ruler-bold", measurementIds,
+          layer.measurementsExpanded, () => { layer.measurementsExpanded = !layer.measurementsExpanded; },
+        ));
+      }
+      if (sectionIds.length > 0) {
+        wrapper.append(renderCategoryRow(
+          layer, "section", "Vista de cortes", "material-symbols:cut", sectionIds,
+          layer.sectionsExpanded, () => { layer.sectionsExpanded = !layer.sectionsExpanded; },
+        ));
+      }
+      if (topicIds.length > 0) {
+        wrapper.append(renderCategoryRow(
+          layer, "topic", "BCF Topics", "mdi:file-document-multiple-outline", topicIds,
+          layer.topicsExpanded, () => { layer.topicsExpanded = !layer.topicsExpanded; },
+        ));
+      }
+      if (labelIds.length > 0) {
+        wrapper.append(renderCategoryRow(
+          layer, "label", "Etiquetas", "material-symbols:sticky-note-2-outline", labelIds,
+          layer.labelsExpanded, () => { layer.labelsExpanded = !layer.labelsExpanded; },
+        ));
+      }
+      if (drawIds.length > 0) {
+        wrapper.append(renderCategoryRow(
+          layer, "draw", "Dibujo", "mdi:draw", drawIds,
+          layer.drawingsExpanded, () => { layer.drawingsExpanded = !layer.drawingsExpanded; },
+        ));
+      }
     }
 
     return wrapper;
@@ -645,10 +734,10 @@ export function createDataLayersTree(
    * no hay ninguna (o se eliminó), se crea una nueva.
    */
   function ensureDefaultDataLayer(): DataLayer {
-    const existing = dataLayers.find((l) => l.id === defaultDataLayerId);
+    const existing = dataLayers.find((l) => l.id === activeDataLayerId);
     if (existing) return existing;
     const layer = dataLayers[0] ?? addDataLayer(getDefaultCollectionId());
-    defaultDataLayerId = layer.id;
+    activeDataLayerId = layer.id;
     return layer;
   }
 
@@ -728,5 +817,126 @@ export function createDataLayersTree(
   });
   drawings.onItemDeleted.add((id) => { drawDataLayer.delete(id); drawName.delete(id); requestRender(); });
 
-  return { renderForCollection, createDataLayer, moveDataLayerTo, onCollectionRemoved, isDraggingDataLayer };
+  const v3 = (v: THREE.Vector3): Vec3Tuple => [v.x, v.y, v.z];
+  const toVec3 = (v: Vec3Tuple): THREE.Vector3 => new THREE.Vector3(v[0], v[1], v[2]);
+
+  function serialize(): SerializedDataLayers {
+    const measurements = [...measurementDataLayer.entries()]
+      .map(([id, layerId]) => {
+        const line = findLineById(id);
+        if (!line) return null;
+        const dimLine = findDimensionLineById(id);
+        return {
+          layerId, name: measurementName.get(id) ?? id,
+          start: v3(line.start), end: v3(line.end),
+          units: line.units, rounding: line.rounding,
+          visible: dimLine ? dimLine.visible : true,
+        };
+      })
+      .filter((m): m is NonNullable<typeof m> => m !== null);
+
+    const sections = [...planeDataLayer.entries()]
+      .map(([id, layerId]) => {
+        const plane = clipper.list.get(id);
+        if (!plane) return null;
+        return { layerId, title: plane.title, origin: v3(plane.origin), normal: v3(plane.normal), enabled: plane.enabled };
+      })
+      .filter((s): s is NonNullable<typeof s> => s !== null);
+
+    const topicsOut = [...topicDataLayer.entries()]
+      .filter(([guid]) => topics.list.has(guid))
+      .map(([topicGuid, layerId]) => ({ layerId, topicGuid }));
+
+    const labelsOut = [...labelDataLayer.entries()]
+      .map(([id, layerId]) => {
+        const label = labels.list.get(id);
+        if (!label) return null;
+        return {
+          layerId, title: label.title, comment: label.comment, color: label.color,
+          position: v3(label.position), visible: label.mark.visible,
+        };
+      })
+      .filter((l): l is NonNullable<typeof l> => l !== null);
+
+    const drawingsOut = [...drawDataLayer.entries()]
+      .map(([id, layerId]) => {
+        const stroke = drawings.list.get(id);
+        if (!stroke) return null;
+        return {
+          layerId, name: drawName.get(id) ?? id, color: stroke.color, width: stroke.width,
+          points: stroke.points.map(v3), visible: stroke.line.visible,
+          cameraPosition: v3(stroke.cameraPosition), cameraTarget: v3(stroke.cameraTarget),
+        };
+      })
+      .filter((d): d is NonNullable<typeof d> => d !== null);
+
+    return {
+      layers: dataLayers.map((l) => ({ ...l })),
+      measurements, sections, topics: topicsOut, labels: labelsOut, drawings: drawingsOut,
+    };
+  }
+
+  function restore(data: SerializedDataLayers): void {
+    dataLayers.length = 0;
+    measurementDataLayer.clear();
+    measurementName.clear();
+    planeDataLayer.clear();
+    topicDataLayer.clear();
+    labelDataLayer.clear();
+    drawDataLayer.clear();
+    drawName.clear();
+    activeDataLayerId = null;
+
+    for (const l of data.layers) dataLayers.push({ ...l });
+
+    for (const m of data.measurements) {
+      const line = new OBF.Line(toVec3(m.start), toVec3(m.end));
+      line.units = m.units as OBF.Line["units"];
+      line.rounding = m.rounding;
+      measurer.list.add(line);
+      measurementDataLayer.set(line.id, m.layerId);
+      measurementName.set(line.id, m.name);
+      const dimLine = findDimensionLineById(line.id);
+      if (dimLine) dimLine.visible = m.visible;
+    }
+
+    for (const s of data.sections) {
+      const id = clipper.createFromNormalAndCoplanarPoint(world, toVec3(s.normal), toVec3(s.origin));
+      const plane = clipper.list.get(id);
+      if (plane) {
+        plane.title = s.title;
+        plane.enabled = s.enabled;
+      }
+      planeDataLayer.set(id, s.layerId);
+    }
+
+    for (const t of data.topics) {
+      if (topics.list.has(t.topicGuid)) topicDataLayer.set(t.topicGuid, t.layerId);
+    }
+
+    for (const lb of data.labels) {
+      const label = labels.createFromData({
+        title: lb.title, comment: lb.comment, color: lb.color, position: toVec3(lb.position),
+      });
+      label.mark.visible = lb.visible;
+      labelDataLayer.set(label.id, lb.layerId);
+    }
+
+    for (const d of data.drawings) {
+      const stroke = drawings.addStroke({
+        color: d.color, width: d.width, points: d.points.map(toVec3),
+        cameraPosition: toVec3(d.cameraPosition), cameraTarget: toVec3(d.cameraTarget),
+      });
+      stroke.line.visible = d.visible;
+      drawDataLayer.set(stroke.id, d.layerId);
+      drawName.set(stroke.id, d.name);
+    }
+
+    requestRender();
+  }
+
+  return {
+    renderForCollection, createDataLayer, moveDataLayerTo, onCollectionRemoved, isDraggingDataLayer,
+    serialize, restore,
+  };
 }

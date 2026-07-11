@@ -9,7 +9,7 @@ import { injectCompactTableCSS, HIGHLIGHT_COLOR } from "./config/constants";
 import { createScene }            from "./core/scene";
 import { setupPostprocessing }    from "./core/postprocessing";
 import { setupPivotRaycaster }    from "./camera/pivot-raycaster";
-import { createViewCube }         from "./camera/view-cube";
+import { createNavWidget }        from "./camera/nav-widget";
 import { createSectionTool }      from "./tools/section-tool";
 import { createMeasurementTool }  from "./tools/measurement-tool";
 import { createWorldLabelTool }   from "./tools/world-label-tool";
@@ -22,6 +22,7 @@ import { createLeftPanel }    from "./ui/left-panel/index";
 import { createToolOptionsPanel } from "./ui/tool-options-panel";
 import { createToolbar }          from "./ui/toolbar";
 import { createProjectToolbar }   from "./ui/project-toolbar";
+import type { ProjectIoDeps }     from "./project/project-io";
 import { createSettingsModal }    from "./ui/settings-modal";
 import { setupLayout }            from "./ui/layout";
 import { createPanelSplit }       from "./ui/panel-split";
@@ -127,7 +128,7 @@ async function startApp(): Promise<{
 
   // — UI (requires CUI.Manager.init first) —
   CUI.Manager.init();
-  createViewCube(viewport, world, fragments, vcRef);
+  createNavWidget(viewport, world, fragments, vcRef);
 
   const selectionManager = new SelectionManager();
   const toolOptionsPanel = createToolOptionsPanel(components, fragments, measurer, sectionTool, worldLabelTool, drawTool);
@@ -200,7 +201,8 @@ async function startApp(): Promise<{
   leftPanel.onOpenTopicsTable(() => openTopicsModal());
   const toolbar        = createToolbar(world, fragments, toolManager, selectionManager, openModal);
   const settingsModal   = createSettingsModal();
-  const projectToolbar  = createProjectToolbar(fragments, settingsModal.openModal);
+  const projectIoDeps: ProjectIoDeps = { fragments, topics, viewpoints, world, leftPanel };
+  const projectToolbar  = createProjectToolbar(projectIoDeps, settingsModal.openModal);
 
   // Los botones de la toolbar se registran en el ToolManager al crearla, después
   // del setMode inicial: re-aplicar el modo para que "Navegar" arranque activo.

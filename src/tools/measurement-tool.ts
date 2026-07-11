@@ -51,8 +51,31 @@ export function createMeasurementTool(
   }
 
   setupDimensionArrows(measurer, world);
+  setupVertexPickerRulerIcon(measurer);
 
   return measurer;
+}
+
+/**
+ * Agrega un ícono de regla junto al cuadrado de snap de vértice, mismo
+ * lenguaje visual que el ícono fantasma de corte/notas. El picker de
+ * vértices es interno a la librería (`Measurement._vertexPicker`, sin API
+ * pública) y crea su propio elemento recién en el primer snap exitoso, así
+ * que hay que engancharse la primera vez que aparece en vez de crearlo
+ * nosotros; `onPointerMove` ya se dispara en cada pick y es idempotente
+ * revisar/agregar el ícono ahí.
+ */
+function setupVertexPickerRulerIcon(measurer: OBF.LengthMeasurement): void {
+  measurer.onPointerMove.add(() => {
+    const marker = (measurer as any)._vertexPicker?.marker as OBF.Mark | undefined;
+    const el = marker?.three?.element as HTMLElement | undefined;
+    if (!el || el.querySelector(".measurement-preview-icon")) return;
+    el.style.position = "relative";
+    const icon = document.createElement("bim-icon") as any;
+    icon.className = "measurement-preview-icon";
+    icon.icon = "solar:ruler-bold";
+    el.append(icon);
+  });
 }
 
 /** Crea el círculo (más grande que el de la librería) usado como marcador

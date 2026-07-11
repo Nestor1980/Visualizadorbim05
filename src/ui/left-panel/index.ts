@@ -1,8 +1,8 @@
 import * as OBC from "@thatopen/components";
 import * as OBF from "@thatopen/components-front";
 import * as BUI from "@thatopen/ui";
-import { createModelsTree } from "./models-tree";
-import { createDataLayersTree } from "./data-layers-tree";
+import { createModelsTree, SerializedCollections } from "./models-tree";
+import { createDataLayersTree, SerializedDataLayers } from "./data-layers-tree";
 import type { WorldLabelTool } from "../../tools/world-label-tool";
 import type { DrawTool } from "../../tools/draw-tool";
 import { saveRecentFile } from "../../ifc/recent-files";
@@ -21,6 +21,14 @@ export interface LeftPanel {
   clearTypesSelection: () => void;
   triggerLoadIfc: () => void;
   loadIfcBytes: (bytes: Uint8Array, name: string) => Promise<void>;
+  /** Bytes IFC crudos de los modelos actualmente cargados en esta sesión, indexados
+   *  por su nombre (= id del modelo en `fragments.list`). Usado para armar el
+   *  paquete de "Guardar Proyecto". */
+  getModelBytes: () => Map<string, Uint8Array>;
+  serializeCollections: () => SerializedCollections;
+  restoreCollections: (data: SerializedCollections) => void;
+  serializeDataLayers: () => SerializedDataLayers;
+  restoreDataLayers: (data: SerializedDataLayers) => void;
 }
 
 export function createLeftPanel(
@@ -56,6 +64,12 @@ export function createLeftPanel(
   loadTooltipDesc.style.opacity = "0.75";
   loadTooltipDesc.textContent = "Cargar un archivo .ifc";
 
+  /** Bytes crudos por modelo cargado en esta sesión (clave = nombre = modelId).
+   *  Distinto del caché de "recientes" en IndexedDB: ese tiene un tope de
+   *  entradas (MAX_RECENT) y podría descartar un modelo que sigue abierto. */
+  const modelBytes = new Map<string, Uint8Array>();
+  fragments.list.onItemDeleted.add((modelId) => modelBytes.delete(modelId));
+
   const loadIfcBytes = async (bytes: Uint8Array, name: string): Promise<void> => {
     if (loadIfcBtn.loading) return;
     loadIfcBtn.loading         = true;
@@ -68,6 +82,7 @@ export function createLeftPanel(
           },
         },
       });
+      modelBytes.set(name, bytes);
       await onModelLoaded(model, name);
       saveRecentFile(name, bytes).catch((error) => console.error("No se pudo guardar en recientes:", error));
       loadTooltipDesc.textContent = "Cargar un archivo .ifc";
@@ -163,5 +178,10 @@ export function createLeftPanel(
     clearTypesSelection: modelsTree.clearTypesSelection,
     triggerLoadIfc: onLoadClick,
     loadIfcBytes,
+    getModelBytes: () => modelBytes,
+    serializeCollections: modelsTree.serialize,
+    restoreCollections: modelsTree.restore,
+    serializeDataLayers: dataLayersController.serialize,
+    restoreDataLayers: dataLayersController.restore,
   };
 }

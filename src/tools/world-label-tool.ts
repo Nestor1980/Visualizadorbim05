@@ -19,6 +19,9 @@ export interface WorldLabelTool {
   /** Se dispara con la etiqueta recién seleccionada, o `null` al deseleccionar. */
   onSelectionChange: OBC.Event<WorldLabel | null>;
   createAt: (point: THREE.Vector3) => WorldLabel;
+  /** Recrea una etiqueta ya con título/comentario/color fijos (sin entrar a modo
+   *  edición), usada al restaurar un proyecto guardado. */
+  createFromData: (data: { title: string; comment: string; color: string; position: THREE.Vector3 }) => WorldLabel;
   deleteLabel: (id: string) => void;
   select: (id: string) => void;
   rename: (id: string, title: string) => void;
@@ -307,6 +310,60 @@ export function createWorldLabelTool(world: OBC.World, viewport: HTMLElement): W
     return label;
   }
 
+  /** Igual que `createAt`, pero con título/comentario/color fijos de entrada y
+   *  sin abrir el modo edición — pensada para restaurar un proyecto guardado,
+   *  no para la creación interactiva del usuario. */
+  function createFromData(data: { title: string; comment: string; color: string; position: THREE.Vector3 }): WorldLabel {
+    labelCounter += 1;
+    const id = `label-${Date.now()}-${labelCounter}`;
+
+    const element = document.createElement("div");
+    element.className   = "world-label";
+    element.dataset.state = "expanded";
+
+    const badge = document.createElement("div");
+    badge.className = "world-label-badge";
+    const icon = document.createElement("bim-icon") as any;
+    icon.icon  = "mdi:note-text-outline";
+    badge.append(icon);
+    badge.addEventListener("click", (e) => { e.stopPropagation(); select(id); });
+
+    const card = document.createElement("div");
+    card.className = "world-label-card";
+
+    const titleRow = document.createElement("div");
+    titleRow.className = "world-label-title-row";
+
+    const titleEl   = document.createElement("div");
+    const commentEl = document.createElement("div");
+
+    card.append(titleRow, commentEl);
+    element.append(badge, card);
+
+    const mark = new OBF.Mark(world, element);
+    mark.three.position.copy(data.position);
+    mark.three.center.set(0.5, 1);
+
+    const label: WorldLabel = {
+      id,
+      title:   data.title,
+      comment: data.comment,
+      color:   data.color,
+      position: data.position.clone(),
+      mark,
+      element,
+    };
+    titleRow.append(titleEl, createColorPicker(label));
+    applyColor(label);
+    renderTitle(label, titleEl);
+    renderComment(label, commentEl);
+    list.set(id, label);
+
+    applyState(label);
+    onItemAdded.trigger(label);
+    return label;
+  }
+
   function rename(id: string, title: string): void {
     const label = list.get(id);
     if (!label) return;
@@ -362,7 +419,7 @@ export function createWorldLabelTool(world: OBC.World, viewport: HTMLElement): W
 
   return {
     list, onItemAdded, onItemDeleted, onSelectionChange,
-    createAt, deleteLabel, select, rename, edit, setColor, setActiveColor, getActiveColor,
+    createAt, createFromData, deleteLabel, select, rename, edit, setColor, setActiveColor, getActiveColor,
     updateLOD, previewAt,
   };
 }

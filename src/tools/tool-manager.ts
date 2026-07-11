@@ -319,6 +319,23 @@ export class ToolManager {
       window.addEventListener("pointerup", () => camera.setUserInput(true), { once: true });
     });
 
+    // Botón derecho: con una tool activa (distinta de "navigate"), un click
+    // derecho simple la cierra y vuelve a modo selección/navegación. Un
+    // arrastre con el botón derecho sigue paneando la cámara con normalidad
+    // (camera-controls ya hace preventDefault del contextmenu nativo), así
+    // que solo se interpreta como "cerrar tool" si el puntero no se movió.
+    let rightDownPos: { x: number; y: number } | null = null;
+    viewport.addEventListener("pointerdown", (event: PointerEvent) => {
+      if (event.button === 2) rightDownPos = { x: event.clientX, y: event.clientY };
+    });
+    window.addEventListener("pointerup", (event: PointerEvent) => {
+      if (event.button !== 2 || !rightDownPos) return;
+      const { x, y } = rightDownPos;
+      rightDownPos = null;
+      const moved = Math.hypot(event.clientX - x, event.clientY - y) > 4;
+      if (!moved && this.activeMode !== "navigate") this.setMode("navigate");
+    });
+
     window.addEventListener("keydown", (event) => {
       if (event.code !== "Delete" && event.code !== "Backspace") return;
       // No borrar mediciones/planos mientras el usuario escribe en un campo

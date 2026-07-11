@@ -40,6 +40,15 @@ export interface DrawTool {
   beginStroke: (clientX: number, clientY: number) => void;
   extendStroke: (clientX: number, clientY: number) => void;
   endStroke: () => void;
+  /** Recrea un trazo ya terminado a partir de sus puntos finales (sin pasar por
+   *  el flujo interactivo begin/extend/end) — usada al restaurar un proyecto guardado. */
+  addStroke: (data: {
+    color: string;
+    width: number;
+    points: THREE.Vector3[];
+    cameraPosition: THREE.Vector3;
+    cameraTarget: THREE.Vector3;
+  }) => DrawStroke;
   /** Anima la cámara de vuelta a como estaba parada cuando se dibujó este trazo. */
   focus: (id: string) => void;
 }
@@ -340,6 +349,27 @@ export function createDrawTool(world: OBC.World, canvas: HTMLCanvasElement): Dra
     onItemAdded.trigger(stroke);
   }
 
+  function addStroke(data: {
+    color: string;
+    width: number;
+    points: THREE.Vector3[];
+    cameraPosition: THREE.Vector3;
+    cameraTarget: THREE.Vector3;
+  }): DrawStroke {
+    strokeCounter += 1;
+    const id = `stroke-${Date.now()}-${strokeCounter}`;
+    const line = createLine(data.color, data.width);
+    strokesGroup.add(line);
+    setLinePositions(line, data.points);
+    const stroke: DrawStroke = {
+      id, color: data.color, width: data.width, points: data.points.slice(), line,
+      cameraPosition: data.cameraPosition.clone(), cameraTarget: data.cameraTarget.clone(),
+    };
+    list.set(id, stroke);
+    onItemAdded.trigger(stroke);
+    return stroke;
+  }
+
   return {
     list, onItemAdded, onItemDeleted, onSelectionChange,
     get active() { return active; },
@@ -347,6 +377,6 @@ export function createDrawTool(world: OBC.World, canvas: HTMLCanvasElement): Dra
     setActiveColor, getActiveColor,
     setActiveWidth, getActiveWidth,
     select, deselect, deleteStroke, deleteSelected,
-    pickStrokeAt, beginStroke, extendStroke, endStroke, focus,
+    pickStrokeAt, beginStroke, extendStroke, endStroke, addStroke, focus,
   };
 }

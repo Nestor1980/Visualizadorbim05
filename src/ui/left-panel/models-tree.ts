@@ -11,6 +11,12 @@ interface Collection {
   hidden: boolean;
 }
 
+export interface SerializedCollections {
+  collections: { id: string; name: string; expanded: boolean; hidden: boolean }[];
+  /** [modelId, collectionId | null][] — solo para modelos presentes al momento de guardar. */
+  modelCollection: [string, string | null][];
+}
+
 export interface ModelsTree {
   element: HTMLElement;
   createCollection: () => void;
@@ -20,6 +26,11 @@ export interface ModelsTree {
   onElementClick: (handler: (modelId: string, localId: number) => void) => void;
   onTypeGroupClick: (handler: (modelIdMap: OBC.ModelIdMap, typeLabel: string, count: number) => void) => void;
   clearTypesSelection: () => void;
+  serialize: () => SerializedCollections;
+  /** Reemplaza colecciones y asignaciones modelo→colección actuales por las
+   *  guardadas (usado al abrir un proyecto). Los modelos deben estar ya
+   *  cargados en `fragments` para que su asignación surta efecto. */
+  restore: (data: SerializedCollections) => void;
 }
 
 /** Paleta de matices para diferenciar renglones de modelos a simple vista. */
@@ -438,6 +449,24 @@ export function createModelsTree(
     });
   };
 
+  function serialize(): SerializedCollections {
+    return {
+      collections: collections.map((c) => ({ id: c.id, name: c.name, expanded: c.expanded, hidden: c.hidden })),
+      modelCollection: [...modelCollection.entries()].filter(([id]) => fragments.list.has(id)),
+    };
+  }
+
+  function restore(data: SerializedCollections): void {
+    collections.length = 0;
+    for (const c of data.collections) collections.push({ ...c });
+    modelCollection.clear();
+    for (const [modelId, collectionId] of data.modelCollection) {
+      if (fragments.list.has(modelId)) modelCollection.set(modelId, collectionId);
+    }
+    defaultCollectionId = collections[0]?.id ?? null;
+    render();
+  }
+
   fragments.list.onItemSet.add(({ key }) => {
     if (!modelCollection.has(key)) {
       modelCollection.set(key, ensureDefaultCollection().id);
@@ -460,5 +489,7 @@ export function createModelsTree(
     clearTypesSelection: () => {
       for (const state of modelTreeState.values()) state.view?.clearSelection();
     },
+    serialize,
+    restore,
   };
 }

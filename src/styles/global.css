@@ -506,6 +506,14 @@ bim-tooltip {
   background: var(--bim-ui_bg-contrast-10);
   opacity: 1;
 }
+.layer-active-checkbox {
+  flex-shrink: 0;
+  width: 13px;
+  height: 13px;
+  margin: 0 2px 0 0;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
 .collection-rename-input {
   flex: 1 1 auto;
   min-width: 0;
@@ -651,6 +659,120 @@ bim-view-cube:active {
   cursor: grabbing;
 }
 
+.nav-widget-menu-trigger {
+  position: absolute;
+  z-index: 999;
+  bottom: 7rem;
+  right: 1rem;
+}
+
+.nav-widget-menu-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  min-width: 190px;
+}
+.nav-widget-menu-panel bim-slider {
+  width: 100%;
+}
+.nav-widget-menu-size-label {
+  font-size: 0.75rem;
+  color: var(--bim-ui_bg-contrast-60);
+  padding: 0 0.25rem;
+}
+
+.axis-gizmo-parent {
+  position: absolute;
+  z-index: 999;
+  bottom: 1rem;
+  right: 1rem;
+  cursor: grab;
+}
+.axis-gizmo-parent:active {
+  cursor: grabbing;
+}
+
+.axis-gizmo-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+}
+
+.gizmo-line {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  border-radius: 2px;
+  pointer-events: none;
+}
+.gizmo-line-x {
+  width: 68px;
+  height: 2px;
+  margin-left: -34px;
+  margin-top: -1px;
+  background: rgba(229, 57, 53, 0.85);
+}
+.gizmo-line-y {
+  width: 2px;
+  height: 68px;
+  margin-left: -1px;
+  margin-top: -34px;
+  background: rgba(67, 160, 71, 0.85);
+}
+.gizmo-line-z {
+  width: 68px;
+  height: 2px;
+  margin-left: -34px;
+  margin-top: -1px;
+  background: rgba(63, 81, 181, 0.85);
+  transform: rotateY(90deg);
+}
+
+.gizmo-dot {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  /* El transform del dot (ver axis-gizmo.ts) ya incluye su propio
+   * translate(-50%,-50%) de recentrado; si el pivote quedara en el centro
+   * por defecto (50% 50%), el navegador aplicaría ese recentrado dos veces
+   * (una implícita por el pivote, otra explícita en la cadena), descentrando
+   * cada dot según su propio ancho/alto. Con el pivote en la esquina, la
+   * cadena de transform es la única responsable de centrarlo. */
+  transform-origin: 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 700;
+  color: white;
+  user-select: none;
+  cursor: pointer;
+}
+
+.gizmo-dot-positive {
+  width: 22px;
+  height: 22px;
+}
+.gizmo-dot-negative {
+  width: 12px;
+  height: 12px;
+  opacity: 0.55;
+}
+.gizmo-dot-negative:hover {
+  opacity: 0.9;
+}
+
+.gizmo-dot-x-pos, .gizmo-dot-x-neg { background: #e53935; }
+.gizmo-dot-y-pos, .gizmo-dot-y-neg { background: #43a047; }
+.gizmo-dot-z-pos, .gizmo-dot-z-neg { background: #3f51b5; }
+
+.gizmo-dot-positive:hover {
+  filter: brightness(1.3);
+}
+
 #loading-screen {
   position: fixed;
   inset: 0;
@@ -714,9 +836,11 @@ bim-view-cube:active {
 }
 
 .welcome-scroll {
-  max-height: calc(100vh - 2rem);
-  overflow-y: auto;
-  scrollbar-gutter: stable;
+  /* Sin scroll propio: la tarjeta se muestra completa y solo
+   * .welcome-projects/.welcome-recents scrollean internamente. El
+   * overflow:hidden de .welcome-card recorta como resguardo en viewports
+   * muy bajos donde ni así entra todo el contenido. */
+  overflow-y: visible;
 }
 
 .welcome-top-actions {
@@ -785,6 +909,15 @@ bim-view-cube:active {
 }
 .welcome-col h3.welcome-subheading {
   margin-top: 1rem;
+}
+
+.welcome-projects,
+.welcome-recents {
+  /* Altura máxima ~3 elementos; desde el 4to, la sección scrollea sola
+   * en vez de crecer y forzar scroll en toda la tarjeta. */
+  max-height: 184px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .welcome-file-item {
@@ -1355,4 +1488,18 @@ bim-view-cube:active {
    * sobre sí misma. */
   transform-origin: 50% 31px;
   transform: translateX(-50%) rotate(0deg);
+}
+
+/* Ícono de regla junto al cuadrado de snap de vértice del medidor, mismo
+ * lenguaje visual que .world-label-preview / .section-preview (ícono
+ * fantasma acompañando al indicador bajo el cursor). */
+.measurement-preview-icon {
+  position: absolute;
+  top: 50%;
+  left: 100%;
+  transform: translate(8px, -50%);
+  font-size: 28px;
+  color: var(--accent);
+  opacity: 0.85;
+  pointer-events: none;
 }

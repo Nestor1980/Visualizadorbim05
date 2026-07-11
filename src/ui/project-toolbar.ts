@@ -1,10 +1,13 @@
-import * as OBC from "@thatopen/components";
 import * as BUI from "@thatopen/ui";
+import type { ProjectIoDeps } from "../project/project-io";
+import { newProject, pickAndOpenProjectFile, saveProjectToFile } from "../project/project-io";
 
 export function createProjectToolbar(
-  fragments: OBC.FragmentsManager,
+  projectIoDeps: ProjectIoDeps,
   openSettingsModal: () => void,
 ): BUI.Toolbar {
+  const fragments = projectIoDeps.fragments;
+
   const exportFrag = async () => {
     const [model] = fragments.list.values();
     if (!model) return;
@@ -16,15 +19,34 @@ export function createProjectToolbar(
     URL.revokeObjectURL(link.href);
   };
 
+  const onNewProject = async () => {
+    if (!confirm("¿Empezar un proyecto nuevo? Se perderá lo que no hayas guardado.")) return;
+    await newProject(projectIoDeps);
+  };
+
+  const onOpenProject = () => pickAndOpenProjectFile(projectIoDeps);
+
+  const onSaveProject = async () => {
+    try {
+      await saveProjectToFile(projectIoDeps);
+    } catch (error) {
+      console.error("Error al guardar el proyecto:", error);
+      alert("No se pudo guardar el proyecto. Revisá la consola para más detalles.");
+    }
+  };
+
   const toolbar = BUI.Component.create<BUI.Toolbar>(() => {
     return BUI.html`
       <bim-toolbar>
         <bim-toolbar-section>
-          <bim-button icon="material-symbols:note-add-outline">
+          <bim-button icon="material-symbols:note-add-outline" @click=${onNewProject}>
             <bim-tooltip>Nuevo Proyecto</bim-tooltip>
           </bim-button>
-          <bim-button icon="material-symbols:folder-open-outline">
+          <bim-button icon="material-symbols:folder-open-outline" @click=${onOpenProject}>
             <bim-tooltip>Abrir Proyecto</bim-tooltip>
+          </bim-button>
+          <bim-button icon="material-symbols:save-outline" @click=${onSaveProject}>
+            <bim-tooltip>Guardar Proyecto</bim-tooltip>
           </bim-button>
           <bim-button
             icon="material-symbols:download"
