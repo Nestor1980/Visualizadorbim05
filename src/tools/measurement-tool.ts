@@ -29,6 +29,12 @@ const LEADER_GAP_SIZE  = 0.05;
  *  original para mostrar la línea punteada — evita dibujarla cuando la
  *  etiqueta está prácticamente en su lugar. */
 const LEADER_MIN_DISTANCE = 0.05;
+/** Tolerancia (unidades del mundo) para la oclusión de cotas: sin este
+ *  margen, el rayo hacia el punto medio de una cota apoyada sobre una
+ *  superficie vuelve a golpear esa misma superficie a una distancia casi
+ *  idéntica (por el error de precisión del raycast) y la cota se marcaría
+ *  como "detrás" de sí misma. */
+const OCCLUSION_TOLERANCE = 0.03;
 
 export function createMeasurementTool(
   components: OBC.Components,
@@ -101,6 +107,15 @@ interface DimensionVisuals {
 }
 
 /**
+ * Compartido entre `setupDimensionArrows` (que crea/destruye estas mallas) y
+ * `setupWallOcclusion` (que necesita ocultarlas junto con la cota) — vive a
+ * nivel de módulo porque ambas funciones se enganchan a la misma instancia
+ * de `measurer.lines` pero no tienen otra forma de pasarse este estado sin
+ * cambiar la firma pública de `createMeasurementTool`.
+ */
+const dimensionVisuals = new Map<OBF.DimensionLine, DimensionVisuals>();
+
+/**
  * Una vez fijada una cota se le agrega: círculos de vértice más grandes en
  * los extremos, una línea gruesa (del mismo color) que los conecta, una
  * flecha de doble punta sobre esa línea apuntando hacia cada vértice, y la
@@ -108,8 +123,6 @@ interface DimensionVisuals {
  * punteada) para despejarla en cotas chicas donde el número no entra.
  */
 function setupDimensionArrows(measurer: OBF.LengthMeasurement, world: OBC.World): void {
-  const visuals = new Map<OBF.DimensionLine, DimensionVisuals>();
-
   const createArrowHead = (): THREE.Mesh => {
     const geometry = new THREE.ConeGeometry(1, 1, 12);
     geometry.translate(0, -0.5, 0); // la punta queda en el origen local
@@ -192,7 +205,7 @@ function setupDimensionArrows(measurer: OBF.LengthMeasurement, world: OBC.World)
     };
     dim.lineElement.parent?.add(visual.shaft, visual.arrowStart, visual.arrowEnd, visual.leader);
     updateVisuals(dim, visual);
-    visuals.set(dim, visual);
+    dimensionVisuals.set(dim, visual);
 
     makeLabelDraggable(dim, visual, world);
   });
@@ -200,8 +213,8 @@ function setupDimensionArrows(measurer: OBF.LengthMeasurement, world: OBC.World)
   // Las mallas/línea son hijas del mismo grupo que la cota, así que
   // `DimensionLine.dispose()` ya las remueve y libera solo; acá solo hace
   // falta soltar la referencia para no filtrar memoria.
-  measurer.lines.onBeforeDelete.add((dim) => visuals.delete(dim));
-  measurer.lines.onCleared.add(() => visuals.clear());
+  measurer.lines.onBeforeDelete.add((dim) => dimensionVisuals.delete(dim));
+  measurer.lines.onCleared.add(() => dimensionVisuals.clear());
 
   // El color de los círculos de vértice ya lo sincroniza la propia librería
   // (`DimensionLine.color`) cuando cambia `measurer.color`; acá solo hace
@@ -209,13 +222,149 @@ function setupDimensionArrows(measurer: OBF.LengthMeasurement, world: OBC.World)
   measurer.onStateChanged.add((changes) => {
     if (!changes.includes("color")) return;
     const color = measurer.linesMaterial.color;
-    for (const visual of visuals.values()) {
+    for (const visual of dimensionVisuals.values()) {
       (visual.arrowStart.material as THREE.MeshBasicMaterial).color.copy(color);
       (visual.arrowEnd.material as THREE.MeshBasicMaterial).color.copy(color);
       visual.shaftMaterial.color.copy(color);
       visual.leaderMaterial.color.copy(color);
     }
   });
+}
+
+export interface WallOcclusionControl {
+  isEnabled: () => boolean;
+  setEnabled: (enabled: boolean) => void;
+}
+
+/** Proyecta un punto del mundo a coordenadas de cliente (mismo espacio que
+ *  `PointerEvent.clientX/Y`) contra el canvas dado, o `null` si cae detrás
+ *  de la cámara. */
+function projectToClient(
+  point: THREE.Vector3,
+  camera: THREE.Camera,
+  dom: HTMLCanvasElement,
+): { x: number; y: number } | null {
+  const ndc = point.clone().project(camera);
+  if (ndc.z < -1 || ndc.z > 1) return null;
+  const rect = dom.getBoundingClientRect();
+  return {
+    x: rect.left + (ndc.x * 0.5 + 0.5) * rect.width,
+    y: rect.top + (1 - (ndc.y * 0.5 + 0.5)) * rect.height,
+  };
+}
+
+/**
+ * Controla el checkbox "Oclusión de pared" del panel del medidor: con la
+ * opción activa, oculta por completo las cotas cuyos DOS extremos quedan
+ * detrás de geometría del modelo vista desde la cámara actual (p. ej. la
+ * cota de una pared posterior, tapada por la pared de enfrente). Se evalúa
+ * cada vértice por separado en vez de un único punto medio: alcanza con que
+ * la superficie adyacente a uno de los dos extremos esté visible para
+ * mostrar la cota completa — esto evita falsos positivos en paredes que sí
+ * están a la vista, donde una sola muestra en el medio del borde puede caer
+ * justo en una esquina/silueta y reportar oclusión por error. Se recalcula
+ * en cada movimiento de cámara y cada vez que se agrega o borra una cota.
+ */
+export function setupWallOcclusion(
+  measurer: OBF.LengthMeasurement,
+  world: OBC.World,
+  fragments: OBC.FragmentsManager,
+): WallOcclusionControl {
+  let enabled = false;
+  let updateScheduled = false;
+  const cameraForward = new THREE.Vector3();
+  const toPoint = new THREE.Vector3();
+
+  const setDimVisible = (dim: OBF.DimensionLine, visible: boolean): void => {
+    dim.visible = visible;
+    const visual = dimensionVisuals.get(dim);
+    if (!visual) return;
+    visual.shaft.visible = visible;
+    visual.arrowStart.visible = visible;
+    visual.arrowEnd.visible = visible;
+    if (!visible) visual.leader.visible = false;
+  };
+
+  // Profundidad de un punto a lo largo de la dirección de vista de la
+  // cámara (no la distancia euclídea a `camera.position`): con cámara
+  // ortográfica los rayos son paralelos entre sí, no divergen desde la
+  // posición de la cámara, así que la distancia euclídea no es comparable
+  // entre el vértice de la cota y el punto donde impacta el raycast.
+  const depthAlongView = (point: THREE.Vector3, camera: THREE.Camera): number => {
+    camera.getWorldDirection(cameraForward);
+    toPoint.subVectors(point, camera.position);
+    return toPoint.dot(cameraForward);
+  };
+
+  // Verifica si la superficie adyacente a un único vértice está tapada:
+  // proyecta el punto a pantalla, raycastea el modelo ahí mismo y compara
+  // profundidades. Si el primer impacto queda notoriamente más cerca de la
+  // cámara que el propio vértice, hay geometría de por medio.
+  const isVertexOccluded = async (point: THREE.Vector3, camera: THREE.Camera, dom: HTMLCanvasElement): Promise<boolean> => {
+    const screen = projectToClient(point, camera, dom);
+    if (!screen) return false;
+    const pointDepth = depthAlongView(point, camera);
+
+    let result: FRAGS.RaycastResult | undefined;
+    try {
+      result = await fragments.raycast({
+        camera,
+        mouse: new THREE.Vector2(screen.x, screen.y),
+        dom,
+      });
+    } catch {
+      return false;
+    }
+    if (!result) return false;
+    const hitDepth = depthAlongView(result.point, camera);
+    return hitDepth < pointDepth - OCCLUSION_TOLERANCE;
+  };
+
+  const isOccluded = async (dim: OBF.DimensionLine): Promise<boolean> => {
+    const dom = world.renderer?.three.domElement;
+    if (!dom) return false;
+    const camera = world.camera.three;
+    const [startOccluded, endOccluded] = await Promise.all([
+      isVertexOccluded(dim.line.start, camera, dom),
+      isVertexOccluded(dim.line.end, camera, dom),
+    ]);
+    return startOccluded && endOccluded;
+  };
+
+  const updateAll = async (): Promise<void> => {
+    if (!enabled) return;
+    const dims = [...measurer.lines];
+    const occluded = await Promise.all(dims.map(isOccluded));
+    dims.forEach((dim, i) => setDimVisible(dim, !occluded[i]));
+  };
+
+  // Coalesce recalculos: el evento "update" de camera-controls dispara varias
+  // veces por gesto de cámara, y no tiene sentido lanzar un raycast por cota
+  // en cada uno — un solo recálculo por frame alcanza.
+  const scheduleUpdate = (): void => {
+    if (!enabled || updateScheduled) return;
+    updateScheduled = true;
+    requestAnimationFrame(() => {
+      updateScheduled = false;
+      updateAll();
+    });
+  };
+
+  if (world.camera.controls) {
+    world.camera.controls.addEventListener("update", scheduleUpdate);
+  }
+  measurer.lines.onItemAdded.add(scheduleUpdate);
+  measurer.lines.onBeforeDelete.add(scheduleUpdate);
+
+  return {
+    isEnabled: () => enabled,
+    setEnabled: (value: boolean) => {
+      if (enabled === value) return;
+      enabled = value;
+      if (enabled) void updateAll();
+      else for (const dim of measurer.lines) setDimVisible(dim, true);
+    },
+  };
 }
 
 /**
@@ -295,10 +444,14 @@ function makeLabelDraggable(dim: OBF.DimensionLine, visual: DimensionVisuals, wo
 
 /**
  * A partir de una cara raycasteada (triángulos indexados locales al pick, ver
- * `RaycastHit.facePoints`/`faceIndices`), crea una medición por cada arista
- * única de esa triangulación. Un borde compartido entre dos triángulos
- * adyacentes aparece dos veces en la lista de aristas por triángulo — se
- * cuenta una sola vez.
+ * `RaycastHit.facePoints`/`faceIndices`), crea una medición por cada borde
+ * de perímetro de esa triangulación. Un borde interior compartido entre dos
+ * triángulos adyacentes (p.ej. la diagonal de un rectángulo dividido en 2
+ * triángulos) aparece en ambos y se excluye del todo — solo son "de
+ * perímetro" los bordes que pertenecen a un único triángulo. Si el contorno
+ * resulta ser un rectángulo (lados opuestos iguales) alcanza con mostrar
+ * largo y alto, así que se descartan los dos lados redundantes; ver
+ * `selectFaceEdgesToMeasure`.
  */
 export function measureFaceEdges(
   measurer: OBF.LengthMeasurement,
@@ -308,7 +461,7 @@ export function measureFaceEdges(
   const getVertex = (idx: number): THREE.Vector3 =>
     new THREE.Vector3(facePoints[idx * 3], facePoints[idx * 3 + 1], facePoints[idx * 3 + 2]);
 
-  const seenEdges = new Set<string>();
+  const edgeCount = new Map<string, { a: number; b: number; count: number }>();
   for (let i = 0; i < faceIndices.length; i += 3) {
     const tri = [faceIndices[i], faceIndices[i + 1], faceIndices[i + 2]];
     for (let e = 0; e < 3; e++) {
@@ -316,13 +469,67 @@ export function measureFaceEdges(
       const b = tri[(e + 1) % 3];
       if (a === b) continue;
       const key = a < b ? `${a}_${b}` : `${b}_${a}`;
-      if (seenEdges.has(key)) continue;
-      seenEdges.add(key);
-
-      const line = new OBF.Line(getVertex(a), getVertex(b));
-      line.units    = measurer.units;
-      line.rounding = measurer.rounding;
-      measurer.list.add(line);
+      const existing = edgeCount.get(key);
+      if (existing) existing.count++;
+      else edgeCount.set(key, { a, b, count: 1 });
     }
   }
+
+  const boundaryEdges = [...edgeCount.values()].filter((edge) => edge.count === 1);
+  const edgesToMeasure = selectFaceEdgesToMeasure(boundaryEdges, getVertex);
+  for (const { a, b } of edgesToMeasure) {
+    const line = new OBF.Line(getVertex(a), getVertex(b));
+    line.units    = measurer.units;
+    line.rounding = measurer.rounding;
+    measurer.list.add(line);
+  }
+}
+
+/**
+ * Si el contorno tiene exactamente 4 bordes y estos cierran un rectángulo
+ * (lados opuestos de igual longitud), devuelve solo dos bordes adyacentes
+ * (largo y alto) — los otros dos son redundantes. En cualquier otro caso
+ * (lados opuestos distintos, contorno que no cierra, u otra cantidad de
+ * bordes) devuelve todos los bordes sin modificar.
+ */
+function selectFaceEdgesToMeasure(
+  edges: { a: number; b: number }[],
+  getVertex: (idx: number) => THREE.Vector3,
+): { a: number; b: number }[] {
+  if (edges.length !== 4) return edges;
+
+  const ordered = orderEdgeCycle(edges);
+  if (!ordered) return edges;
+
+  const length = (edge: { a: number; b: number }) =>
+    getVertex(edge.a).distanceTo(getVertex(edge.b));
+  const approxEqual = (x: number, y: number) => Math.abs(x - y) <= Math.max(x, y) * 0.005 + 1e-4;
+
+  const isRectangular =
+    approxEqual(length(ordered[0]), length(ordered[2])) &&
+    approxEqual(length(ordered[1]), length(ordered[3]));
+
+  return isRectangular ? [ordered[0], ordered[1]] : edges;
+}
+
+/**
+ * Reordena bordes sin orden garantizado en el ciclo que forman, siguiendo la
+ * cadena de vértices compartidos. Devuelve `null` si no cierran un ciclo
+ * simple (cada borde debe conectar con el siguiente por un vértice en común
+ * y el último debe volver al primero).
+ */
+function orderEdgeCycle(
+  edges: { a: number; b: number }[],
+): { a: number; b: number }[] | null {
+  const remaining = [...edges];
+  const ordered = [remaining.shift()!];
+  while (remaining.length > 0) {
+    const last = ordered[ordered.length - 1];
+    const idx = remaining.findIndex((e) => e.a === last.b || e.b === last.b);
+    if (idx === -1) return null;
+    const [next] = remaining.splice(idx, 1);
+    ordered.push(next.a === last.b ? next : { a: next.b, b: next.a });
+  }
+  if (ordered[ordered.length - 1].b !== ordered[0].a) return null;
+  return ordered;
 }

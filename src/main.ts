@@ -11,7 +11,7 @@ import { setupPostprocessing }    from "./core/postprocessing";
 import { setupPivotRaycaster }    from "./camera/pivot-raycaster";
 import { createNavWidget }        from "./camera/nav-widget";
 import { createSectionTool }      from "./tools/section-tool";
-import { createMeasurementTool }  from "./tools/measurement-tool";
+import { createMeasurementTool, setupWallOcclusion } from "./tools/measurement-tool";
 import { createWorldLabelTool }   from "./tools/world-label-tool";
 import { createDrawTool }         from "./tools/draw-tool";
 import { ToolManager }            from "./tools/tool-manager";
@@ -102,6 +102,7 @@ async function startApp(): Promise<{
   // — Tools —
   const sectionTool    = createSectionTool(components, world);
   const measurer       = createMeasurementTool(components, world);
+  const wallOcclusion  = setupWallOcclusion(measurer, world, fragments);
   const worldLabelTool = createWorldLabelTool(world, viewport);
   const drawTool       = createDrawTool(world, threeRenderer.domElement);
   const toolManager    = new ToolManager(measurer, highlighter, hoverer, sectionTool, worldLabelTool, drawTool);
@@ -131,7 +132,7 @@ async function startApp(): Promise<{
   createNavWidget(viewport, world, fragments, vcRef);
 
   const selectionManager = new SelectionManager();
-  const toolOptionsPanel = createToolOptionsPanel(components, fragments, measurer, sectionTool, worldLabelTool, drawTool);
+  const toolOptionsPanel = createToolOptionsPanel(components, fragments, measurer, wallOcclusion, sectionTool, worldLabelTool, drawTool);
   viewport.append(toolOptionsPanel.element);
 
   toolManager.setToolOptionsPanel(toolOptionsPanel);

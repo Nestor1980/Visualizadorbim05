@@ -2,6 +2,7 @@ import * as THREE from "three";
 import * as FRAGS from "@thatopen/fragments";
 import * as OBF from "@thatopen/components-front";
 import * as BUI from "@thatopen/ui";
+import type { WallOcclusionControl } from "../../tools/measurement-tool";
 
 export interface MedidorPanel {
   element: HTMLElement;
@@ -20,7 +21,10 @@ function makeSnapModeBtn(icon: string, label: string): HTMLButtonElement {
   return btn;
 }
 
-export function createMedidorPanel(measurer: OBF.LengthMeasurement): MedidorPanel {
+export function createMedidorPanel(
+  measurer: OBF.LengthMeasurement,
+  wallOcclusion: WallOcclusionControl,
+): MedidorPanel {
   const snapModeBar = document.createElement("div");
   snapModeBar.className = "tree-switcher";
 
@@ -73,6 +77,9 @@ export function createMedidorPanel(measurer: OBF.LengthMeasurement): MedidorPane
           <bim-option label="3" value=3></bim-option>
           <bim-option label="4" value=4></bim-option>
         </bim-dropdown>
+        <bim-checkbox ?checked=${wallOcclusion.isEnabled()} label="Oclusión de pared"
+          @change="${({ target }: { target: BUI.Checkbox }) => { wallOcclusion.setEnabled(target.value); }}">
+        </bim-checkbox>
       </bim-panel-section>
     `;
   });

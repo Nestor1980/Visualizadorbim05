@@ -8,6 +8,7 @@ import { createDrawPanel } from "./right-panel/draw-panel";
 import type { SectionTool } from "../tools/section-tool";
 import type { WorldLabelTool } from "../tools/world-label-tool";
 import type { DrawTool } from "../tools/draw-tool";
+import type { WallOcclusionControl } from "../tools/measurement-tool";
 
 export type ToolOptionsView = "measure" | "section" | "properties" | "label" | "draw" | null;
 
@@ -28,12 +29,13 @@ export function createToolOptionsPanel(
   components: OBC.Components,
   fragments: OBC.FragmentsManager,
   measurer: OBF.LengthMeasurement,
+  wallOcclusion: WallOcclusionControl,
   sectionTool: SectionTool,
   worldLabelTool: WorldLabelTool,
   drawTool: DrawTool,
 ): ToolOptionsPanel {
   const propertiesPanel = createPropertiesPanel(components, fragments);
-  const medidorPanel    = createMedidorPanel(measurer);
+  const medidorPanel    = createMedidorPanel(measurer, wallOcclusion);
   const sectionPanel    = createSectionPanel(sectionTool);
   const labelPanel      = createLabelPanel(worldLabelTool);
   const drawPanel       = createDrawPanel(drawTool);

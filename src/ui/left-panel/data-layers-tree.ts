@@ -877,6 +877,14 @@ export function createDataLayersTree(
   }
 
   function restore(data: SerializedDataLayers): void {
+    // Antes de reasignar los mapas layerId hay que borrar los ítems que ya
+    // existen en la escena (mediciones, cortes, etiquetas, trazos): si no,
+    // quedan dibujados en el mundo 3D aunque desaparezcan del árbol.
+    measurer.list.clear();
+    for (const id of [...clipper.list.keys()]) clipper.delete(world, id);
+    for (const id of [...labels.list.keys()]) labels.deleteLabel(id);
+    for (const id of [...drawings.list.keys()]) drawings.deleteStroke(id);
+
     dataLayers.length = 0;
     measurementDataLayer.clear();
     measurementName.clear();

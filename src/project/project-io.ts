@@ -55,11 +55,41 @@ export async function buildProjectZip(deps: ProjectIoDeps): Promise<Blob> {
   return zip.generateAsync({ type: "blob" });
 }
 
-/** Descarga el paquete de proyecto armado por `buildProjectZip`. */
+type SaveFilePickerFn = (options?: {
+  suggestedName?: string;
+  types?: { description: string; accept: Record<string, string[]> }[];
+}) => Promise<{
+  createWritable: () => Promise<{ write: (data: Blob) => Promise<void>; close: () => Promise<void> }>;
+}>;
+
+/** Arma el paquete de proyecto y lo guarda. En navegadores con File System
+ *  Access API (Chrome/Edge) abre el diálogo nativo "Guardar como" para elegir
+ *  carpeta y nombre; si no está disponible (Firefox/Safari) cae a la descarga
+ *  directa a la carpeta de descargas de siempre. */
 export async function saveProjectToFile(deps: ProjectIoDeps): Promise<void> {
   const blob = await buildProjectZip(deps);
   const ts = new Date().toISOString().slice(0, 10);
-  const file = new File([blob], `proyecto_${ts}.vbim`);
+  const suggestedName = `proyecto_${ts}.vbim`;
+
+  const showSaveFilePicker = (window as unknown as { showSaveFilePicker?: SaveFilePickerFn }).showSaveFilePicker;
+  if (showSaveFilePicker) {
+    let handle;
+    try {
+      handle = await showSaveFilePicker({
+        suggestedName,
+        types: [{ description: "Proyecto BIM", accept: { "application/zip": [".vbim"] } }],
+      });
+    } catch (error) {
+      if ((error as { name?: string })?.name === "AbortError") return; // el usuario cerró el diálogo sin elegir
+      throw error;
+    }
+    const writable = await handle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+    return;
+  }
+
+  const file = new File([blob], suggestedName);
   const a = document.createElement("a");
   a.href = URL.createObjectURL(file);
   a.download = file.name;
