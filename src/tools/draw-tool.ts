@@ -33,6 +33,7 @@ export interface DrawTool {
   getActiveWidth: () => number;
   select: (id: string) => void;
   deselect: () => void;
+  getSelected: () => DrawStroke | null;
   deleteStroke: (id: string) => void;
   deleteSelected: () => void;
   /** Devuelve el id del trazo bajo el cursor, o `null` si no hay ninguno cerca. */
@@ -53,7 +54,7 @@ export interface DrawTool {
   focus: (id: string) => void;
 }
 
-const DEFAULT_COLOR = "#e6553f";
+const DEFAULT_COLOR = "#74ac49";
 const DEFAULT_WIDTH = 3;
 
 /** Distancia mínima (unidades de mundo) entre puntos crudos consecutivos: evita
@@ -219,6 +220,10 @@ export function createDrawTool(world: OBC.World, canvas: HTMLCanvasElement): Dra
     onSelectionChange.trigger(null);
   }
 
+  function getSelected(): DrawStroke | null {
+    return selectedId ? list.get(selectedId) ?? null : null;
+  }
+
   function setActiveColor(color: string): void {
     activeColor = color;
     if (!selectedId) return;
@@ -376,7 +381,7 @@ export function createDrawTool(world: OBC.World, canvas: HTMLCanvasElement): Dra
     activate, deactivate,
     setActiveColor, getActiveColor,
     setActiveWidth, getActiveWidth,
-    select, deselect, deleteStroke, deleteSelected,
+    select, deselect, getSelected, deleteStroke, deleteSelected,
     pickStrokeAt, beginStroke, extendStroke, endStroke, addStroke, focus,
   };
 }

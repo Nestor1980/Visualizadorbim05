@@ -24,6 +24,7 @@ export interface WorldLabelTool {
   createFromData: (data: { title: string; comment: string; color: string; position: THREE.Vector3 }) => WorldLabel;
   deleteLabel: (id: string) => void;
   select: (id: string) => void;
+  getSelected: () => WorldLabel | null;
   rename: (id: string, title: string) => void;
   /** Reabre una etiqueta ya creada en modo edición (título + comentario). */
   edit: (id: string) => void;
@@ -42,7 +43,21 @@ export interface WorldLabelTool {
 const TITLE_DISTANCE = 20;
 
 /** Color por defecto de una etiqueta nueva (personalizable desde el panel lateral). */
-const DEFAULT_LABEL_COLOR = "#e6553f";
+const DEFAULT_LABEL_COLOR = "#74ac49";
+
+/** Tamaño de guión/espacio (unidades del mundo) de la línea punteada que
+ *  conecta la etiqueta arrastrada con el punto original que señala. */
+const LEADER_DASH_SIZE = 0.06;
+const LEADER_GAP_SIZE  = 0.05;
+/** Distancia mínima (unidades del mundo) entre la etiqueta y su posición
+ *  original para mostrar la línea punteada — evita dibujarla cuando la
+ *  etiqueta está prácticamente en su lugar. */
+const LEADER_MIN_DISTANCE = 0.05;
+/** Movimiento mínimo (px de pantalla) antes de que un pointerdown sobre la
+ *  etiqueta se interprete como arrastre en vez de click (selección) o
+ *  dblclick (edición) — sin esto, cualquier click dispararía también un
+ *  micro-arrastre. */
+const DRAG_THRESHOLD_PX = 4;
 
 export function createWorldLabelTool(world: OBC.World, viewport: HTMLElement): WorldLabelTool {
   const list = new Map<string, WorldLabel>();
@@ -54,7 +69,55 @@ export function createWorldLabelTool(world: OBC.World, viewport: HTMLElement): W
   let selectedId: string | null = null;
   let activeColor = DEFAULT_LABEL_COLOR;
 
+  interface LabelLeader {
+    leader: THREE.Line;
+    material: THREE.LineDashedMaterial;
+  }
+  const leaders = new Map<string, LabelLeader>();
+
+  function createLeader(colorHex: string): LabelLeader {
+    const material = new THREE.LineDashedMaterial({
+      color: colorHex,
+      dashSize: LEADER_DASH_SIZE,
+      gapSize: LEADER_GAP_SIZE,
+      // Sin esto, el tramo de línea que cae "detrás" de geometría del modelo
+      // (frecuente: la etiqueta se arrastra lejos de su punto de anclaje,
+      // muchas veces al aire, y la línea recta entre ambos atraviesa la
+      // fachada) se recorta por el z-buffer y parece terminar en la
+      // superficie en vez de seguir hasta la coordenada real.
+      depthTest: false,
+    });
+    // Se usa THREE.Line (nativo) en vez del Line2/LineMaterial "fat line" de
+    // three/examples: ese shader extruye el grosor en espacio de pantalla a
+    // partir de las posiciones proyectadas de ambos extremos, y en ciertos
+    // ángulos de cámara (frecuentes al orbitar) esa extrusión degenera y la
+    // línea entera desaparece un frame sí, uno no. THREE.Line no tiene ese
+    // problema (es la primitiva GL_LINE_STRIP de toda la vida); a cambio no
+    // se puede pedir un grosor en píxeles fijo, pero para una línea guía
+    // fina de 1px eso no hace falta.
+    const leader = new THREE.Line(new THREE.BufferGeometry(), material);
+    leader.renderOrder = 10;
+    leader.visible = false;
+    world.scene.three.add(leader);
+    return { leader, material };
+  }
+
+  /** Actualiza (o esconde) la línea punteada entre el punto original de la
+   *  etiqueta y la posición actual de su mark, que puede haberse arrastrado. */
+  function updateLeader(label: WorldLabel): void {
+    const visual = leaders.get(label.id);
+    if (!visual) return;
+    const anchor = label.position;
+    const pos = label.mark.three.position;
+    const show = label.mark.visible && anchor.distanceTo(pos) > LEADER_MIN_DISTANCE;
+    visual.leader.visible = show;
+    if (!show) return;
+    visual.leader.geometry.setFromPoints([anchor, pos]);
+    visual.leader.computeLineDistances();
+  }
+
   function applyState(label: WorldLabel): void {
+    updateLeader(label);
     if (!label.mark.visible) return;
     const state =
       label.id === selectedId ? "expanded" :
@@ -67,6 +130,91 @@ export function createWorldLabelTool(world: OBC.World, viewport: HTMLElement): W
     label.element.style.setProperty("--label-color", label.color);
     const picker = label.element.querySelector<HTMLInputElement>(".world-label-color-input");
     if (picker && picker.value !== label.color) picker.value = label.color;
+    const visual = leaders.get(label.id);
+    if (visual) visual.material.color.set(label.color);
+  }
+
+  /**
+   * Permite arrastrar la etiqueta entera (badge, título o comentario) en el
+   * plano paralelo a la cámara, a la profundidad en la que ya está. Mientras
+   * se aleja del punto 3D original donde se creó, se dibuja una línea
+   * punteada uniéndola con ese punto; si vuelve a acercarse, se oculta de
+   * nuevo. Igual que el arrastre de etiquetas del medidor de distancias.
+   *
+   * El listener va en `element` (no en un handle fijo) porque el badge se
+   * oculta vía CSS en los estados "title"/"expanded" — hay que poder agarrar
+   * desde el título o el comentario también. Para no romper el click
+   * (seleccionar) ni el dblclick (editar) que ya tienen esos nodos, el
+   * arrastre solo se arma tras superar `DRAG_THRESHOLD_PX`; si el puntero no
+   * se movió lo suficiente, nunca se llama a `preventDefault` y el
+   * click/dblclick nativo sigue su curso normal.
+   */
+  function setupLabelDrag(label: WorldLabel, element: HTMLElement): void {
+    const plane = new THREE.Plane();
+    const raycaster = new THREE.Raycaster();
+    const ndc = new THREE.Vector2();
+    const cameraDirection = new THREE.Vector3();
+    const target = new THREE.Vector3();
+    let dragging = false;
+    let armedPointerId: number | null = null;
+    let downX = 0;
+    let downY = 0;
+
+    const pickOnPlane = (event: PointerEvent): boolean => {
+      if (!world.renderer) return false;
+      const rect = world.renderer.three.domElement.getBoundingClientRect();
+      ndc.set(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1,
+      );
+      raycaster.setFromCamera(ndc, world.camera.three);
+      return raycaster.ray.intersectPlane(plane, target) !== null;
+    };
+
+    element.addEventListener("pointerdown", (event: PointerEvent) => {
+      if (event.button !== 0) return;
+      // Los controles de edición (inputs, botones, color picker) deben
+      // conservar su comportamiento nativo sin iniciar un arrastre.
+      if ((event.target as HTMLElement).closest("input, textarea, button, .world-label-color-input")) return;
+      armedPointerId = event.pointerId;
+      downX = event.clientX;
+      downY = event.clientY;
+    });
+
+    element.addEventListener("pointermove", (event: PointerEvent) => {
+      if (event.pointerId !== armedPointerId) return;
+      if (!dragging) {
+        const dx = event.clientX - downX;
+        const dy = event.clientY - downY;
+        if (dx * dx + dy * dy < DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) return;
+        dragging = true;
+        select(label.id);
+        document.body.style.cursor = "grabbing";
+        element.setPointerCapture(event.pointerId);
+        (world.camera as OBC.OrthoPerspectiveCamera).setUserInput(false);
+        world.camera.three.getWorldDirection(cameraDirection);
+        plane.setFromNormalAndCoplanarPoint(cameraDirection, label.mark.three.position);
+      }
+      event.stopPropagation();
+      event.preventDefault();
+      if (pickOnPlane(event)) {
+        label.mark.three.position.copy(target);
+        updateLeader(label);
+      }
+    });
+
+    const endDrag = (event: PointerEvent): void => {
+      if (event.pointerId !== armedPointerId) return;
+      if (dragging) {
+        element.releasePointerCapture(event.pointerId);
+        (world.camera as OBC.OrthoPerspectiveCamera).setUserInput(true);
+        document.body.style.cursor = "";
+      }
+      dragging = false;
+      armedPointerId = null;
+    };
+    element.addEventListener("pointerup", endDrag);
+    element.addEventListener("pointercancel", endDrag);
   }
 
   function deselect(): void {
@@ -85,6 +233,10 @@ export function createWorldLabelTool(world: OBC.World, viewport: HTMLElement): W
     const label = list.get(id);
     if (label) applyState(label);
     onSelectionChange.trigger(label ?? null);
+  }
+
+  function getSelected(): WorldLabel | null {
+    return selectedId ? list.get(selectedId) ?? null : null;
   }
 
   function setColor(id: string, color: string): void {
@@ -299,11 +451,13 @@ export function createWorldLabelTool(world: OBC.World, viewport: HTMLElement): W
       mark,
       element,
     };
+    leaders.set(id, createLeader(label.color));
     titleRow.append(titleEl, createColorPicker(label));
     applyColor(label);
     renderTitle(label, titleEl);
     renderComment(label, commentEl);
     list.set(id, label);
+    setupLabelDrag(label, element);
 
     enterEditMode(label);
     onItemAdded.trigger(label);
@@ -353,11 +507,13 @@ export function createWorldLabelTool(world: OBC.World, viewport: HTMLElement): W
       mark,
       element,
     };
+    leaders.set(id, createLeader(label.color));
     titleRow.append(titleEl, createColorPicker(label));
     applyColor(label);
     renderTitle(label, titleEl);
     renderComment(label, commentEl);
     list.set(id, label);
+    setupLabelDrag(label, element);
 
     applyState(label);
     onItemAdded.trigger(label);
@@ -385,6 +541,13 @@ export function createWorldLabelTool(world: OBC.World, viewport: HTMLElement): W
       onSelectionChange.trigger(null);
     }
     label.mark.dispose();
+    const visual = leaders.get(id);
+    if (visual) {
+      world.scene.three.remove(visual.leader);
+      visual.leader.geometry.dispose();
+      visual.material.dispose();
+      leaders.delete(id);
+    }
     list.delete(id);
     onItemDeleted.trigger(id);
   }
@@ -419,7 +582,7 @@ export function createWorldLabelTool(world: OBC.World, viewport: HTMLElement): W
 
   return {
     list, onItemAdded, onItemDeleted, onSelectionChange,
-    createAt, createFromData, deleteLabel, select, rename, edit, setColor, setActiveColor, getActiveColor,
+    createAt, createFromData, deleteLabel, select, getSelected, rename, edit, setColor, setActiveColor, getActiveColor,
     updateLOD, previewAt,
   };
 }

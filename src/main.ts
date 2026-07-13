@@ -11,7 +11,7 @@ import { setupPostprocessing }    from "./core/postprocessing";
 import { setupPivotRaycaster }    from "./camera/pivot-raycaster";
 import { createNavWidget }        from "./camera/nav-widget";
 import { createSectionTool }      from "./tools/section-tool";
-import { createMeasurementTool, setupWallOcclusion } from "./tools/measurement-tool";
+import { createMeasurementTool, setupWallOcclusion, setupMeasurementSelection } from "./tools/measurement-tool";
 import { createWorldLabelTool }   from "./tools/world-label-tool";
 import { createDrawTool }         from "./tools/draw-tool";
 import { ToolManager }            from "./tools/tool-manager";
@@ -103,9 +103,10 @@ async function startApp(): Promise<{
   const sectionTool    = createSectionTool(components, world);
   const measurer       = createMeasurementTool(components, world);
   const wallOcclusion  = setupWallOcclusion(measurer, world, fragments);
+  const measurementSelection = setupMeasurementSelection(measurer, world);
   const worldLabelTool = createWorldLabelTool(world, viewport);
   const drawTool       = createDrawTool(world, threeRenderer.domElement);
-  const toolManager    = new ToolManager(measurer, highlighter, hoverer, sectionTool, worldLabelTool, drawTool);
+  const toolManager    = new ToolManager(measurer, measurementSelection, highlighter, hoverer, sectionTool, worldLabelTool, drawTool);
 
   // — Postprocessing —
   const postproduction = setupPostprocessing(world, worldGrid, components, axisMaterials);
@@ -121,7 +122,8 @@ async function startApp(): Promise<{
     });
   }
   setupPivotRaycaster(viewport, world, fragments);
-  toolManager.bindViewportEvents(viewport, world, fragments, threeRenderer.domElement);
+  const selectionManager = new SelectionManager();
+  toolManager.bindViewportEvents(viewport, world, fragments, threeRenderer.domElement, components, selectionManager);
 
   // — IFC —
   const ifcLoader = await setupIfcLoader(components);
@@ -131,8 +133,7 @@ async function startApp(): Promise<{
   CUI.Manager.init();
   createNavWidget(viewport, world, fragments, vcRef);
 
-  const selectionManager = new SelectionManager();
-  const toolOptionsPanel = createToolOptionsPanel(components, fragments, measurer, wallOcclusion, sectionTool, worldLabelTool, drawTool);
+  const toolOptionsPanel = createToolOptionsPanel(components, fragments, measurer, wallOcclusion, measurementSelection, sectionTool, worldLabelTool, drawTool);
   viewport.append(toolOptionsPanel.element);
 
   toolManager.setToolOptionsPanel(toolOptionsPanel);

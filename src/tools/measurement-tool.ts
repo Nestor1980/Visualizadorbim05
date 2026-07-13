@@ -42,7 +42,7 @@ export function createMeasurementTool(
 ): OBF.LengthMeasurement {
   const measurer     = components.get(OBF.LengthMeasurement);
   measurer.world     = world;
-  measurer.color     = new THREE.Color("#494cb6");
+  measurer.color     = new THREE.Color("#74ac49");
   measurer.enabled   = false;
   measurer.snappings = [FRAGS.SnappingClass.POINT];
   measurer.pickerSize = VERTEX_PREVIEW_SIZE_PX;
@@ -234,6 +234,121 @@ function setupDimensionArrows(measurer: OBF.LengthMeasurement, world: OBC.World)
 export interface WallOcclusionControl {
   isEnabled: () => boolean;
   setEnabled: (enabled: boolean) => void;
+}
+
+export type MeasurementSubMode = "add" | "select";
+
+export interface MeasurementSelectionControl {
+  getSubMode: () => MeasurementSubMode;
+  setSubMode: (mode: MeasurementSubMode) => void;
+  onSubModeChange: OBC.Event<MeasurementSubMode>;
+  getSelected: () => OBF.DimensionLine | null;
+  onSelectionChange: OBC.Event<OBF.DimensionLine | null>;
+  /** Raycastea la cota bajo el punto de pantalla dado y la selecciona; si no
+   *  hay ninguna ahí, deselecciona. Devuelve si encontró algo. */
+  pickAt: (clientX: number, clientY: number) => boolean;
+  deselect: () => void;
+  deleteSelected: () => void;
+}
+
+const SELECTION_HIGHLIGHT_COLOR = new THREE.Color("#ffc400");
+
+/**
+ * Modo "editar" del panel del medidor: en vez de crear una cota nueva en cada
+ * click (modo "agregar"), permite seleccionar una cota ya existente
+ * clickeando sobre ella para ver sus propiedades en el panel dinámico.
+ * Reutiliza `dim.boundingBox` — la misma caja invisible que la librería crea
+ * para cada `DimensionLine` y usa internamente para resolver a qué cota
+ * apunta el atajo de teclado "Delete" — así que el hit-test queda
+ * garantizado consistente con el resto de la herramienta.
+ */
+export function setupMeasurementSelection(
+  measurer: OBF.LengthMeasurement,
+  world: OBC.World,
+): MeasurementSelectionControl {
+  let subMode: MeasurementSubMode = "add";
+  let selected: OBF.DimensionLine | null = null;
+  const onSubModeChange = new OBC.Event<MeasurementSubMode>();
+  const onSelectionChange = new OBC.Event<OBF.DimensionLine | null>();
+  const raycaster = new THREE.Raycaster();
+
+  const applyHighlight = (dim: OBF.DimensionLine, isSelected: boolean): void => {
+    dim.isSelected = isSelected;
+    const visual = dimensionVisuals.get(dim);
+    if (!visual) return;
+    const color = isSelected ? SELECTION_HIGHLIGHT_COLOR : measurer.linesMaterial.color;
+    visual.shaftMaterial.color.copy(color);
+    visual.shaftMaterial.linewidth = isSelected ? DIMENSION_LINE_WIDTH_PX + 2 : DIMENSION_LINE_WIDTH_PX;
+    (visual.arrowStart.material as THREE.MeshBasicMaterial).color.copy(color);
+    (visual.arrowEnd.material as THREE.MeshBasicMaterial).color.copy(color);
+  };
+
+  const deselect = (): void => {
+    if (!selected) return;
+    applyHighlight(selected, false);
+    selected = null;
+    onSelectionChange.trigger(null);
+  };
+
+  const select = (dim: OBF.DimensionLine): void => {
+    if (selected === dim) return;
+    if (selected) applyHighlight(selected, false);
+    selected = dim;
+    applyHighlight(dim, true);
+    onSelectionChange.trigger(dim);
+  };
+
+  const pickAt = (clientX: number, clientY: number): boolean => {
+    const dom = world.renderer?.three.domElement;
+    if (!dom) return false;
+    const rect = dom.getBoundingClientRect();
+    const ndc = new THREE.Vector2(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1,
+    );
+    raycaster.setFromCamera(ndc, world.camera.three);
+    const dims = [...measurer.lines];
+    const hit = raycaster.intersectObjects(dims.map((dim) => dim.boundingBox), false)[0];
+    const dim = hit && dims.find((d) => d.boundingBox === hit.object);
+    if (dim) {
+      select(dim);
+      return true;
+    }
+    deselect();
+    return false;
+  };
+
+  // Si la cota seleccionada se borra (p. ej. con "Delete" mientras el mouse
+  // ya no está sobre ella), soltar la referencia para no quedar apuntando a
+  // un objeto disposeado.
+  measurer.lines.onBeforeDelete.add((dim) => {
+    if (selected === dim) {
+      selected = null;
+      onSelectionChange.trigger(null);
+    }
+  });
+
+  const deleteSelected = (): void => {
+    if (selected) measurer.list.delete(selected.line);
+  };
+
+  const setSubMode = (mode: MeasurementSubMode): void => {
+    if (subMode === mode) return;
+    subMode = mode;
+    if (mode === "add") deselect();
+    onSubModeChange.trigger(mode);
+  };
+
+  return {
+    getSubMode: () => subMode,
+    setSubMode,
+    onSubModeChange,
+    getSelected: () => selected,
+    onSelectionChange,
+    pickAt,
+    deselect,
+    deleteSelected,
+  };
 }
 
 /** Proyecta un punto del mundo a coordenadas de cliente (mismo espacio que
