@@ -3,6 +3,7 @@ import * as CUI from "@thatopen/ui-obc";
 import * as BUI from "@thatopen/ui";
 import { makeModalDraggable, resetModalPosition, closeOnBackdropClick } from "../ui/draggable-modal";
 import type { RightPanel } from "../ui/right-panel/index";
+import { shareTopicByEmail, shareTopicToDiscord } from "./share";
 
 const BCF_TOPIC_TAB_ID = "bcf-topic";
 
@@ -26,6 +27,18 @@ export function setupBCFSection(
 
   const [topicsList] = CUI.tables.topicsList({ components, dataStyles: { users: TOPIC_USERS } });
 
+  const exportTopicsAsFile = async (toExport: OBC.Topic[]): Promise<void> => {
+    if (toExport.length === 0) return;
+    const bcfData = await topics.export(toExport);
+    const ts   = new Date().toISOString().slice(0, 10);
+    const file = new File([bcfData], `VisorBIM_${ts}.bcfzip`);
+    const a    = document.createElement("a");
+    a.href     = URL.createObjectURL(file);
+    a.download = file.name;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
   // El detalle del topic (Información/Comentarios/Viewpoints/Relacionados) se
   // muestra como solapa dinámica del panel derecho, no dentro del modal de
   // lista — el modal solo aloja la tabla y las acciones globales
@@ -47,6 +60,21 @@ export function setupBCFSection(
             @click=${() => {
               topics.list.delete(topic.guid);
               rightPanel.removeTab(BCF_TOPIC_TAB_ID);
+            }}>
+          </bim-button>
+          <bim-button label="Compartir por Email" icon="mdi:email-outline"
+            @click=${async () => {
+              await exportTopicsAsFile([topic]);
+              shareTopicByEmail(topic);
+            }}>
+          </bim-button>
+          <bim-button label="Compartir por Discord" icon="mdi:discord"
+            @click=${async () => {
+              try {
+                await shareTopicToDiscord(topic);
+              } catch (err) {
+                alert(err instanceof Error ? err.message : "No se pudo compartir el topic por Discord.");
+              }
             }}>
           </bim-button>
         </bim-panel-section>
@@ -171,15 +199,7 @@ export function setupBCFSection(
         .map(({ Guid }) => (Guid && typeof Guid === "string") ? topics.list.get(Guid) : null)
         .filter(Boolean) as OBC.Topic[];
       const toExport = selected.length > 0 ? selected : [...topics.list.values()];
-      if (toExport.length === 0) return;
-      const bcfData = await topics.export(toExport);
-      const ts   = new Date().toISOString().slice(0, 10);
-      const file = new File([bcfData], `VisorBIM_${ts}.bcfzip`);
-      const a    = document.createElement("a");
-      a.href     = URL.createObjectURL(file);
-      a.download = file.name;
-      a.click();
-      URL.revokeObjectURL(a.href);
+      await exportTopicsAsFile(toExport);
     };
     return BUI.html`
       <bim-button label="Descargar BCF" icon="material-symbols:download" @click=${onDownload}></bim-button>

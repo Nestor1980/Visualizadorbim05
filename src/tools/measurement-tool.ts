@@ -58,8 +58,40 @@ export function createMeasurementTool(
 
   setupCotas(measurer, world);
   setupVertexPickerRulerIcon(measurer);
+  setupHoverShiftDebugLog(world); // TEMP — quitar una vez diagnosticado el desplazamiento en hover
 
   return measurer;
+}
+
+/** TEMP DEBUG — instrumentación para diagnosticar el desplazamiento de
+ *  círculos/etiquetas durante el hover. La primera versión (tamaño de
+ *  canvas/CSS2DRenderer + transform del primer círculo) descartó un
+ *  desajuste de tamaño (siempre coinciden) y el primer círculo nunca
+ *  cambió — así que ahora trackea el `transform` de CADA marca (inicio, fin,
+ *  etiqueta) de CADA cota, para encontrar cuál es la que realmente se mueve.
+ *  Borrar esta función y su llamada una vez encontrada la causa. */
+function setupHoverShiftDebugLog(world: OBC.World): void {
+  const prevTransforms = new Map<string, string>();
+
+  world.renderer?.onBeforeUpdate.add(() => {
+    let i = 0;
+    for (const cota of cotas.values()) {
+      i++;
+      const marks: [string, OBF.Mark][] = [
+        ["start", cota.startMark],
+        ["end", cota.endMark],
+        ["label", cota.label],
+      ];
+      for (const [name, mark] of marks) {
+        const key = `cota${i}-${name}`;
+        const transform = mark.three.element.style.transform;
+        if (transform !== prevTransforms.get(key)) {
+          console.log(`[measure-debug] t=${performance.now().toFixed(0)} ${key} transform="${transform}"`);
+          prevTransforms.set(key, transform);
+        }
+      }
+    }
+  });
 }
 
 /**
@@ -428,6 +460,23 @@ function setupCotas(measurer: OBF.LengthMeasurement, world: OBC.World): void {
     if (changes.includes("units") || changes.includes("rounding")) {
       for (const cota of cotas.values()) cota.refreshLabelText();
     }
+  });
+
+  // Defensivo: `dim.line.start/end` no cambia para una cota ya fijada, así
+  // que en teoría alcanza con posicionar los círculos una sola vez al
+  // crearlos (`Cota` ya lo hace). En la práctica, mientras el picker de
+  // vértices de la librería está activo (hover con la herramienta
+  // habilitada), los círculos de cotas YA FIJADAS se ven levemente
+  // desplazados — sin poder aislar dentro del bundle minificado de
+  // `@thatopen/components-front` qué línea exactamente les toca la
+  // posición. `onBeforeUpdate` se dispara inmediatamente antes de que el
+  // renderer proyecte los `CSS2DObject` a pantalla (ver `RendererWith2D`:
+  // dispara `onBeforeUpdate` y a continuación, en el mismo tick, llama a
+  // `three2D.render()`) — reanclarlos ahí, en cada frame, es barato (un
+  // par de copias de vector por cota) y los deja siempre consistentes con
+  // `dim.line`, sea lo que sea lo que los mueve mientras tanto.
+  world.renderer?.onBeforeUpdate.add(() => {
+    for (const cota of cotas.values()) cota.updateGeometry();
   });
 }
 
