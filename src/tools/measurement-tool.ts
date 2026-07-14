@@ -160,6 +160,7 @@ function orient(mesh: THREE.Mesh, tip: THREE.Vector3, outward: THREE.Vector3, le
 }
 const arrowDirection = new THREE.Vector3();
 
+
 /**
  * Representación visual propia de una cota ya fijada: círculos de vértice,
  * etiqueta arrastrable, línea gruesa y flechas de doble punta. Se apoya en
@@ -178,9 +179,15 @@ const arrowDirection = new THREE.Vector3();
  * fijada), ningún código ajeno tiene una referencia a estos objetos para
  * desplazarlos.
  *
- * Todas las mallas/objetos propios se parentean al mismo grupo (`_root`)
- * que ya usa la cota de la librería, así que `DimensionLine.dispose()` los
- * remueve y libera solo — no hace falta un `dispose()` propio.
+ * Todas las mallas/objetos propios se parentean al mismo grupo (`_root`) que
+ * ya usa la cota de la librería, pero eso NO alcanza para que se limpien
+ * solos: `DimensionLine.dispose()` remueve `_root` de la escena con
+ * `removeFromParent()` (un único `Object3D.remove`, sin recorrer hijos) y
+ * solo saca explícitamente del DOM a SUS propios elementos conocidos (label,
+ * endpoints) — cualquier otro hijo que le hayamos agregado a `_root` queda
+ * huérfano ahí adentro, y si es un `CSS2DObject` (nuestros círculos y
+ * etiqueta) su `<div>` nunca recibe el evento `removed` que lo saca del DOM.
+ * Por eso {@link Cota.dispose} es obligatorio y hay que llamarlo nosotros.
  */
 class Cota {
   readonly dim: OBF.DimensionLine;
@@ -290,6 +297,29 @@ class Cota {
     if (!visible) this.leader.visible = false;
   }
 
+  /** `Mark.dispose()` ya hace `removeFromParent()` + `element.remove()`
+   *  (ver librería), así que es la única forma confiable de sacar del DOM
+   *  los círculos/etiqueta — dejar que `DimensionLine.dispose()` se ocupe
+   *  de esto, como se hacía antes, deja los `<div>` huérfanos en pantalla. */
+  dispose(): void {
+    this.startMark.dispose();
+    this.endMark.dispose();
+    this.label.dispose();
+
+    this.shaft.removeFromParent();
+    this.shaft.geometry.dispose();
+    this.shaftMaterial.dispose();
+    this.leader.removeFromParent();
+    this.leader.geometry.dispose();
+    this.leaderMaterial.dispose();
+    this.arrowStart.removeFromParent();
+    this.arrowStart.geometry.dispose();
+    (this.arrowStart.material as THREE.Material).dispose();
+    this.arrowEnd.removeFromParent();
+    this.arrowEnd.geometry.dispose();
+    (this.arrowEnd.material as THREE.Material).dispose();
+  }
+
   /** Arrastrar la etiqueta en el plano paralelo a la cámara (a su propia
    *  profundidad). Al alejarse de su posición original se dibuja una línea
    *  punteada uniéndola con el punto medio de la cota. */
@@ -378,11 +408,17 @@ function setupCotas(measurer: OBF.LengthMeasurement, world: OBC.World): void {
     cotas.set(dim, new Cota(dim, world, measurer.linesMaterial.color));
   });
 
-  // La `Cota` es hija del mismo grupo que la cota de la librería (ver su
-  // constructor), así que `DimensionLine.dispose()` ya la remueve y libera
-  // sola; acá solo hace falta soltar la referencia para no filtrar memoria.
-  measurer.lines.onBeforeDelete.add((dim) => cotas.delete(dim));
-  measurer.lines.onCleared.add(() => cotas.clear());
+  // `DimensionLine.dispose()` no limpia los hijos que le agregamos a `_root`
+  // (ver el comentario de la clase), así que hay que disponer la `Cota`
+  // nosotros mismos acá, antes de soltar la referencia.
+  measurer.lines.onBeforeDelete.add((dim) => {
+    cotas.get(dim)?.dispose();
+    cotas.delete(dim);
+  });
+  measurer.lines.onCleared.add(() => {
+    for (const cota of cotas.values()) cota.dispose();
+    cotas.clear();
+  });
 
   measurer.onStateChanged.add((changes) => {
     if (changes.includes("color")) {
