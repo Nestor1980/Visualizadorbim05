@@ -34,7 +34,16 @@ function nameCell(label: string, icon?: string): any {
   return wrap;
 }
 
-function toCompactTree(nodes: any[]): any[] {
+/** Recorre el árbol crudo (sin compactar) generando, para cada nodo, el
+ *  contenido de "Name" y el botón de ojo que va en la columna "Actions"
+ *  (ver `tbl.columns` en `createModelTreeView`). Se usa una columna propia
+ *  en vez de meter el botón dentro de la celda "Name" porque esa celda se
+ *  autoajusta a su contenido: el botón terminaba pegado al texto, en una
+ *  posición distinta por fila según el largo del nombre y la indentación,
+ *  en vez de quedar alineado en una misma columna a la derecha. `makeToggle`
+ *  viene de `createModelTreeView` para poder cerrar sobre el `FragmentsModel`
+ *  y el estado de visibilidad compartido. */
+function toCompactTree(nodes: any[], makeToggle: (node: any) => HTMLElement | undefined): any[] {
   return nodes.flatMap((node: any) => {
     const name: string    = node.data?.Name ?? "";
     const upperName       = name.toUpperCase();
@@ -42,26 +51,34 @@ function toCompactTree(nodes: any[]): any[] {
     const hasLocalId      = node.data?.localId !== undefined;
 
     if (!isIfcClass) {
-      const cellName = !hasLocalId ? nameCell(name, IFC_ICON.model) : node.data.Name;
-      return [{ data: { ...node.data, Name: cellName }, children: toCompactTree(node.children ?? []) }];
+      if (!hasLocalId) {
+        return [{
+          data: { ...node.data, Name: nameCell(name, IFC_ICON.model), Actions: "" },
+          children: toCompactTree(node.children ?? [], makeToggle),
+        }];
+      }
+      return [{
+        data: { ...node.data, Name: node.data.Name, Actions: makeToggle(node) },
+        children: toCompactTree(node.children ?? [], makeToggle),
+      }];
     }
 
     if (SKIP_FULL.has(upperName)) {
-      return (node.children ?? []).flatMap((inst: any) => toCompactTree(inst.children ?? []));
+      return (node.children ?? []).flatMap((inst: any) => toCompactTree(inst.children ?? [], makeToggle));
     }
 
     if (SKIP_CLASS.has(upperName)) {
       const icon = IFC_ICON[upperName];
       return (node.children ?? []).map((child: any) => ({
-        data: { ...child.data, Name: nameCell(child.data?.Name ?? "", icon) },
-        children: toCompactTree(child.children ?? []),
+        data: { ...child.data, Name: nameCell(child.data?.Name ?? "", icon), Actions: makeToggle(child) },
+        children: toCompactTree(child.children ?? [], makeToggle),
       }));
     }
 
     const cleanLabel = IFC_LABEL[upperName] ?? upperName.replace(/^IFC/, "");
     return [{
-      data: { ...node.data, Name: nameCell(cleanLabel, IFC_ICON[upperName]) },
-      children: node.children ?? [],
+      data: { ...node.data, Name: nameCell(cleanLabel, IFC_ICON[upperName]), Actions: makeToggle(node) },
+      children: toCompactTree(node.children ?? [], makeToggle),
     }];
   });
 }
@@ -109,6 +126,73 @@ export function createModelTreeView(
   // — Callbacks set by consumers —
   let onElementClickCb: ((modelId: string, localId: number) => void) | null = null;
   let onTypeGroupClickCb: ((map: OBC.ModelIdMap, typeLabel: string, count: number) => void) | null = null;
+
+  /** localIds propios (no de hijos) marcados como ocultos a mano desde el árbol. */
+  const hiddenIds = new Set<number>();
+
+  /** Botón de ojo para un nodo del árbol espacial crudo (sin compactar): oculta
+   *  o muestra ese elemento y todo lo que cuelga de él (hijos espaciales, o los
+   *  miembros de un grupo de tipo) en la escena 3D.
+   *
+   *  Va en su propia columna "Actions" (ver más abajo), no dentro de la celda
+   *  "Name": esa celda vive dentro del shadow DOM de `bim-table`, así que las
+   *  clases de global.css (.models-row-action, etc.) no la alcanzan y el botón
+   *  quedaba con el estilo por defecto del navegador (cuadrado blanco). Por
+   *  eso acá se estilea 100% inline — igual que `nameCell` ya hacía con el
+   *  ícono/texto — en vez de depender de una clase externa. */
+  function makeVisibilityToggle(node: any): HTMLElement {
+    const localId = node.data?.localId as number | undefined;
+    const childrenField = node.data?.children as string | undefined;
+
+    const resolveIds = async (): Promise<number[]> => {
+      if (typeof localId === "number") {
+        const kids = await model.getItemsChildren([localId]);
+        return kids.length !== 0 ? kids : [localId];
+      }
+      if (childrenField) {
+        const seeds = JSON.parse(childrenField) as number[];
+        const kids = await model.getItemsChildren(seeds);
+        return kids.length !== 0 ? kids : seeds;
+      }
+      return [];
+    };
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.style.cssText = [
+      "display:flex", "align-items:center", "justify-content:center",
+      "width:20px", "height:20px", "padding:0", "border:none",
+      "background:transparent", "color:inherit", "cursor:pointer",
+      "border-radius:4px", "opacity:0.6", "flex-shrink:0",
+    ].join(";");
+    btn.addEventListener("mouseenter", () => { btn.style.background = "var(--bim-ui_bg-contrast-10)"; btn.style.opacity = "1"; });
+    btn.addEventListener("mouseleave", () => { btn.style.background = "transparent"; btn.style.opacity = "0.6"; });
+    const icon = document.createElement("bim-icon") as any;
+    icon.style.cssText = "font-size:13px";
+    const tooltip = document.createElement("bim-tooltip") as any;
+    const refresh = () => {
+      const hidden = typeof localId === "number" && hiddenIds.has(localId);
+      const title = hidden ? "Mostrar" : "Ocultar";
+      icon.icon = hidden ? "mdi:eye-off" : "mdi:eye";
+      btn.setAttribute("aria-label", title);
+      tooltip.textContent = title;
+    };
+    refresh();
+    btn.append(icon, tooltip);
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const hidden = typeof localId === "number" && hiddenIds.has(localId);
+      const ids = await resolveIds();
+      if (ids.length === 0) return;
+      await model.setVisible(ids, hidden);
+      if (typeof localId === "number") {
+        if (hidden) hiddenIds.delete(localId); else hiddenIds.add(localId);
+      }
+      refresh();
+    });
+
+    return btn;
+  }
 
   // — Types container —
   const typesContainer = document.createElement("div");
@@ -251,6 +335,13 @@ export function createModelTreeView(
   // dejar que loadData() siga asignando "data" a través de su setter real, es
   // seguro y no dispara esa validación.
   const tbl = spatialTree as any;
+  // Columna propia para el botón de ojo (ver makeVisibilityToggle): la celda
+  // "Name" se autoajusta a su contenido, así que un botón metido ahí adentro
+  // termina en una posición distinta por fila según el largo del texto y la
+  // indentación, en vez de alinearse en una misma columna a la derecha. Cada
+  // fila arma su grid a partir de este mismo `columns`, así que "Actions" con
+  // ancho fijo queda en la misma posición en todas las filas.
+  tbl.columns = ["Name", { name: "Actions", width: "1.75rem" }];
   const originalLoadFunction = tbl.loadFunction as (() => Promise<any[]>) | undefined;
   if (originalLoadFunction) {
     tbl.loadFunction = async () => {
@@ -260,11 +351,8 @@ export function createModelTreeView(
           const name: string = n?.data?.Name ?? "";
           return /^IFC[A-Z]+$/i.test(name) || name.endsWith(".ifc");
         });
-      if (needsTransform) {
-        requestAnimationFrame(() => { spatialTree.expanded = true; });
-        buildTypesTree(rawData);
-      }
-      return needsTransform ? toCompactTree(rawData) : rawData;
+      if (needsTransform) buildTypesTree(rawData);
+      return needsTransform ? toCompactTree(rawData, makeVisibilityToggle) : rawData;
     };
     // El primer loadData(true), disparado por CUI.tables.spatialTree() al
     // montar la tabla, ya arrancó con la loadFunction original (sin

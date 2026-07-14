@@ -56,7 +56,7 @@ export function createMeasurementTool(
     style.borderWidth = VERTEX_PREVIEW_BORDER_PX;
   }
 
-  setupDimensionArrows(measurer, world);
+  setupCotas(measurer, world);
   setupVertexPickerRulerIcon(measurer);
 
   return measurer;
@@ -97,136 +97,300 @@ function createVertexCircleElement(colorHex: string): HTMLElement {
   return el;
 }
 
-interface DimensionVisuals {
-  arrowStart: THREE.Mesh;
-  arrowEnd: THREE.Mesh;
-  shaft: Line2;
-  shaftMaterial: LineMaterial;
-  leader: Line2;
-  leaderMaterial: LineMaterial;
+/** Mismo estilo que usa la librería para la etiqueta de una cota (ver
+ *  `ma()` interno de `@thatopen/components-front`), reproducido acá porque
+ *  la etiqueta propia de la librería queda oculta (ver {@link Cota}). */
+function createLabelElement(colorHex: string): HTMLElement {
+  const el = document.createElement("div");
+  el.style.backgroundColor = colorHex;
+  el.style.color           = "white";
+  el.style.padding         = "6px";
+  el.style.borderRadius    = "6px";
+  el.style.boxShadow       = "0px 4px 6px rgba(0, 0, 0, 0.6)";
+  el.style.zIndex          = "-10";
+  return el;
+}
+
+/** Elemento invisible usado para apagar los círculos de vértice propios de
+ *  la librería (ver {@link Cota}); `dim.endpointElement` clona este mismo
+ *  nodo para el segundo extremo, así que el `display:none` alcanza para
+ *  ambos. */
+function createHiddenElement(): HTMLElement {
+  const el = document.createElement("div");
+  el.style.display = "none";
+  return el;
+}
+
+function createArrowHead(color: THREE.Color): THREE.Mesh {
+  const geometry = new THREE.ConeGeometry(1, 1, 9);
+  geometry.translate(0, -0.5, 0); // la punta queda en el origen local
+  const material = new THREE.MeshBasicMaterial({ color, depthTest: false });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.renderOrder = 3;
+  return mesh;
+}
+
+function createShaft(color: THREE.Color): { shaft: Line2; material: LineMaterial } {
+  const material = new LineMaterial({ color: color.getHex(), linewidth: DIMENSION_LINE_WIDTH_PX });
+  const shaft = new Line2(new LineGeometry(), material);
+  shaft.renderOrder = 1;
+  return { shaft, material };
+}
+
+function createLeader(color: THREE.Color): { leader: Line2; material: LineMaterial } {
+  const material = new LineMaterial({
+    color: color.getHex(),
+    linewidth: 1.5,
+    dashed: true,
+    dashSize: LEADER_DASH_SIZE,
+    gapSize: LEADER_GAP_SIZE,
+  });
+  const leader = new Line2(new LineGeometry(), material);
+  leader.renderOrder = 1;
+  leader.visible = false;
+  return { leader, material };
+}
+
+const UP = new THREE.Vector3(0, 1, 0);
+function orient(mesh: THREE.Mesh, tip: THREE.Vector3, outward: THREE.Vector3, length: number): void {
+  mesh.position.copy(tip);
+  mesh.quaternion.setFromUnitVectors(UP, outward);
+  const radius = length * 0.35;
+  mesh.scale.set(radius, length, radius);
+}
+const arrowDirection = new THREE.Vector3();
+
+/**
+ * Representación visual propia de una cota ya fijada: círculos de vértice,
+ * etiqueta arrastrable, línea gruesa y flechas de doble punta. Se apoya en
+ * el `OBF.DimensionLine` de la librería solo para los datos (`dim.line`,
+ * `boundingBox`, formato de valor/unidades) — su propia representación
+ * visual (línea fina, círculos de vértice, etiqueta) queda oculta en el
+ * constructor y jamás se usa para dibujar nada.
+ *
+ * Motivo: los círculos de vértice de la librería (`DimensionLine._endpoints`,
+ * privado, gestionado internamente por el picker de vértices) podían
+ * quedar visualmente separados del vértice real durante el hover — sin
+ * poder aislar la causa exacta dentro del bundle minificado de
+ * `@thatopen/components-front`. Al posicionar nosotros mismos los círculos
+ * y la etiqueta, directamente desde `dim.line.start/end` (la misma fuente
+ * que ya usan la flecha y la línea, y que nunca cambia para una cota ya
+ * fijada), ningún código ajeno tiene una referencia a estos objetos para
+ * desplazarlos.
+ *
+ * Todas las mallas/objetos propios se parentean al mismo grupo (`_root`)
+ * que ya usa la cota de la librería, así que `DimensionLine.dispose()` los
+ * remueve y libera solo — no hace falta un `dispose()` propio.
+ */
+class Cota {
+  readonly dim: OBF.DimensionLine;
+  readonly startMark: OBF.Mark;
+  readonly endMark: OBF.Mark;
+  readonly label: OBF.Mark;
+  readonly shaft: Line2;
+  readonly shaftMaterial: LineMaterial;
+  readonly arrowStart: THREE.Mesh;
+  readonly arrowEnd: THREE.Mesh;
+  readonly leader: Line2;
+  readonly leaderMaterial: LineMaterial;
+  private readonly world: OBC.World;
+  private readonly labelAnchor = new THREE.Vector3();
+
+  constructor(dim: OBF.DimensionLine, world: OBC.World, color: THREE.Color) {
+    this.dim = dim;
+    this.world = world;
+
+    // La cota de la librería sigue calculando geometría/valor/bounding box,
+    // pero su representación visual queda apagada: dibujamos la nuestra.
+    dim.lineElement.visible = false;
+    dim.endpointElement = createHiddenElement();
+    dim.label.visible = false;
+
+    const colorHex = `#${color.getHexString()}`;
+    const parent = dim.lineElement.parent ?? world.scene.three;
+
+    this.startMark = new OBF.Mark(world, createVertexCircleElement(colorHex), parent);
+    this.endMark   = new OBF.Mark(world, createVertexCircleElement(colorHex), parent);
+    this.label     = new OBF.Mark(world, createLabelElement(colorHex), parent);
+
+    const { shaft, material: shaftMaterial } = createShaft(color);
+    const { leader, material: leaderMaterial } = createLeader(color);
+    this.shaft = shaft;
+    this.shaftMaterial = shaftMaterial;
+    this.leader = leader;
+    this.leaderMaterial = leaderMaterial;
+    this.arrowStart = createArrowHead(color);
+    this.arrowEnd   = createArrowHead(color);
+    parent.add(shaft, leader, this.arrowStart, this.arrowEnd);
+
+    dim.line.getCenter(this.labelAnchor);
+    this.label.three.position.copy(this.labelAnchor);
+    this.refreshLabelText();
+
+    this.updateGeometry();
+    this.setupLabelDrag();
+  }
+
+  /** Reposiciona círculos, flechas y línea desde `dim.line.start/end`. La
+   *  etiqueta no se toca acá: su posición solo cambia por arrastre. */
+  updateGeometry(): void {
+    const { start, end } = this.dim.line;
+    this.startMark.three.position.copy(start);
+    this.endMark.three.position.copy(end);
+    this.shaft.geometry.setFromPoints([start, end]);
+    this.shaft.computeLineDistances();
+
+    arrowDirection.subVectors(end, start);
+    const distance = arrowDirection.length();
+    if (distance < 1e-6) {
+      this.arrowStart.visible = false;
+      this.arrowEnd.visible = false;
+      return;
+    }
+    arrowDirection.normalize();
+    // Tope en cotas muy cortas para que las dos puntas no se superpongan.
+    const length = Math.min(ARROW_HEAD_LENGTH, distance * 0.45);
+    this.arrowStart.visible = true;
+    this.arrowEnd.visible = true;
+    orient(this.arrowStart, start, arrowDirection.clone().negate(), length);
+    orient(this.arrowEnd, end, arrowDirection, length);
+  }
+
+  /** Refresca el texto (valor + unidad) reusando el formato de la librería
+   *  vía la etiqueta oculta de `dim`, y lo copia a la nuestra. */
+  refreshLabelText(): void {
+    this.dim.updateLabel();
+    this.label.three.element.textContent = this.dim.label.three.element.textContent;
+  }
+
+  setColor(color: THREE.Color): void {
+    const hex = `#${color.getHexString()}`;
+    this.startMark.three.element.style.borderColor = hex;
+    this.endMark.three.element.style.borderColor = hex;
+    this.label.three.element.style.backgroundColor = hex;
+    (this.arrowStart.material as THREE.MeshBasicMaterial).color.copy(color);
+    (this.arrowEnd.material as THREE.MeshBasicMaterial).color.copy(color);
+    this.shaftMaterial.color.copy(color);
+    this.leaderMaterial.color.copy(color);
+  }
+
+  setSelected(selected: boolean, baseColor: THREE.Color): void {
+    this.dim.isSelected = selected;
+    this.setColor(selected ? SELECTION_HIGHLIGHT_COLOR : baseColor);
+    this.shaftMaterial.linewidth = selected ? DIMENSION_LINE_WIDTH_PX + 2 : DIMENSION_LINE_WIDTH_PX;
+  }
+
+  setVisible(visible: boolean): void {
+    this.startMark.visible = visible;
+    this.endMark.visible = visible;
+    this.label.visible = visible;
+    this.shaft.visible = visible;
+    this.arrowStart.visible = visible;
+    this.arrowEnd.visible = visible;
+    if (!visible) this.leader.visible = false;
+  }
+
+  /** Arrastrar la etiqueta en el plano paralelo a la cámara (a su propia
+   *  profundidad). Al alejarse de su posición original se dibuja una línea
+   *  punteada uniéndola con el punto medio de la cota. */
+  private setupLabelDrag(): void {
+    const el = this.label.three.element;
+    el.style.pointerEvents = "auto";
+    el.style.cursor = "grab";
+
+    const plane = new THREE.Plane();
+    const raycaster = new THREE.Raycaster();
+    const ndc = new THREE.Vector2();
+    const cameraDirection = new THREE.Vector3();
+    const target = new THREE.Vector3();
+    let dragging = false;
+
+    const updateLeader = (): void => {
+      const pos = this.label.three.position;
+      if (this.labelAnchor.distanceTo(pos) < LEADER_MIN_DISTANCE) {
+        this.leader.visible = false;
+        return;
+      }
+      this.leader.visible = true;
+      this.leader.geometry.setFromPoints([this.labelAnchor, pos]);
+      this.leader.computeLineDistances();
+    };
+
+    const pickOnPlane = (event: PointerEvent): boolean => {
+      if (!this.world.renderer) return false;
+      const rect = this.world.renderer.three.domElement.getBoundingClientRect();
+      ndc.set(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1,
+      );
+      raycaster.setFromCamera(ndc, this.world.camera.three);
+      return raycaster.ray.intersectPlane(plane, target) !== null;
+    };
+
+    el.addEventListener("pointerdown", (event: PointerEvent) => {
+      if (event.button !== 0) return;
+      event.stopPropagation();
+      event.preventDefault();
+      dragging = true;
+      el.style.cursor = "grabbing";
+      el.setPointerCapture(event.pointerId);
+      (this.world.camera as OBC.OrthoPerspectiveCamera).setUserInput(false);
+
+      this.world.camera.three.getWorldDirection(cameraDirection);
+      plane.setFromNormalAndCoplanarPoint(cameraDirection, this.label.three.position);
+    });
+
+    el.addEventListener("pointermove", (event: PointerEvent) => {
+      if (!dragging) return;
+      event.stopPropagation();
+      if (pickOnPlane(event)) {
+        this.label.three.position.copy(target);
+        updateLeader();
+      }
+    });
+
+    const endDrag = (event: PointerEvent): void => {
+      if (!dragging) return;
+      dragging = false;
+      el.style.cursor = "grab";
+      el.releasePointerCapture(event.pointerId);
+      (this.world.camera as OBC.OrthoPerspectiveCamera).setUserInput(true);
+    };
+    el.addEventListener("pointerup", endDrag);
+    el.addEventListener("pointercancel", endDrag);
+  }
 }
 
 /**
- * Compartido entre `setupDimensionArrows` (que crea/destruye estas mallas) y
- * `setupWallOcclusion` (que necesita ocultarlas junto con la cota) — vive a
- * nivel de módulo porque ambas funciones se enganchan a la misma instancia
- * de `measurer.lines` pero no tienen otra forma de pasarse este estado sin
- * cambiar la firma pública de `createMeasurementTool`.
+ * Compartido entre `setupCotas` (que crea/destruye estas `Cota`) y
+ * `setupWallOcclusion`/`setupMeasurementSelection` (que necesitan
+ * ocultarlas/resaltarlas) — vive a nivel de módulo porque las tres
+ * funciones se enganchan a la misma instancia de `measurer.lines` pero no
+ * tienen otra forma de pasarse este estado sin cambiar la firma pública de
+ * `createMeasurementTool`.
  */
-const dimensionVisuals = new Map<OBF.DimensionLine, DimensionVisuals>();
+const cotas = new Map<OBF.DimensionLine, Cota>();
 
-/**
- * Una vez fijada una cota se le agrega: círculos de vértice más grandes en
- * los extremos, una línea gruesa (del mismo color) que los conecta, una
- * flecha de doble punta sobre esa línea apuntando hacia cada vértice, y la
- * posibilidad de arrastrar la etiqueta (queda unida a la cota por una línea
- * punteada) para despejarla en cotas chicas donde el número no entra.
- */
-function setupDimensionArrows(measurer: OBF.LengthMeasurement, world: OBC.World): void {
-  const createArrowHead = (): THREE.Mesh => {
-    const geometry = new THREE.ConeGeometry(1, 1, 12);
-    geometry.translate(0, -0.5, 0); // la punta queda en el origen local
-    const material = new THREE.MeshBasicMaterial({
-      color: measurer.linesMaterial.color,
-      depthTest: false,
-    });
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.renderOrder = 3;
-    return mesh;
-  };
-
-  const createShaft = (): { shaft: Line2; material: LineMaterial } => {
-    const material = new LineMaterial({
-      color: measurer.linesMaterial.color.getHex(),
-      linewidth: DIMENSION_LINE_WIDTH_PX,
-    });
-    const shaft = new Line2(new LineGeometry(), material);
-    shaft.renderOrder = 1;
-    return { shaft, material };
-  };
-
-  const createLeader = (): { leader: Line2; material: LineMaterial } => {
-    const material = new LineMaterial({
-      color: measurer.linesMaterial.color.getHex(),
-      linewidth: 1.5,
-      dashed: true,
-      dashSize: LEADER_DASH_SIZE,
-      gapSize: LEADER_GAP_SIZE,
-    });
-    const leader = new Line2(new LineGeometry(), material);
-    leader.renderOrder = 1;
-    leader.visible = false;
-    return { leader, material };
-  };
-
-  const up = new THREE.Vector3(0, 1, 0);
-  const orient = (mesh: THREE.Mesh, tip: THREE.Vector3, outward: THREE.Vector3, length: number): void => {
-    mesh.position.copy(tip);
-    mesh.quaternion.setFromUnitVectors(up, outward);
-    const radius = length * 0.35;
-    mesh.scale.set(radius, length, radius);
-  };
-
-  const direction = new THREE.Vector3();
-  const updateVisuals = (dim: OBF.DimensionLine, visual: DimensionVisuals): void => {
-    const { start, end } = dim.line;
-    visual.shaft.geometry.setFromPoints([start, end]);
-    visual.shaft.computeLineDistances();
-
-    direction.subVectors(end, start);
-    const distance = direction.length();
-    if (distance < 1e-6) {
-      visual.arrowStart.visible = false;
-      visual.arrowEnd.visible = false;
-      return;
-    }
-    direction.normalize();
-    // Tope en cotas muy cortas para que las dos puntas no se superpongan.
-    const length = Math.min(ARROW_HEAD_LENGTH, distance * 0.45);
-    visual.arrowStart.visible = true;
-    visual.arrowEnd.visible = true;
-    orient(visual.arrowStart, start, direction.clone().negate(), length);
-    orient(visual.arrowEnd, end, direction, length);
-  };
-
+/** Crea/destruye una {@link Cota} por cada cota fijada y mantiene su color,
+ *  unidades y precisión sincronizados con el panel del medidor. */
+function setupCotas(measurer: OBF.LengthMeasurement, world: OBC.World): void {
   measurer.lines.onItemAdded.add((dim) => {
-    const colorHex = `#${measurer.linesMaterial.color.getHexString()}`;
-    dim.endpointElement = createVertexCircleElement(colorHex);
-
-    const { shaft, material } = createShaft();
-    const { leader, material: leaderMaterial } = createLeader();
-    const visual: DimensionVisuals = {
-      arrowStart: createArrowHead(),
-      arrowEnd: createArrowHead(),
-      shaft,
-      shaftMaterial: material,
-      leader,
-      leaderMaterial,
-    };
-    dim.lineElement.parent?.add(visual.shaft, visual.arrowStart, visual.arrowEnd, visual.leader);
-    updateVisuals(dim, visual);
-    dimensionVisuals.set(dim, visual);
-
-    makeLabelDraggable(dim, visual, world);
+    cotas.set(dim, new Cota(dim, world, measurer.linesMaterial.color));
   });
 
-  // Las mallas/línea son hijas del mismo grupo que la cota, así que
-  // `DimensionLine.dispose()` ya las remueve y libera solo; acá solo hace
-  // falta soltar la referencia para no filtrar memoria.
-  measurer.lines.onBeforeDelete.add((dim) => dimensionVisuals.delete(dim));
-  measurer.lines.onCleared.add(() => dimensionVisuals.clear());
+  // La `Cota` es hija del mismo grupo que la cota de la librería (ver su
+  // constructor), así que `DimensionLine.dispose()` ya la remueve y libera
+  // sola; acá solo hace falta soltar la referencia para no filtrar memoria.
+  measurer.lines.onBeforeDelete.add((dim) => cotas.delete(dim));
+  measurer.lines.onCleared.add(() => cotas.clear());
 
-  // El color de los círculos de vértice ya lo sincroniza la propia librería
-  // (`DimensionLine.color`) cuando cambia `measurer.color`; acá solo hace
-  // falta sincronizar las flechas y la línea gruesa, que son nuestras.
   measurer.onStateChanged.add((changes) => {
-    if (!changes.includes("color")) return;
-    const color = measurer.linesMaterial.color;
-    for (const visual of dimensionVisuals.values()) {
-      (visual.arrowStart.material as THREE.MeshBasicMaterial).color.copy(color);
-      (visual.arrowEnd.material as THREE.MeshBasicMaterial).color.copy(color);
-      visual.shaftMaterial.color.copy(color);
-      visual.leaderMaterial.color.copy(color);
+    if (changes.includes("color")) {
+      const color = measurer.linesMaterial.color;
+      for (const cota of cotas.values()) cota.setColor(color);
+    }
+    if (changes.includes("units") || changes.includes("rounding")) {
+      for (const cota of cotas.values()) cota.refreshLabelText();
     }
   });
 }
@@ -273,14 +437,7 @@ export function setupMeasurementSelection(
   const raycaster = new THREE.Raycaster();
 
   const applyHighlight = (dim: OBF.DimensionLine, isSelected: boolean): void => {
-    dim.isSelected = isSelected;
-    const visual = dimensionVisuals.get(dim);
-    if (!visual) return;
-    const color = isSelected ? SELECTION_HIGHLIGHT_COLOR : measurer.linesMaterial.color;
-    visual.shaftMaterial.color.copy(color);
-    visual.shaftMaterial.linewidth = isSelected ? DIMENSION_LINE_WIDTH_PX + 2 : DIMENSION_LINE_WIDTH_PX;
-    (visual.arrowStart.material as THREE.MeshBasicMaterial).color.copy(color);
-    (visual.arrowEnd.material as THREE.MeshBasicMaterial).color.copy(color);
+    cotas.get(dim)?.setSelected(isSelected, measurer.linesMaterial.color);
   };
 
   const deselect = (): void => {
@@ -391,13 +548,7 @@ export function setupWallOcclusion(
   const toPoint = new THREE.Vector3();
 
   const setDimVisible = (dim: OBF.DimensionLine, visible: boolean): void => {
-    dim.visible = visible;
-    const visual = dimensionVisuals.get(dim);
-    if (!visual) return;
-    visual.shaft.visible = visible;
-    visual.arrowStart.visible = visible;
-    visual.arrowEnd.visible = visible;
-    if (!visible) visual.leader.visible = false;
+    cotas.get(dim)?.setVisible(visible);
   };
 
   // Profundidad de un punto a lo largo de la dirección de vista de la
@@ -480,81 +631,6 @@ export function setupWallOcclusion(
       else for (const dim of measurer.lines) setDimVisible(dim, true);
     },
   };
-}
-
-/**
- * Permite arrastrar la etiqueta de una cota en el plano paralelo a la
- * cámara (a la profundidad en la que ya está la etiqueta). Mientras se
- * aleja de su posición original se dibuja una línea punteada uniéndola con
- * el punto medio de la cota; si vuelve a acercarse, la línea se oculta de
- * nuevo.
- */
-function makeLabelDraggable(dim: OBF.DimensionLine, visual: DimensionVisuals, world: OBC.World): void {
-  const el = dim.label.three.element;
-  el.style.pointerEvents = "auto";
-  el.style.cursor = "grab";
-
-  const anchor = dim.label.three.position.clone();
-  const plane = new THREE.Plane();
-  const raycaster = new THREE.Raycaster();
-  const ndc = new THREE.Vector2();
-  const cameraDirection = new THREE.Vector3();
-  const target = new THREE.Vector3();
-  let dragging = false;
-
-  const updateLeader = (): void => {
-    const pos = dim.label.three.position;
-    if (anchor.distanceTo(pos) < LEADER_MIN_DISTANCE) {
-      visual.leader.visible = false;
-      return;
-    }
-    visual.leader.visible = true;
-    visual.leader.geometry.setFromPoints([anchor, pos]);
-    visual.leader.computeLineDistances();
-  };
-
-  const pickOnPlane = (event: PointerEvent): boolean => {
-    if (!world.renderer) return false;
-    const rect = world.renderer.three.domElement.getBoundingClientRect();
-    ndc.set(
-      ((event.clientX - rect.left) / rect.width) * 2 - 1,
-      -((event.clientY - rect.top) / rect.height) * 2 + 1,
-    );
-    raycaster.setFromCamera(ndc, world.camera.three);
-    return raycaster.ray.intersectPlane(plane, target) !== null;
-  };
-
-  el.addEventListener("pointerdown", (event: PointerEvent) => {
-    if (event.button !== 0) return;
-    event.stopPropagation();
-    event.preventDefault();
-    dragging = true;
-    el.style.cursor = "grabbing";
-    el.setPointerCapture(event.pointerId);
-    (world.camera as OBC.OrthoPerspectiveCamera).setUserInput(false);
-
-    world.camera.three.getWorldDirection(cameraDirection);
-    plane.setFromNormalAndCoplanarPoint(cameraDirection, dim.label.three.position);
-  });
-
-  el.addEventListener("pointermove", (event: PointerEvent) => {
-    if (!dragging) return;
-    event.stopPropagation();
-    if (pickOnPlane(event)) {
-      dim.label.three.position.copy(target);
-      updateLeader();
-    }
-  });
-
-  const endDrag = (event: PointerEvent): void => {
-    if (!dragging) return;
-    dragging = false;
-    el.style.cursor = "grab";
-    el.releasePointerCapture(event.pointerId);
-    (world.camera as OBC.OrthoPerspectiveCamera).setUserInput(true);
-  };
-  el.addEventListener("pointerup", endDrag);
-  el.addEventListener("pointercancel", endDrag);
 }
 
 /**
