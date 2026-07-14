@@ -362,7 +362,6 @@ export function createModelTreeView(
   }
 
   // — Spatial tree click —
-  spatialTree.selectableRows = true;
   spatialTree.addEventListener("click", (event: Event) => {
     const path = event.composedPath();
     const row  = path.find((el: any) => el.tagName === "BIM-TABLE-ROW") as any;
