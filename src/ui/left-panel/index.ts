@@ -5,6 +5,7 @@ import { createModelsTree, SerializedCollections } from "./models-tree";
 import { createDataLayersTree, SerializedDataLayers } from "./data-layers-tree";
 import type { WorldLabelTool } from "../../tools/world-label-tool";
 import type { DrawTool } from "../../tools/draw-tool";
+import type { CotaTool } from "../../tools/cota-tool";
 import { saveRecentFile } from "../../ifc/recent-files";
 import { ensureExplicitThemeClass } from "../theme";
 
@@ -42,13 +43,14 @@ export function createLeftPanel(
   topics: OBC.BCFTopics,
   labels: WorldLabelTool,
   drawings: DrawTool,
+  cotas: CotaTool,
   world: OBC.World,
 ): LeftPanel {
   const modelsTree = createModelsTree(fragments, components, highlighter);
   let onTopicSelectCb: ((topicGuid: string) => void) | null = null;
   let onOpenTopicsTableCb: (() => void) | null = null;
   const dataLayersController = createDataLayersTree(
-    measurer, clipper, topics, labels, drawings, world,
+    measurer, clipper, topics, labels, drawings, cotas, world,
     () => modelsTree.refresh(),
     () => modelsTree.ensureDefaultCollectionId(),
     (topicGuid) => onTopicSelectCb?.(topicGuid),

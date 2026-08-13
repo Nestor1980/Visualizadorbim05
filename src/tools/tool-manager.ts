@@ -119,6 +119,7 @@ export class ToolManager {
 
     const view: ToolOptionsView =
       mode === "measure"    ? "measure" :
+      mode === "cota"       ? "cota" :
       mode === "section"    ? "section" :
       mode === "draw"       ? "draw" :
       mode === "properties" ? "properties" :

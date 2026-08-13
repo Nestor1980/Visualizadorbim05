@@ -5,12 +5,14 @@ import { createMedidorPanel } from "./right-panel/medidor-panel";
 import { createSectionPanel } from "./right-panel/section-panel";
 import { createLabelPanel } from "./right-panel/label-panel";
 import { createDrawPanel } from "./right-panel/draw-panel";
+import { createCotaPanel } from "./right-panel/cota-panel";
 import type { SectionTool } from "../tools/section-tool";
 import type { WorldLabelTool } from "../tools/world-label-tool";
 import type { DrawTool } from "../tools/draw-tool";
+import type { CotaTool } from "../tools/cota-tool";
 import type { WallOcclusionControl, MeasurementSelectionControl } from "../tools/measurement-tool";
 
-export type ToolOptionsView = "measure" | "section" | "properties" | "label" | "draw" | null;
+export type ToolOptionsView = "measure" | "cota" | "section" | "properties" | "label" | "draw" | null;
 
 export interface ToolOptionsPanel {
   element: HTMLElement;
@@ -34,17 +36,20 @@ export function createToolOptionsPanel(
   sectionTool: SectionTool,
   worldLabelTool: WorldLabelTool,
   drawTool: DrawTool,
+  cotaTool: CotaTool,
 ): ToolOptionsPanel {
   const propertiesPanel = createPropertiesPanel(components, fragments);
   const medidorPanel    = createMedidorPanel(measurer, wallOcclusion, measurementSelection);
   const sectionPanel    = createSectionPanel(sectionTool);
   const labelPanel      = createLabelPanel(worldLabelTool);
   const drawPanel       = createDrawPanel(drawTool);
+  const cotaPanel       = createCotaPanel(cotaTool);
 
   propertiesPanel.section.collapsed = false;
 
   const views: Record<Exclude<ToolOptionsView, null>, HTMLElement> = {
     measure:    medidorPanel.element,
+    cota:       cotaPanel.element,
     section:    sectionPanel.section,
     properties: propertiesPanel.section,
     label:      labelPanel.element,
@@ -53,7 +58,7 @@ export function createToolOptionsPanel(
 
   const element = document.createElement("div");
   element.className = "tool-options-panel";
-  element.append(views.measure, views.section, views.properties, views.label, views.draw);
+  element.append(views.measure, views.cota, views.section, views.properties, views.label, views.draw);
 
   const applyView = (view: ToolOptionsView): void => {
     element.style.display = view ? "" : "none";

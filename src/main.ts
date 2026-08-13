@@ -135,7 +135,7 @@ async function startApp(): Promise<{
   CUI.Manager.init();
   createNavWidget(viewport, world, fragments, vcRef);
 
-  const toolOptionsPanel = createToolOptionsPanel(components, fragments, measurer, wallOcclusion, measurementSelection, sectionTool, worldLabelTool, drawTool);
+  const toolOptionsPanel = createToolOptionsPanel(components, fragments, measurer, wallOcclusion, measurementSelection, sectionTool, worldLabelTool, drawTool, cotaTool);
   viewport.append(toolOptionsPanel.element);
 
   toolManager.setToolOptionsPanel(toolOptionsPanel);
@@ -170,7 +170,7 @@ async function startApp(): Promise<{
 
   const leftPanel = createLeftPanel(
     components, fragments, ifcLoader, highlighter, onModelLoaded,
-    measurer, sectionTool.clipper, topics, worldLabelTool, drawTool, world,
+    measurer, sectionTool.clipper, topics, worldLabelTool, drawTool, cotaTool, world,
   );
 
   // Panel dinámico de abajo: Renderizado.

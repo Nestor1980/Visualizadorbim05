@@ -96,7 +96,7 @@ export function createToolbar(
             }}>
             <bim-tooltip>
               <div style="font-weight:600;">Cota</div>
-              <div style="opacity:0.75;">En construcción — por ahora resalta vértices y bordes al pasar el mouse</div>
+              <div style="opacity:0.75;">Click para fijar el primer punto, click de nuevo para crear la cota</div>
             </bim-tooltip>
           </bim-button>
         </bim-toolbar-section>

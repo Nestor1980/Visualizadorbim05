@@ -3,6 +3,7 @@ import * as OBC from "@thatopen/components";
 import * as OBF from "@thatopen/components-front";
 import type { WorldLabelTool } from "../../tools/world-label-tool";
 import type { DrawTool } from "../../tools/draw-tool";
+import type { CotaTool } from "../../tools/cota-tool";
 
 export interface DataLayer {
   id: string;
@@ -11,6 +12,7 @@ export interface DataLayer {
   collectionId: string | null;
   expanded: boolean;
   measurementsExpanded: boolean;
+  cotasExpanded: boolean;
   sectionsExpanded: boolean;
   topicsExpanded: boolean;
   labelsExpanded: boolean;
@@ -44,9 +46,14 @@ export interface SerializedDataLayers {
     layerId: string; name: string; color: string; width: number; points: Vec3Tuple[];
     visible: boolean; cameraPosition: Vec3Tuple; cameraTarget: Vec3Tuple;
   }[];
+  /** Opcional para poder leer proyectos guardados antes de que existiera la
+   *  herramienta de cotas nueva. */
+  cotas?: {
+    layerId: string; name: string; start: Vec3Tuple; end: Vec3Tuple; visible: boolean;
+  }[];
 }
 
-type DraggedItem = { kind: "measurement" | "section" | "topic" | "label" | "draw"; id: string } | null;
+type DraggedItem = { kind: "measurement" | "cota" | "section" | "topic" | "label" | "draw"; id: string } | null;
 
 /**
  * Renderiza filas para el árbol de `models-tree.ts` (Colecciones), que es el
@@ -72,6 +79,7 @@ export function createDataLayersTree(
   topics: OBC.BCFTopics,
   labels: WorldLabelTool,
   drawings: DrawTool,
+  cotas: CotaTool,
   world: OBC.World,
   requestRender: () => void,
   getDefaultCollectionId: () => string,
@@ -92,9 +100,12 @@ export function createDataLayersTree(
   const labelDataLayer = new Map<string, string>();       // labelId -> dataLayerId
   const drawDataLayer = new Map<string, string>();        // strokeId -> dataLayerId
   const drawName = new Map<string, string>();             // strokeId -> nombre editable
+  const cotaDataLayer = new Map<string, string>();        // cotaId -> dataLayerId
+  const cotaName = new Map<string, string>();             // cotaId -> nombre editable
   let measurementCounter = 0;
   let sectionCounter = 0;
   let drawCounter = 0;
+  let cotaCounter = 0;
 
   let draggedItem: DraggedItem = null;
   let draggedDataLayerId: string | null = null;
@@ -119,6 +130,9 @@ export function createDataLayersTree(
 
     for (const id of [...drawDataLayer.keys()]) if (!drawings.list.has(id)) drawDataLayer.delete(id);
     for (const id of [...drawName.keys()]) if (!drawings.list.has(id)) drawName.delete(id);
+
+    for (const id of [...cotaDataLayer.keys()]) if (!cotas.list.has(id)) cotaDataLayer.delete(id);
+    for (const id of [...cotaName.keys()]) if (!cotas.list.has(id)) cotaName.delete(id);
   }
 
   function makeIconButton(icon: string, title: string, onClick: () => void | Promise<void>): HTMLButtonElement {
@@ -225,6 +239,55 @@ export function createDataLayersTree(
     });
     const deleteBtn = makeIconButton("mdi:delete", "Eliminar medición", () => {
       if (line) measurer.list.delete(line);
+      requestRender();
+    });
+
+    actions.append(eyeBtn, deleteBtn);
+    row.append(icon, label, actions);
+    return row;
+  }
+
+  function renderCotaRow(cotaId: string): HTMLElement {
+    const cota = cotas.list.get(cotaId);
+    if (!cota) return document.createElement("div");
+    const name = cotaName.get(cotaId) ?? cotaId;
+    const hidden = !cota.visible;
+
+    const row = document.createElement("div");
+    row.className = "models-row models-row--nested data-layer-item-row";
+    row.draggable = true;
+    row.addEventListener("dragstart", (e: DragEvent) => {
+      draggedItem = { kind: "cota", id: cotaId };
+      e.dataTransfer?.setData("text/plain", cotaId);
+      if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+      row.classList.add("is-dragging");
+    });
+    row.addEventListener("dragend", () => {
+      draggedItem = null;
+      row.classList.remove("is-dragging");
+    });
+
+    const icon = document.createElement("bim-icon") as any;
+    icon.icon = "solar:ruler-bold";
+    icon.className = "models-row-icon";
+
+    const label = document.createElement("span");
+    label.className = "models-row-name";
+    label.textContent = `${name} — ${cota.distance.toFixed(2)} m`;
+    label.addEventListener("dblclick", (e) => {
+      e.stopPropagation();
+      startRename(name, label, (value) => cotaName.set(cotaId, value));
+    });
+
+    const actions = document.createElement("div");
+    actions.className = "models-row-actions";
+
+    const eyeBtn = makeIconButton(hidden ? "mdi:eye-off" : "mdi:eye", hidden ? "Mostrar" : "Ocultar", () => {
+      cota.visible = !cota.visible;
+      requestRender();
+    });
+    const deleteBtn = makeIconButton("mdi:delete", "Eliminar cota", () => {
+      cotas.deleteCota(cotaId);
       requestRender();
     });
 
@@ -444,7 +507,7 @@ export function createDataLayersTree(
 
   function renderCategoryRow(
     layer: DataLayer,
-    kind: "measurement" | "section" | "topic" | "label" | "draw",
+    kind: "measurement" | "cota" | "section" | "topic" | "label" | "draw",
     label: string,
     icon: string,
     itemIds: string[],
@@ -470,6 +533,7 @@ export function createDataLayersTree(
       wrapper.classList.remove("drag-over");
       if (!draggedItem || draggedItem.kind !== kind) return;
       if (kind === "measurement") measurementDataLayer.set(draggedItem.id, layer.id);
+      else if (kind === "cota") cotaDataLayer.set(draggedItem.id, layer.id);
       else if (kind === "section") planeDataLayer.set(draggedItem.id, layer.id);
       else if (kind === "topic") topicDataLayer.set(draggedItem.id, layer.id);
       else if (kind === "draw") drawDataLayer.set(draggedItem.id, layer.id);
@@ -518,6 +582,7 @@ export function createDataLayersTree(
       for (const id of itemIds) {
         wrapper.append(
           kind === "measurement" ? renderMeasurementRow(id) :
+          kind === "cota"        ? renderCotaRow(id) :
           kind === "section"     ? renderSectionRow(id) :
           kind === "topic"       ? renderTopicRow(id) :
           kind === "draw"        ? renderDrawRow(id) :
@@ -544,6 +609,9 @@ export function createDataLayersTree(
       .map(([id]) => id);
     const drawIds = [...drawDataLayer.entries()]
       .filter(([id, layerId]) => layerId === layer.id && drawings.list.has(id))
+      .map(([id]) => id);
+    const cotaIds = [...cotaDataLayer.entries()]
+      .filter(([id, layerId]) => layerId === layer.id && cotas.list.has(id))
       .map(([id]) => id);
 
     const wrapper = document.createElement("div");
@@ -584,6 +652,7 @@ export function createDataLayersTree(
       row.classList.remove("drag-over");
       if (!draggedItem) return;
       if (draggedItem.kind === "measurement") measurementDataLayer.set(draggedItem.id, layer.id);
+      else if (draggedItem.kind === "cota") cotaDataLayer.set(draggedItem.id, layer.id);
       else if (draggedItem.kind === "section") planeDataLayer.set(draggedItem.id, layer.id);
       else if (draggedItem.kind === "topic") topicDataLayer.set(draggedItem.id, layer.id);
       else if (draggedItem.kind === "draw") drawDataLayer.set(draggedItem.id, layer.id);
@@ -644,12 +713,16 @@ export function createDataLayersTree(
           const stroke = drawings.list.get(id);
           if (stroke) stroke.line.visible = !layer.hidden;
         }
+        for (const id of cotaIds) {
+          const cota = cotas.list.get(id);
+          if (cota) cota.visible = !layer.hidden;
+        }
         requestRender();
       },
     );
 
-    const deleteBtn = makeIconButton("mdi:delete", "Eliminar capa de datos (borra sus mediciones, cortes, etiquetas y dibujos)", () => {
-      if (!confirm(`¿Eliminar "${layer.name}" y todas sus mediciones/cortes/etiquetas/dibujos?`)) return;
+    const deleteBtn = makeIconButton("mdi:delete", "Eliminar capa de datos (borra sus mediciones, cortes, cotas, etiquetas y dibujos)", () => {
+      if (!confirm(`¿Eliminar "${layer.name}" y todas sus mediciones/cortes/cotas/etiquetas/dibujos?`)) return;
       for (const id of measurementIds) {
         const line = findLineById(id);
         if (line) measurer.list.delete(line);
@@ -657,6 +730,7 @@ export function createDataLayersTree(
       for (const id of sectionIds) clipper.delete(world, id);
       for (const id of labelIds) labels.deleteLabel(id);
       for (const id of drawIds) drawings.deleteStroke(id);
+      for (const id of cotaIds) cotas.deleteCota(id);
       const idx = dataLayers.indexOf(layer);
       if (idx >= 0) dataLayers.splice(idx, 1);
       if (activeDataLayerId === layer.id) activeDataLayerId = dataLayers[0]?.id ?? null;
@@ -674,6 +748,12 @@ export function createDataLayersTree(
         wrapper.append(renderCategoryRow(
           layer, "measurement", "Mediciones", "solar:ruler-bold", measurementIds,
           layer.measurementsExpanded, () => { layer.measurementsExpanded = !layer.measurementsExpanded; },
+        ));
+      }
+      if (cotaIds.length > 0) {
+        wrapper.append(renderCategoryRow(
+          layer, "cota", "Cotas", "solar:ruler-bold", cotaIds,
+          layer.cotasExpanded, () => { layer.cotasExpanded = !layer.cotasExpanded; },
         ));
       }
       if (sectionIds.length > 0) {
@@ -717,6 +797,7 @@ export function createDataLayersTree(
       collectionId,
       expanded: true,
       measurementsExpanded: true,
+      cotasExpanded: true,
       sectionsExpanded: true,
       topicsExpanded: true,
       labelsExpanded: true,
@@ -817,6 +898,17 @@ export function createDataLayersTree(
   });
   drawings.onItemDeleted.add((id) => { drawDataLayer.delete(id); drawName.delete(id); requestRender(); });
 
+  cotas.onItemAdded.add((cota) => {
+    const layer = ensureDefaultDataLayer();
+    if (!cotaDataLayer.has(cota.id)) cotaDataLayer.set(cota.id, layer.id);
+    if (!cotaName.has(cota.id)) {
+      cotaCounter += 1;
+      cotaName.set(cota.id, `Cota ${cotaCounter}`);
+    }
+    requestRender();
+  });
+  cotas.onItemDeleted.add((id) => { cotaDataLayer.delete(id); cotaName.delete(id); requestRender(); });
+
   const v3 = (v: THREE.Vector3): Vec3Tuple => [v.x, v.y, v.z];
   const toVec3 = (v: Vec3Tuple): THREE.Vector3 => new THREE.Vector3(v[0], v[1], v[2]);
 
@@ -870,9 +962,20 @@ export function createDataLayersTree(
       })
       .filter((d): d is NonNullable<typeof d> => d !== null);
 
+    const cotasOut = [...cotaDataLayer.entries()]
+      .map(([id, layerId]) => {
+        const cota = cotas.list.get(id);
+        if (!cota) return null;
+        return {
+          layerId, name: cotaName.get(id) ?? id,
+          start: v3(cota.start), end: v3(cota.end), visible: cota.visible,
+        };
+      })
+      .filter((c): c is NonNullable<typeof c> => c !== null);
+
     return {
       layers: dataLayers.map((l) => ({ ...l })),
-      measurements, sections, topics: topicsOut, labels: labelsOut, drawings: drawingsOut,
+      measurements, sections, topics: topicsOut, labels: labelsOut, drawings: drawingsOut, cotas: cotasOut,
     };
   }
 
@@ -884,6 +987,7 @@ export function createDataLayersTree(
     for (const id of [...clipper.list.keys()]) clipper.delete(world, id);
     for (const id of [...labels.list.keys()]) labels.deleteLabel(id);
     for (const id of [...drawings.list.keys()]) drawings.deleteStroke(id);
+    for (const id of [...cotas.list.keys()]) cotas.deleteCota(id);
 
     dataLayers.length = 0;
     measurementDataLayer.clear();
@@ -893,6 +997,8 @@ export function createDataLayersTree(
     labelDataLayer.clear();
     drawDataLayer.clear();
     drawName.clear();
+    cotaDataLayer.clear();
+    cotaName.clear();
     activeDataLayerId = null;
 
     for (const l of data.layers) dataLayers.push({ ...l });
@@ -938,6 +1044,13 @@ export function createDataLayersTree(
       stroke.line.visible = d.visible;
       drawDataLayer.set(stroke.id, d.layerId);
       drawName.set(stroke.id, d.name);
+    }
+
+    for (const c of data.cotas ?? []) {
+      const cota = cotas.addCota(toVec3(c.start), toVec3(c.end));
+      cota.visible = c.visible;
+      cotaDataLayer.set(cota.id, c.layerId);
+      cotaName.set(cota.id, c.name);
     }
 
     requestRender();
