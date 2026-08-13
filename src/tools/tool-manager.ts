@@ -1,10 +1,7 @@
 import * as OBF from "@thatopen/components-front";
 import * as OBC from "@thatopen/components";
-import * as FRAGS from "@thatopen/fragments";
 import * as THREE from "three";
 import type { SectionTool } from "./section-tool";
-import { measureFaceEdges } from "./measurement-tool";
-import type { MeasurementSelectionControl } from "./measurement-tool";
 import type { WorldLabelTool } from "./world-label-tool";
 import type { DrawTool } from "./draw-tool";
 import type { CotaTool } from "./cota-tool";
@@ -12,7 +9,7 @@ import type * as BUI from "@thatopen/ui";
 import type { ToolOptionsView } from "../ui/tool-options-panel";
 import type { SelectionManager } from "../selection/selection-manager";
 
-export type ToolMode = "navigate" | "measure" | "cota" | "section" | "label" | "draw" | "properties";
+export type ToolMode = "navigate" | "cota" | "section" | "label" | "draw" | "properties";
 
 interface ToolOptionsPanelLike {
   setView: (view: ToolOptionsView) => void;
@@ -29,15 +26,12 @@ export class ToolManager {
   activeMode: ToolMode = "navigate";
 
   navigateBtnEl: BUI.Button | null = null;
-  measureBtnEl: BUI.Button | null = null;
   cotaBtnEl: BUI.Button | null = null;
   sectionBtnEl: BUI.Button | null = null;
   labelBtnEl: BUI.Button | null = null;
   drawBtnEl: BUI.Button | null = null;
   propertiesBtnEl: BUI.Button | null = null;
 
-  private measurer: OBF.LengthMeasurement;
-  private measurementSelection: MeasurementSelectionControl;
   private highlighter: OBF.Highlighter;
   private hoverer: OBF.Hoverer;
   private sectionTool: SectionTool;
@@ -49,8 +43,6 @@ export class ToolManager {
   private camera: OBC.OrthoPerspectiveCamera | null = null;
 
   constructor(
-    measurer: OBF.LengthMeasurement,
-    measurementSelection: MeasurementSelectionControl,
     highlighter: OBF.Highlighter,
     hoverer: OBF.Hoverer,
     sectionTool: SectionTool,
@@ -58,8 +50,6 @@ export class ToolManager {
     drawTool: DrawTool,
     cotaTool: CotaTool,
   ) {
-    this.measurer      = measurer;
-    this.measurementSelection = measurementSelection;
     this.highlighter   = highlighter;
     this.hoverer       = hoverer;
     this.sectionTool   = sectionTool;
@@ -79,7 +69,6 @@ export class ToolManager {
   setMode(mode: ToolMode): void {
     this.activeMode = mode;
 
-    this.measurer.enabled                      = false;
     this.highlighter.enabled                   = false;
     this.hoverer.enabled                       = false;
     this.sectionTool.clipper.enabled           = false;
@@ -89,13 +78,10 @@ export class ToolManager {
     if (mode === "navigate" || mode === "properties") {
       this.highlighter.enabled = true;
       this.hoverer.enabled     = true;
-    } else if (mode === "measure") {
-      this.measurer.enabled = true;
     } else if (mode === "section") {
       this.sectionTool.clipper.enabled          = true;
       this.sectionTool.sectionFillGroup.visible = true;
     }
-    if (mode !== "measure") this.measurementSelection.deselect();
     if (mode !== "label") this.worldLabelTool.previewAt(null);
 
     if (mode === "draw") this.drawTool.activate();
@@ -106,7 +92,6 @@ export class ToolManager {
 
     const modeButtons: Record<ToolMode, BUI.Button | null> = {
       navigate:   this.navigateBtnEl,
-      measure:    this.measureBtnEl,
       cota:       this.cotaBtnEl,
       section:    this.sectionBtnEl,
       label:      this.labelBtnEl,
@@ -118,7 +103,6 @@ export class ToolManager {
     }
 
     const view: ToolOptionsView =
-      mode === "measure"    ? "measure" :
       mode === "cota"       ? "cota" :
       mode === "section"    ? "section" :
       mode === "draw"       ? "draw" :
@@ -301,50 +285,6 @@ export class ToolManager {
       this.drawTool.extendStroke(event.clientX, event.clientY);
     });
 
-    // En modo "measure", un click sobre un snap válido (vértice/borde/superficie,
-    // según measurer.snappings) coloca el punto de medición en lugar de dejar
-    // que camera-controls arranque el orbit; sin snap válido bajo el cursor el
-    // evento se deja pasar intacto y la cámara orbita como siempre. `lastPick`
-    // ya viene resuelto en background por el picker interno de Measurement (se
-    // recalcula por RAF en cada frame en que el mouse se mueve), así que se
-    // puede leer de forma síncrona justo al presionar, sin esperar un pick nuevo.
-    viewport.addEventListener("pointerdown", (event: PointerEvent) => {
-      if (event.button !== 0 || this.activeMode !== "measure") return;
-
-      // Modo "Editar" del panel del medidor: un click selecciona la cota bajo
-      // el cursor (para ver sus propiedades en el panel dinámico) en vez de
-      // crear una nueva.
-      if (this.measurementSelection.getSubMode() === "select") {
-        this.measurementSelection.pickAt(event.clientX, event.clientY);
-        return;
-      }
-
-      const pick = (this.measurer as any).lastPick;
-      // `facePoints`/`faceIndices` vienen poblados en cualquier pick cercano a
-      // una cara sin importar el modo de snap activo — para no "quedar pegado"
-      // en superficie hay que exigir además que el snap resuelto para ESTE
-      // pick sea efectivamente FACE (measurer.snappings solo trae una clase a
-      // la vez, así que snappingClass refleja el modo realmente seleccionado).
-      const hasFaceSnap = !!(
-        pick && pick.snappingClass === FRAGS.SnappingClass.FACE && pick.facePoints && pick.faceIndices
-      );
-      const hasPointOrEdgeSnap = !hasFaceSnap && !!(pick && (pick.point || (pick.snappedEdgeP1 && pick.snappedEdgeP2)));
-      if (!hasFaceSnap && !hasPointOrEdgeSnap) return;
-
-      // camera-controls ya registró este pointerdown y arrancó su drag interno,
-      // pero solo aplica la rotación en los próximos pointermove (releyendo
-      // `enabled`/mouseButtons en cada uno) — deshabilitarlo acá alcanza para
-      // que este gesto puntual no orbite, sin necesidad de interceptar el evento.
-      const camera = world.camera as OBC.OrthoPerspectiveCamera;
-      camera.setUserInput(false);
-      if (hasFaceSnap) {
-        measureFaceEdges(this.measurer, pick.facePoints, pick.faceIndices);
-      } else {
-        this.measurer.create();
-      }
-      window.addEventListener("pointerup", () => camera.setUserInput(true), { once: true });
-    });
-
     // Botón derecho: con una tool activa (distinta de "navigate"), un click
     // derecho simple la cierra y vuelve a modo selección/navegación. Un
     // arrastre con el botón derecho sigue paneando la cámara con normalidad
@@ -368,13 +308,7 @@ export class ToolManager {
       if (isEditableTarget(event)) return;
 
       if (event.code === "Delete" || event.code === "Backspace") {
-        if (this.activeMode === "measure") {
-          if (this.measurementSelection.getSubMode() === "select") {
-            this.measurementSelection.deleteSelected();
-          } else {
-            this.measurer.delete();
-          }
-        } else if (this.activeMode === "draw") {
+        if (this.activeMode === "draw") {
           this.drawTool.deleteSelected();
         } else if (this.activeMode === "section") {
           this.sectionTool.clipper.delete(world);
@@ -391,22 +325,16 @@ export class ToolManager {
 
   /**
    * "F" para centrar el pivote de órbita sobre la selección actual, sea cual
-   * sea su tipo: cota, trazo de dibujo, etiqueta o elemento BIM. Se consulta
-   * cada herramienta en orden porque cada una guarda su propia selección de
-   * forma independiente (no hay un `SelectionManager` unificado); en la
-   * práctica solo una tiene algo seleccionado a la vez, ya que cambiar de
-   * modo deselecciona a las demás. No hace zoom/dolly ni cambia el ángulo:
-   * traslada cámara y target por el mismo delta (ver `centerOrbitOn`), así
-   * la nueva selección queda centrada en pantalla sin girar.
+   * sea su tipo: trazo de dibujo, etiqueta o elemento BIM. Se consulta cada
+   * herramienta en orden porque cada una guarda su propia selección de forma
+   * independiente (no hay un `SelectionManager` unificado); en la práctica
+   * solo una tiene algo seleccionado a la vez, ya que cambiar de modo
+   * deselecciona a las demás. No hace zoom/dolly ni cambia el ángulo: traslada
+   * cámara y target por el mismo delta (ver `centerOrbitOn`), así la nueva
+   * selección queda centrada en pantalla sin girar.
    */
   private async focusOnSelection(components: OBC.Components, selectionManager: SelectionManager): Promise<void> {
     if (!this.camera?.controls) return;
-
-    const dim = this.measurementSelection.getSelected();
-    if (dim) {
-      await this.centerOrbitOn(dim.line.getCenter(new THREE.Vector3()));
-      return;
-    }
 
     const stroke = this.drawTool.getSelected();
     if (stroke && stroke.points.length > 0) {

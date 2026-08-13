@@ -1494,17 +1494,3 @@ bim-view-cube:active {
   transform-origin: 50% 31px;
   transform: translateX(-50%) rotate(0deg);
 }
-
-/* Ícono de regla junto al cuadrado de snap de vértice del medidor, mismo
- * lenguaje visual que .world-label-preview / .section-preview (ícono
- * fantasma acompañando al indicador bajo el cursor). */
-.measurement-preview-icon {
-  position: absolute;
-  top: 50%;
-  left: 100%;
-  transform: translate(8px, -50%);
-  font-size: 28px;
-  color: var(--accent);
-  opacity: 0.85;
-  pointer-events: none;
-}

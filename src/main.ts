@@ -11,7 +11,6 @@ import { setupPostprocessing }    from "./core/postprocessing";
 import { setupPivotRaycaster }    from "./camera/pivot-raycaster";
 import { createNavWidget }        from "./camera/nav-widget";
 import { createSectionTool }      from "./tools/section-tool";
-import { createMeasurementTool, setupWallOcclusion, setupMeasurementSelection } from "./tools/measurement-tool";
 import { createWorldLabelTool }   from "./tools/world-label-tool";
 import { createDrawTool }         from "./tools/draw-tool";
 import { createCotaTool }         from "./tools/cota-tool";
@@ -102,13 +101,10 @@ async function startApp(): Promise<{
 
   // — Tools —
   const sectionTool    = createSectionTool(components, world);
-  const measurer       = createMeasurementTool(components, world);
-  const wallOcclusion  = setupWallOcclusion(measurer, world, fragments);
-  const measurementSelection = setupMeasurementSelection(measurer, world);
   const worldLabelTool = createWorldLabelTool(world, viewport);
   const drawTool       = createDrawTool(world, threeRenderer.domElement);
   const cotaTool       = createCotaTool(world, fragments, threeRenderer.domElement);
-  const toolManager    = new ToolManager(measurer, measurementSelection, highlighter, hoverer, sectionTool, worldLabelTool, drawTool, cotaTool);
+  const toolManager    = new ToolManager(highlighter, hoverer, sectionTool, worldLabelTool, drawTool, cotaTool);
 
   // — Postprocessing —
   const postproduction = setupPostprocessing(world, worldGrid, components, axisMaterials);
@@ -135,7 +131,7 @@ async function startApp(): Promise<{
   CUI.Manager.init();
   createNavWidget(viewport, world, fragments, vcRef);
 
-  const toolOptionsPanel = createToolOptionsPanel(components, fragments, measurer, wallOcclusion, measurementSelection, sectionTool, worldLabelTool, drawTool, cotaTool);
+  const toolOptionsPanel = createToolOptionsPanel(components, fragments, sectionTool, worldLabelTool, drawTool, cotaTool);
   viewport.append(toolOptionsPanel.element);
 
   toolManager.setToolOptionsPanel(toolOptionsPanel);
@@ -170,7 +166,7 @@ async function startApp(): Promise<{
 
   const leftPanel = createLeftPanel(
     components, fragments, ifcLoader, highlighter, onModelLoaded,
-    measurer, sectionTool.clipper, topics, worldLabelTool, drawTool, cotaTool, world,
+    sectionTool.clipper, topics, worldLabelTool, drawTool, cotaTool, world,
   );
 
   // Panel dinámico de abajo: Renderizado.

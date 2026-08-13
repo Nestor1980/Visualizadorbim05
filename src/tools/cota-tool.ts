@@ -7,11 +7,11 @@ import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 
 /**
- * Herramienta de cotas — reconstrucción desde cero (la anterior, en
- * `measurement-tool.ts`, queda deprecada y sin usar). Hover sobre el modelo
- * resalta el vértice/borde/cara bajo el cursor según el modo de snap activo;
- * un click sobre un snap válido fija el primer punto de la cota y el
- * siguiente click sobre otro snap la cierra, creando una cota permanente.
+ * Herramienta de cotas — reconstrucción desde cero (reemplaza a la vieja
+ * herramienta de medición, eliminada). Hover sobre el modelo resalta el
+ * vértice/borde/cara bajo el cursor según el modo de snap activo; un click
+ * sobre un snap válido fija el primer punto de la cota y el siguiente click
+ * sobre otro snap la cierra, creando una cota permanente.
  */
 
 const HIGHLIGHT_COLOR = new THREE.Color("#00c2ff");

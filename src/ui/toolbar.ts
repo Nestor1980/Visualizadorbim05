@@ -69,23 +69,6 @@ export function createToolbar(
           </bim-button>
         </bim-toolbar-section>
 
-        <!-- Herramienta de cotas desactivada temporalmente: se reconstruirá desde cero.
-        <bim-toolbar-section label="Medición">
-          <bim-button
-            icon="solar:ruler-bold"
-            ${BUI.ref((el: Element | undefined) => { toolManager.measureBtnEl = el as BUI.Button ?? null; })}
-            @click=${() => {
-              if (toolManager.activeMode === "measure") toolManager.setMode("navigate");
-              else toolManager.setMode("measure");
-            }}>
-            <bim-tooltip>
-              <div style="font-weight:600;">Activar Medición</div>
-              <div style="opacity:0.75;">Doble click para medir</div>
-            </bim-tooltip>
-          </bim-button>
-        </bim-toolbar-section>
-        -->
-
         <bim-toolbar-section label="Cota">
           <bim-button
             icon="solar:ruler-bold"

@@ -38,7 +38,6 @@ export function createLeftPanel(
   ifcLoader: OBC.IfcLoader,
   highlighter: OBF.Highlighter,
   onModelLoaded: (model: any, name: string) => Promise<void>,
-  measurer: OBF.LengthMeasurement,
   clipper: OBC.Clipper,
   topics: OBC.BCFTopics,
   labels: WorldLabelTool,
@@ -50,7 +49,7 @@ export function createLeftPanel(
   let onTopicSelectCb: ((topicGuid: string) => void) | null = null;
   let onOpenTopicsTableCb: (() => void) | null = null;
   const dataLayersController = createDataLayersTree(
-    measurer, clipper, topics, labels, drawings, cotas, world,
+    clipper, topics, labels, drawings, cotas, world,
     () => modelsTree.refresh(),
     () => modelsTree.ensureDefaultCollectionId(),
     (topicGuid) => onTopicSelectCb?.(topicGuid),
