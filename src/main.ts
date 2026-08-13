@@ -14,6 +14,7 @@ import { createSectionTool }      from "./tools/section-tool";
 import { createMeasurementTool, setupWallOcclusion, setupMeasurementSelection } from "./tools/measurement-tool";
 import { createWorldLabelTool }   from "./tools/world-label-tool";
 import { createDrawTool }         from "./tools/draw-tool";
+import { createCotaTool }         from "./tools/cota-tool";
 import { ToolManager }            from "./tools/tool-manager";
 import { setupIfcLoader }                  from "./ifc/loader";
 import { setupModelProcessor, processModel } from "./ifc/model-processor";
@@ -106,7 +107,8 @@ async function startApp(): Promise<{
   const measurementSelection = setupMeasurementSelection(measurer, world);
   const worldLabelTool = createWorldLabelTool(world, viewport);
   const drawTool       = createDrawTool(world, threeRenderer.domElement);
-  const toolManager    = new ToolManager(measurer, measurementSelection, highlighter, hoverer, sectionTool, worldLabelTool, drawTool);
+  const cotaTool       = createCotaTool(world, fragments, threeRenderer.domElement);
+  const toolManager    = new ToolManager(measurer, measurementSelection, highlighter, hoverer, sectionTool, worldLabelTool, drawTool, cotaTool);
 
   // — Postprocessing —
   const postproduction = setupPostprocessing(world, worldGrid, components, axisMaterials);

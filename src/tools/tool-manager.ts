@@ -7,11 +7,12 @@ import { measureFaceEdges } from "./measurement-tool";
 import type { MeasurementSelectionControl } from "./measurement-tool";
 import type { WorldLabelTool } from "./world-label-tool";
 import type { DrawTool } from "./draw-tool";
+import type { CotaTool } from "./cota-tool";
 import type * as BUI from "@thatopen/ui";
 import type { ToolOptionsView } from "../ui/tool-options-panel";
 import type { SelectionManager } from "../selection/selection-manager";
 
-export type ToolMode = "navigate" | "measure" | "section" | "label" | "draw" | "properties";
+export type ToolMode = "navigate" | "measure" | "cota" | "section" | "label" | "draw" | "properties";
 
 interface ToolOptionsPanelLike {
   setView: (view: ToolOptionsView) => void;
@@ -29,6 +30,7 @@ export class ToolManager {
 
   navigateBtnEl: BUI.Button | null = null;
   measureBtnEl: BUI.Button | null = null;
+  cotaBtnEl: BUI.Button | null = null;
   sectionBtnEl: BUI.Button | null = null;
   labelBtnEl: BUI.Button | null = null;
   drawBtnEl: BUI.Button | null = null;
@@ -41,6 +43,7 @@ export class ToolManager {
   private sectionTool: SectionTool;
   private worldLabelTool: WorldLabelTool;
   private drawTool: DrawTool;
+  private cotaTool: CotaTool;
   private postproduction: { enabled: boolean } | null = null;
   private toolOptionsPanel: ToolOptionsPanelLike | null = null;
   private camera: OBC.OrthoPerspectiveCamera | null = null;
@@ -53,6 +56,7 @@ export class ToolManager {
     sectionTool: SectionTool,
     worldLabelTool: WorldLabelTool,
     drawTool: DrawTool,
+    cotaTool: CotaTool,
   ) {
     this.measurer      = measurer;
     this.measurementSelection = measurementSelection;
@@ -61,6 +65,7 @@ export class ToolManager {
     this.sectionTool   = sectionTool;
     this.worldLabelTool = worldLabelTool;
     this.drawTool       = drawTool;
+    this.cotaTool       = cotaTool;
   }
 
   setPostproduction(pp: { enabled: boolean }): void {
@@ -96,9 +101,13 @@ export class ToolManager {
     if (mode === "draw") this.drawTool.activate();
     else if (this.drawTool.active) this.drawTool.deactivate();
 
+    if (mode === "cota") this.cotaTool.activate();
+    else if (this.cotaTool.active) this.cotaTool.deactivate();
+
     const modeButtons: Record<ToolMode, BUI.Button | null> = {
       navigate:   this.navigateBtnEl,
       measure:    this.measureBtnEl,
+      cota:       this.cotaBtnEl,
       section:    this.sectionBtnEl,
       label:      this.labelBtnEl,
       draw:       this.drawBtnEl,
