@@ -9,16 +9,23 @@ import { injectCompactTableCSS, HIGHLIGHT_COLOR } from "./config/constants";
 import { createScene }            from "./core/scene";
 import { setupPostprocessing }    from "./core/postprocessing";
 import { setupPivotRaycaster }    from "./camera/pivot-raycaster";
-import { createViewCube }         from "./camera/view-cube";
+import { createNavWidget }        from "./camera/nav-widget";
 import { createSectionTool }      from "./tools/section-tool";
-import { createMeasurementTool }  from "./tools/measurement-tool";
+import { createWorldLabelTool }   from "./tools/world-label-tool";
+import { createDrawTool }         from "./tools/draw-tool";
+import { createCotaTool }         from "./tools/cota-tool";
 import { ToolManager }            from "./tools/tool-manager";
 import { setupIfcLoader }                  from "./ifc/loader";
 import { setupModelProcessor, processModel } from "./ifc/model-processor";
 import { createRightPanel, attachRightPanelResize } from "./ui/right-panel/index";
-import { createLeftPanel, attachLeftPanelResize }    from "./ui/left-panel/index";
+import { createLeftPanel }    from "./ui/left-panel/index";
+import { createToolOptionsPanel } from "./ui/tool-options-panel";
 import { createToolbar }          from "./ui/toolbar";
+import { createProjectToolbar }   from "./ui/project-toolbar";
+import type { ProjectIoDeps }     from "./project/project-io";
+import { createSettingsModal }    from "./ui/settings-modal";
 import { setupLayout }            from "./ui/layout";
+import { createPanelSplit }       from "./ui/panel-split";
 import { setupBCFSection }        from "./bcf/bcf-manager";
 import { SelectionManager }       from "./selection/selection-manager";
 import { showWelcomeScreen }      from "./ui/welcome-screen";
@@ -49,7 +56,7 @@ async function startApp(): Promise<{
   const viewport = document.createElement("bim-viewport");
 
   // — Core scene —
-  const { components, world, fragments, worldGrid, sunLight, threeRenderer, adjustGridToModel } =
+  const { components, world, fragments, worldGrid, sunLight, threeRenderer, adjustGridToModel, axisMaterials } =
     createScene(viewport);
 
   fragments.init(await OBC.FragmentsManager.getWorker());
@@ -93,12 +100,14 @@ async function startApp(): Promise<{
   });
 
   // — Tools —
-  const sectionTool = createSectionTool(components, world);
-  const measurer    = createMeasurementTool(components, world);
-  const toolManager = new ToolManager(measurer, highlighter, hoverer, sectionTool);
+  const sectionTool    = createSectionTool(components, world);
+  const worldLabelTool = createWorldLabelTool(world, viewport);
+  const drawTool       = createDrawTool(world, threeRenderer.domElement);
+  const cotaTool       = createCotaTool(world, fragments, threeRenderer.domElement);
+  const toolManager    = new ToolManager(highlighter, hoverer, sectionTool, worldLabelTool, drawTool, cotaTool);
 
   // — Postprocessing —
-  const postproduction = setupPostprocessing(world, worldGrid, components);
+  const postproduction = setupPostprocessing(world, worldGrid, components, axisMaterials);
   toolManager.setPostproduction(postproduction);
 
   // — Camera helpers —
@@ -107,10 +116,12 @@ async function startApp(): Promise<{
     world.camera.controls.addEventListener("update", () => {
       fragments.core.update();
       if (vcRef.el) vcRef.el.updateOrientation();
+      worldLabelTool.updateLOD();
     });
   }
   setupPivotRaycaster(viewport, world, fragments);
-  toolManager.bindViewportEvents(viewport, world);
+  const selectionManager = new SelectionManager();
+  toolManager.bindViewportEvents(viewport, world, fragments, threeRenderer.domElement, components, selectionManager);
 
   // — IFC —
   const ifcLoader = await setupIfcLoader(components);
@@ -118,25 +129,22 @@ async function startApp(): Promise<{
 
   // — UI (requires CUI.Manager.init first) —
   CUI.Manager.init();
-  createViewCube(viewport, world, fragments, vcRef);
+  createNavWidget(viewport, world, fragments, vcRef);
 
-  const selectionManager = new SelectionManager();
-  const rightPanel = createRightPanel(
-    components, fragments, measurer, sectionTool,
-    postproduction, sunLight, threeRenderer,
-  );
+  const toolOptionsPanel = createToolOptionsPanel(components, fragments, sectionTool, worldLabelTool, drawTool, cotaTool);
+  viewport.append(toolOptionsPanel.element);
 
-  toolManager.setRightPanel(rightPanel);
+  toolManager.setToolOptionsPanel(toolOptionsPanel);
   toolManager.setMode("navigate");
 
-  // Sync selectionManager with rightPanel selection handlers
-  const origApply     = rightPanel.applySelection.bind(rightPanel);
-  const origApplyType = rightPanel.applyTypeSelection.bind(rightPanel);
-  rightPanel.applySelection = async (map) => {
+  // Sync selectionManager with toolOptionsPanel selection handlers
+  const origApply     = toolOptionsPanel.applySelection.bind(toolOptionsPanel);
+  const origApplyType = toolOptionsPanel.applyTypeSelection.bind(toolOptionsPanel);
+  toolOptionsPanel.applySelection = async (map) => {
     selectionManager.lastModelIdMap = map;
     return origApply(map);
   };
-  rightPanel.applyTypeSelection = async (map, label, count) => {
+  toolOptionsPanel.applyTypeSelection = async (map, label, count) => {
     selectionManager.lastModelIdMap = map;
     return origApplyType(map, label, count);
   };
@@ -156,7 +164,13 @@ async function startApp(): Promise<{
     }
   };
 
-  const leftPanel = createLeftPanel(components, fragments, ifcLoader, highlighter, onModelLoaded);
+  const leftPanel = createLeftPanel(
+    components, fragments, ifcLoader, highlighter, onModelLoaded,
+    sectionTool.clipper, topics, worldLabelTool, drawTool, cotaTool, world,
+  );
+
+  // Panel dinámico de abajo: Renderizado.
+  const rightPanel = createRightPanel(postproduction, sunLight, threeRenderer);
 
   // Selecting an element (tree or 3D click) switches the right panel to the
   // Propiedades view, mirroring an explicit click on the toolbar button.
@@ -164,35 +178,46 @@ async function startApp(): Promise<{
     if (toolManager.activeMode !== "properties") toolManager.setMode("properties");
   };
 
-  leftPanel.treePanel.onElementClick((modelId, localId) => {
-    leftPanel.treePanel.clearTypesSelection();
+  leftPanel.onElementClick((modelId, localId) => {
+    leftPanel.clearTypesSelection();
     showProperties();
-    rightPanel.applySelection({ [modelId]: new Set([localId]) }).catch(console.error);
+    toolOptionsPanel.applySelection({ [modelId]: new Set([localId]) }).catch(console.error);
   });
 
-  leftPanel.treePanel.onTypeGroupClick((modelIdMap, typeLabel, count) => {
+  leftPanel.onTypeGroupClick((modelIdMap, typeLabel, count) => {
     showProperties();
-    rightPanel.applyTypeSelection(modelIdMap, typeLabel, count).catch(console.error);
+    toolOptionsPanel.applyTypeSelection(modelIdMap, typeLabel, count).catch(console.error);
   });
 
   highlighter.events["select"].onHighlight.add((modelIdMap) => {
     if (!Object.keys(modelIdMap).length) return;
-    leftPanel.treePanel.clearTypesSelection();
+    leftPanel.clearTypesSelection();
     showProperties();
-    rightPanel.applySelection(modelIdMap).catch(console.error);
+    toolOptionsPanel.applySelection(modelIdMap).catch(console.error);
   });
 
-  const { openModal } = setupBCFSection(components, world, rightPanel.element);
-  const toolbar       = createToolbar(world, fragments, toolManager, selectionManager, openModal);
+  const { openModal, openTopicsModal, selectTopic } = setupBCFSection(components, world, rightPanel);
+  leftPanel.onTopicSelect((topicGuid) => selectTopic(topicGuid));
+  leftPanel.onOpenTopicsTable(() => openTopicsModal());
+  const toolbar        = createToolbar(world, fragments, toolManager, selectionManager, openModal);
+  const settingsModal   = createSettingsModal();
+  const projectIoDeps: ProjectIoDeps = { fragments, topics, viewpoints, world, leftPanel };
+  const projectToolbar  = createProjectToolbar(projectIoDeps, settingsModal.openModal);
 
   // Los botones de la toolbar se registran en el ToolManager al crearla, después
   // del setMode inicial: re-aplicar el modo para que "Navegar" arranque activo.
   toolManager.setMode(toolManager.activeMode);
 
-  await setupLayout(
-    leftPanel.element, viewport, rightPanel.element, toolbar,
-    attachLeftPanelResize, attachRightPanelResize,
-  );
+  const floatingToolbars = document.createElement("div");
+  floatingToolbars.className = "floating-toolbars";
+  floatingToolbars.append(toolbar, projectToolbar);
+
+  // Frame derecho dividido en dos: "Escena" (árbol de modelos IFC cargados,
+  // estilo outliner, con exploración Espacial/Tipos por modelo) arriba,
+  // paneles dinámicos (Renderizado, BCF) abajo.
+  const panelSplit = createPanelSplit(leftPanel.element, rightPanel.element);
+
+  await setupLayout(viewport, panelSplit, floatingToolbars, attachRightPanelResize);
 
   // Force renderer + camera to pick up the real DOM dimensions after layout is mounted.
   world.renderer?.resize(undefined);

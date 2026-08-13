@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import * as OBC from "@thatopen/components";
 import * as OBF from "@thatopen/components-front";
+import CameraControls from "camera-controls";
 
 export interface SceneSetup {
   components: OBC.Components;
@@ -10,6 +11,7 @@ export interface SceneSetup {
   sunLight: THREE.DirectionalLight;
   threeRenderer: THREE.WebGLRenderer;
   adjustGridToModel: () => void;
+  axisMaterials: THREE.Material[];
 }
 
 export function createScene(viewport: HTMLElement): SceneSetup {
@@ -32,7 +34,7 @@ export function createScene(viewport: HTMLElement): SceneSetup {
 
   // — Scene & lighting —
   world.scene.setup();
-  world.scene.three.background = new THREE.Color(0xc8deff);
+  world.scene.three.background = new THREE.Color(0x4a4a4a);
   world.scene.three.add(new THREE.AmbientLight(0xffffff, 0.55));
 
   const sunLight = new THREE.DirectionalLight(0xfff5e0, 1.0);
@@ -52,6 +54,14 @@ export function createScene(viewport: HTMLElement): SceneSetup {
   world.scene.three.add(fillLight);
   world.scene.three.add(new THREE.HemisphereLight(0xc8e0ff, 0xd4c8a0, 0.35));
 
+  (world.renderer as OBF.PostproductionRenderer).showLogo = false;
+
+  const watermark = document.createElement("img");
+  watermark.className = "viewer-watermark";
+  watermark.src = "/img/visualizador_bim_logo_dark.png";
+  watermark.alt = "";
+  viewport.appendChild(watermark);
+
   const threeRenderer = (world.renderer as OBF.PostproductionRenderer).three;
   threeRenderer.shadowMap.enabled    = true;
   threeRenderer.shadowMap.type       = THREE.PCFSoftShadowMap;
@@ -59,6 +69,28 @@ export function createScene(viewport: HTMLElement): SceneSetup {
 
   const grids     = components.get(OBC.Grids);
   const worldGrid = grids.create(world);
+  worldGrid.config.color = new THREE.Color(0x707070);
+
+  // Ejes X/Y (rojo/verde) al estilo Blender, atados al mismo plano que la
+  // grilla: al vivir como hijos de worldGrid.three heredan su position.y
+  // cuando adjustGridToModel() la reubica sobre el modelo cargado.
+  const axisLength = 500;
+  const xAxis = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(-axisLength, 0, 0),
+      new THREE.Vector3(axisLength, 0, 0),
+    ]),
+    new THREE.LineBasicMaterial({ color: 0xc4514f }),
+  );
+  const yAxis = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(0, 0, -axisLength),
+      new THREE.Vector3(0, 0, axisLength),
+    ]),
+    new THREE.LineBasicMaterial({ color: 0x6c9e3d }),
+  );
+  worldGrid.three.add(xAxis, yAxis);
+  const axisMaterials = [xAxis.material as THREE.Material, yAxis.material as THREE.Material];
 
   world.camera.controls.setLookAt(10, 10, 10, 0, 0, 0);
 
@@ -68,6 +100,18 @@ export function createScene(viewport: HTMLElement): SceneSetup {
   cc.truckSpeed          = 2.0;
   cc.smoothTime          = 0.15;
   cc.draggingSmoothTime  = 0.05;
+
+  // Orbit con el botón central (rueda) en vez del izquierdo, que queda libre
+  // para selección/herramientas; el scroll sigue haciendo zoom (default).
+  cc.mouseButtons.left   = CameraControls.ACTION.NONE;
+  cc.mouseButtons.middle = CameraControls.ACTION.ROTATE;
+
+  // camera-controls no hace preventDefault en pointerdown (para poder seguir
+  // el drag fuera de un iframe), así que sin esto el botón central dispara
+  // además el autoscroll nativo del navegador y compite con el orbit.
+  viewport.addEventListener("mousedown", (event) => {
+    if (event.button === 1) event.preventDefault();
+  });
 
   world.camera.updateAspect();
   world.renderer.onResize.add(() => world.camera.updateAspect());
@@ -81,5 +125,5 @@ export function createScene(viewport: HTMLElement): SceneSetup {
     if (!box.isEmpty()) worldGrid.three.position.y = box.min.y;
   };
 
-  return { components, world, fragments, worldGrid, sunLight, threeRenderer, adjustGridToModel };
+  return { components, world, fragments, worldGrid, sunLight, threeRenderer, adjustGridToModel, axisMaterials };
 }

@@ -7,6 +7,7 @@ export function setupPostprocessing(
   world: OBC.World,
   worldGrid: ReturnType<OBC.Grids["create"]>,
   components: OBC.Components,
+  axisMaterials: THREE.Material[] = [],
 ): OBF.Postproduction {
   const postproduction = (world.renderer as OBF.PostproductionRenderer).postproduction;
   postproduction.enabled = true;
@@ -39,7 +40,7 @@ export function setupPostprocessing(
     world.camera.updateAspect();
   });
 
-  postproduction.basePass.isolatedMaterials.push(worldGrid.material);
+  postproduction.basePass.isolatedMaterials.push(worldGrid.material, ...axisMaterials);
   postproduction.outlinesEnabled         = true;
   postproduction.glossEnabled            = true;
   postproduction.glossPass.minGloss      = -0.1;

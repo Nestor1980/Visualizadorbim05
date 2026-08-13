@@ -1,79 +1,49 @@
 import * as BUI from "@thatopen/ui";
 
+const DEFAULT_PANEL_WIDTH = 380;
+
+/**
+ * Monta el frame principal como un bim-grid de dos columnas reales
+ * ("viewport" | "panel"), misma jerarquía y sin overlay flotante: el panel
+ * ocupa una columna propia y redimensionarlo empuja el viewport, en vez de
+ * superponerse por encima con position:fixed.
+ */
 export async function setupLayout(
-  sidebar: HTMLElement,
   viewport: HTMLElement,
-  rightPanel: HTMLElement,
+  panel: HTMLElement,
   toolbar: HTMLElement,
-  attachLeftResize?: (wrapper: HTMLElement) => void,
-  attachRightResize?: (wrapper: HTMLElement) => void,
+  attachResize?: (pane: HTMLElement, grid: HTMLElement) => void,
 ): Promise<void> {
   const grid = document.createElement("bim-grid") as BUI.Grid<["main"]>;
   document.body.append(grid);
   await new Promise<void>((r) => setTimeout(r, 50));
 
+  const pane = createPanelPane(panel, grid, attachResize);
+
   grid.layouts = {
     main: {
-      template: `"viewport" 1fr / 1fr`,
-      elements: { viewport },
+      template: `"viewport panel" 1fr / 1fr var(--panel-w, ${DEFAULT_PANEL_WIDTH}px)`,
+      elements: { viewport, panel: pane },
     },
   };
 
   grid.layout = "main";
 
-  document.body.append(
-    createOverlayPanel(sidebar, "left", attachLeftResize),
-    createOverlayPanel(rightPanel, "right", attachRightResize),
-    toolbar,
-  );
+  viewport.append(toolbar);
 }
 
-function createOverlayPanel(
+function createPanelPane(
   panel: HTMLElement,
-  side: "left" | "right",
-  attachResize?: (wrapper: HTMLElement) => void,
+  grid: HTMLElement,
+  attachResize?: (pane: HTMLElement, grid: HTMLElement) => void,
 ): HTMLElement {
-  const wrapper = document.createElement("div");
-  wrapper.className = `panel-overlay panel-${side}`;
+  const pane = document.createElement("div");
+  pane.className = "panel-pane";
+  pane.append(panel);
 
-  const collapsedIcon = side === "left"
-    ? "material-symbols:chevron-right"
-    : "material-symbols:chevron-left";
-  const expandedIcon = side === "left"
-    ? "material-symbols:chevron-left"
-    : "material-symbols:chevron-right";
+  // El panel inserta su propio handle de arrastre entre el borde y el
+  // contenido, y sabe cómo mutar --panel-w en el grid al redimensionar.
+  attachResize?.(pane, grid);
 
-  const toggleBtn = document.createElement("button");
-  toggleBtn.className = "panel-toggle";
-  toggleBtn.type = "button";
-  toggleBtn.setAttribute(
-    "aria-label",
-    side === "left" ? "Mostrar/ocultar panel izquierdo" : "Mostrar/ocultar panel derecho",
-  );
-
-  const icon = document.createElement("bim-icon") as HTMLElement & { icon: string };
-  toggleBtn.append(icon);
-
-  const setCollapsed = (collapsed: boolean) => {
-    wrapper.classList.toggle("collapsed", collapsed);
-    icon.icon = collapsed ? collapsedIcon : expandedIcon;
-    toggleBtn.setAttribute("aria-expanded", String(!collapsed));
-  };
-
-  // En pantallas estrechas los paneles taparían casi todo el viewport:
-  // arrancan colapsados y el usuario los abre bajo demanda.
-  setCollapsed(window.matchMedia("(max-width: 1200px)").matches);
-
-  toggleBtn.addEventListener("click", () => {
-    setCollapsed(!wrapper.classList.contains("collapsed"));
-  });
-
-  if (side === "left") wrapper.append(panel, toggleBtn);
-  else wrapper.append(toggleBtn, panel);
-
-  // Cada panel define su propio handle de arrastre (límites de ancho, punto
-  // de anclaje) e inserta el nodo en el hueco correcto dentro del wrapper.
-  attachResize?.(wrapper);
-
-  return wrapper;
+  return pane;
 }

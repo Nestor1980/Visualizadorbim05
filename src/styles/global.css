@@ -10,100 +10,87 @@
   box-sizing: border-box;
 }
 
+/*
+ * Transición clara/oscuro: minimalista y gradual, sin el flash del overlay
+ * de "wipe" circular de @thatopen/ui (desactivado con toggleTheme(false)).
+ * Solo cubre el DOM "de luz" (esta hoja no penetra los shadow roots de los
+ * bim-* components, que ya traen su propia transición de ~150ms).
+ */
+*, *::before, *::after {
+  transition-property: background-color, color, border-color, box-shadow;
+  transition-duration: 0.25s;
+  transition-timing-function: ease;
+}
+
 html, body {
   width: 100%;
   height: 100%;
   overflow: hidden;
   background: var(--bg-app);
+  color: var(--text-primary);
   font-family: var(--font-body);
+}
+
+/* Scrollbars del DOM "de luz" (paneles propios, fuera de los shadow roots
+ * bim-*): mismo look que @thatopen/ui ya aplica dentro de sus componentes
+ * (thin, thumb redondeado con --bim-ui_bg-contrast-60), para que no se note
+ * el salto al pasar de un scroll a otro. scrollbar-gutter:stable reserva el
+ * ancho del thumb de antemano así nunca se dibuja encima del texto/íconos
+ * pegados al borde derecho de una fila. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--bim-ui_bg-contrast-60) transparent;
+}
+*::-webkit-scrollbar {
+  width: 0.4rem;
+  height: 0.4rem;
+}
+*::-webkit-scrollbar-thumb {
+  border-radius: 0.25rem;
+  background-color: var(--bim-ui_bg-contrast-60);
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--bim-ui_bg-contrast-80);
+}
+*::-webkit-scrollbar-track {
+  background-color: transparent;
 }
 
 bim-grid {
   position: fixed;
   inset: 0;
   z-index: 10;
+  /* La grilla no-flotante de @thatopen/ui deja 1px de gap entre columnas
+   * (se ve como una línea negra entre viewport y panel); lo anulamos porque
+   * el propio panel-resize-handle ya marca la división. */
+  gap: 0 !important;
 }
 
 bim-panel {
   position: relative;
 }
 
-.panel-brand {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--bim-ui_size-4xl, 1rem);
-  border-bottom: 1px solid var(--border-subtle);
-}
-.panel-brand-logo {
-  max-width: 100%;
-  height: auto;
-}
-
-.panel-overlay {
-  position: fixed;
-  top: 0;
+/* El panel es una columna real del bim-grid (misma jerarquía que el
+ * viewport), no un overlay flotante: redimensionarlo cambia --panel-w en
+ * el grid y el viewport reacomoda su columna (1fr) solo. */
+.panel-pane {
   height: 100%;
-  z-index: 20;
+  min-width: 0;
   display: flex;
   align-items: stretch;
-  transition: transform 0.25s ease;
+  overflow: hidden;
 }
-.panel-left {
-  left: 0;
-  --panel-w: 300px;
-}
-.panel-right {
-  right: 0;
-  --panel-w: 370px;
-}
-.panel-left bim-panel,
-.panel-right bim-panel {
-  width: var(--panel-w);
+.panel-pane bim-panel {
+  flex: 1 1 auto;
+  min-width: 0;
   height: 100%;
-  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.45);
-}
-.panel-left.collapsed {
-  transform: translateX(calc(-1 * var(--panel-w)));
-}
-.panel-right.collapsed {
-  transform: translateX(var(--panel-w));
-}
-
-.panel-toggle {
-  flex-shrink: 0;
-  align-self: center;
-  width: 24px;
-  height: 64px;
-  border: none;
-  cursor: pointer;
-  background: var(--bg-elevated);
-  color: var(--text-secondary);
-  font-size: 0.85rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-}
-.panel-left .panel-toggle {
-  border-radius: 0 8px 8px 0;
-}
-.panel-right .panel-toggle {
-  border-radius: 8px 0 0 8px;
-}
-.panel-toggle:hover {
-  background: var(--bg-surface-hover);
-  color: var(--text-primary);
-}
-.panel-toggle:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-  color: var(--text-primary);
+  overflow-y: hidden;
+  border-radius: 0 !important;
 }
 
 .panel-resize-handle {
   flex-shrink: 0;
-  width: 6px;
+  width: 4px;
   cursor: ew-resize;
   touch-action: none;
   position: relative;
@@ -113,8 +100,8 @@ bim-panel {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: 2px;
-  width: 2px;
+  left: 1.5px;
+  width: 1px;
   border-radius: 1px;
   background: transparent;
   transition: background 0.15s;
@@ -123,13 +110,10 @@ bim-panel {
 .panel-resize-handle:active::after {
   background: var(--accent);
 }
-.panel-overlay.collapsed .panel-resize-handle {
-  display: none;
-}
-/* Mientras se muestra la pantalla de bienvenida, los paneles laterales
- * permanecen ocultos (incluido su botón de toggle). */
-body.welcome-active .panel-overlay {
-  opacity: 0;
+/* Mientras se muestra la pantalla de bienvenida, el panel queda visible
+ * (atenuado por el overlay de #welcome-screen) pero no interactivo, ya que
+ * #welcome-screen cubre todo el viewport y captura los clicks. */
+body.welcome-active .panel-pane {
   pointer-events: none;
 }
 body.resizing-panel {
@@ -137,7 +121,151 @@ body.resizing-panel {
   user-select: none;
 }
 
-/* — Árbol de tipos (panel izquierdo) — */
+/* — Split del panel derecho: "Escena" (arriba) / paneles dinámicos (abajo) — */
+.panel-split {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.panel-split-pane {
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+}
+.panel-split-pane--top {
+  flex: 0 0 var(--scene-h, 320px);
+}
+.panel-split-pane--bottom {
+  flex: 1 1 auto;
+}
+
+.panel-split-handle {
+  flex-shrink: 0;
+  height: 4px;
+  cursor: ns-resize;
+  touch-action: none;
+  position: relative;
+}
+.panel-split-handle::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 1.5px;
+  height: 1px;
+  border-radius: 1px;
+  background: transparent;
+  transition: background 0.15s;
+}
+.panel-split-handle:hover::after,
+.panel-split-handle:active::after {
+  background: var(--accent);
+}
+body.resizing-panel-split {
+  cursor: ns-resize;
+  user-select: none;
+}
+
+.panel-frame-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--bim-ui_bg-contrast-80);
+  border-bottom: 1px solid var(--bim-ui_bg-contrast-10);
+}
+.panel-frame-header bim-icon {
+  font-size: 14px;
+  color: var(--accent);
+}
+
+/* — Panel dinámico (abajo del split): riel de solapas verticales al estilo
+ * del editor de Propiedades de Blender. Renderizado es la única solapa fija
+ * (siempre en el riel); el resto se agrega/quita en caliente vía
+ * dynamic-tabs-panel.ts (ej. detalle de un topic BCF seleccionado). */
+.vtabs {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+.vtabs-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 2px;
+  width: 40px;
+  padding: 8px 4px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  background: var(--bim-ui_bg-contrast-05);
+  border-right: 1px solid var(--bim-ui_bg-contrast-10);
+}
+.vtabs-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--bim-ui_bg-contrast-60);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.vtabs-tab bim-icon {
+  font-size: 18px;
+}
+.vtabs-tab:hover {
+  background: var(--bim-ui_bg-contrast-20);
+  color: var(--bim-ui_bg-contrast-100);
+}
+.vtabs-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.vtabs-tab.active {
+  background: var(--bim-ui_bg-contrast-20);
+  color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.vtabs-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  /* bim-panel-section trae 0.75rem de radio por defecto (pensado para vivir
+   * flotando); acá está encastrado y a ras del riel de solapas, así que lo
+   * aplanamos igual que ya hace .panel-pane bim-panel con el panel entero. */
+  --bim-panel-section--bdrs: 0;
+}
+/* La solapa activa ocupa todo el alto disponible del frame aunque su propio
+ * contenido no llegue a llenarlo (fondo del panel a ras del borde inferior en
+ * vez de cortarse a la altura de los controles); la oculta sigue con
+ * display:none inline desde dynamic-tabs-panel.ts, que pisa esta regla. */
+.vtabs-content > * {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* — Barra de botones tipo switcher (vértice/borde/superficie, espacial/tipos) — */
 .tree-switcher {
   display: flex;
   gap: 4px;
@@ -172,6 +300,7 @@ body.resizing-panel {
   color: var(--bim-ui_bg-contrast-100);
 }
 
+/* — Árbol de tipos (panel izquierdo) — */
 .types-empty {
   color: var(--bim-ui_bg-contrast-40);
   font-size: 11px;
@@ -253,14 +382,274 @@ body.resizing-panel {
   white-space: nowrap;
 }
 
-bim-toolbar {
-  position: fixed;
-  bottom: 1.5rem;
-  left: 50%;
-  transform: translateX(-50%);
+/* @thatopen/ui define bim-tooltip como :host([visible]) { display: flex }
+ * sin flex-direction (fila por defecto): con dos <div> hijos (título +
+ * descripción) quedaban lado a lado, cada uno colapsado a un ancho mínimo y
+ * partido en columnas de una sola palabra. Lo pasamos a columna y le damos
+ * un ancho mínimo para que el texto respire.
+ *
+ * Mismo lenguaje visual que el resto de los paneles flotantes (bg-elevated +
+ * border-subtle + sombra, ver .world-label-card / menús contextuales) en vez
+ * del gris genérico de @thatopen/ui, y con tokens semánticos se resuelve
+ * solo para ambos temas. El :host propio del shadow root ya trae background/
+ * border-radius/box-shadow/padding/font-size con especificidad de clase
+ * (0,1,0), mayor que el selector de tipo "bim-tooltip" (0,0,1) sin importar
+ * el orden de carga — por eso esas propiedades necesitan !important (mismo
+ * patrón que bim-grid/.panel-pane bim-panel más arriba).
+ *
+ * El font-size default de bim-tooltip es var(--bim-ui_size-xs, 0.875rem):
+ * --bim-ui_size-xs SÍ está definida globalmente por @thatopen/ui (0.4375rem
+ * ≈ 7px), pero como token de espaciado, no de tipografía — el fallback de
+ * 0.875rem nunca se usa y el texto queda ilegible. Lo fijamos a mano. */
+bim-tooltip {
+  flex-direction: column;
+  gap: 4px;
+  min-width: 150px;
+  max-width: 260px;
+  line-height: 1.4;
+  padding: 10px 14px !important;
+  font-size: 12px !important;
+  background: var(--bg-elevated) !important;
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* — Barra de herramientas y árbol de modelos/colecciones (panel "Escena") — */
+/* bim-panel desliza su contenido dentro de un flex column (.sections) vía
+ * <slot>: sin flex:1 acá, .left-panel-content/.models-tree solo ocupan la
+ * altura de su contenido y dejan un margen "muerto" abajo que no pertenece
+ * al árbol — ahí un drag-and-drop para sacar un modelo de una colección
+ * nunca se soltaba porque el drop caía fuera de .models-tree. */
+.left-panel-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.scene-toolbar {
+  display: flex;
+  gap: 4px;
+  padding: 8px 8px;
+  border-bottom: 1px solid var(--bim-ui_bg-contrast-10);
+}
+
+.models-tree {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.models-row,
+.collection-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  min-height: 30px;
+  border-bottom: 1px solid var(--bim-ui_bg-contrast-05);
+}
+.models-row--nested {
+  padding-left: 26px;
+}
+.models-row-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+.models-row-name,
+.collection-row-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.collection-row-name {
+  font-weight: 600;
+  cursor: text;
+}
+.collection-row-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+  color: var(--accent);
+}
+.models-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.models-row-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 4px;
+  opacity: 0.6;
+  transition: background 0.15s, opacity 0.15s;
+}
+.models-row-action:hover {
+  background: var(--bim-ui_bg-contrast-10);
+  opacity: 1;
+}
+.layer-active-checkbox {
+  flex-shrink: 0;
+  width: 13px;
+  height: 13px;
+  margin: 0 2px 0 0;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+.collection-rename-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+  font-weight: 600;
+  color: inherit;
+  background: var(--bim-ui_bg-contrast-05);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+.collection-empty {
+  padding: 4px 8px 8px 30px;
+  font-size: 10.5px;
+  opacity: 0.45;
+}
+
+.models-row {
+  cursor: grab;
+}
+.models-row.is-dragging {
+  opacity: 0.4;
+}
+.collection-group {
+  border-radius: 4px;
+  outline: 2px solid transparent;
+  outline-offset: -2px;
+  transition: outline-color 0.1s, background-color 0.1s;
+}
+.collection-group.drag-over {
+  outline-color: var(--accent);
+  background: var(--accent-dim);
+}
+.models-tree.drag-over-root {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+}
+
+/* — Filas de "Capa de datos" (mediciones + vista de cortes), anidadas
+ * dentro de una colección de modelos o sueltas a nivel raíz del árbol. */
+.data-layer-category-row {
+  padding-left: 26px;
+  cursor: default;
+}
+/* La fila de categoría tiene flecha (16px + gap) antes de su ícono, pero la
+ * fila de ítem no: con el mismo delta de padding-left que el resto del árbol,
+ * el ícono del ítem terminaba cayendo casi en la misma columna que el de su
+ * categoría padre. Se compensa ese ancho de flecha para que quede más adentro. */
+.data-layer-item-row,
+.data-layer-item-empty {
+  padding-left: 64px;
+}
+/* Cuando la capa está anidada dentro de una colección, todo un nivel más adentro. */
+.collection-group .data-layer-group > .collection-row {
+  padding-left: 26px;
+}
+.collection-group .data-layer-group .data-layer-category-row {
+  padding-left: 46px;
+}
+.collection-group .data-layer-group .data-layer-item-row,
+.collection-group .data-layer-group .data-layer-item-empty {
+  padding-left: 84px;
+}
+
+/* — Árbol Espacial/Tipos anidado dentro de la fila de un modelo. — */
+.models-row-group {
+  display: flex;
+  flex-direction: column;
+}
+.model-tree-container {
+  padding-left: 20px;
+}
+.collection-group .models-row-group .model-tree-container {
+  padding-left: 46px;
+}
+
+bim-viewport {
+  position: relative;
+}
+
+.viewer-watermark {
+  position: absolute;
+  left: 0.75rem;
+  bottom: 0.75rem;
+  width: 12rem;
+  height: auto;
+  pointer-events: none;
+  user-select: none;
+  opacity: 0.85;
+  z-index: 1;
+}
+
+.floating-toolbars {
+  position: absolute;
+  top: 1.5rem;
+  left: 1.5rem;
   z-index: 100;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+bim-toolbar {
   border-radius: 12px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  --bim-toolbar-section--gap: 4px;
+  --bim-toolbar-section--p: 6px;
+}
+
+/* Panel de opciones de la herramienta activa: flota sobre la esquina
+ * superior derecha del viewport (no del layout completo) y desaparece
+ * cuando no hay ninguna herramienta seleccionada (ver ToolManager.setMode). */
+.tool-options-panel {
+  position: absolute;
+  top: 1.5rem;
+  right: 1.5rem;
+  z-index: 100;
+  width: 260px;
+  max-height: calc(100% - 3rem);
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.tool-options-panel bim-panel-section {
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  flex-shrink: 0;
+}
+/* El medidor envuelve dos bim-panel-section (ajustes + lista) en un <div>
+ * plano: le damos el mismo layout en columna para que no queden pegadas. */
+.tool-options-panel > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
 bim-view-cube {
@@ -268,6 +657,120 @@ bim-view-cube {
 }
 bim-view-cube:active {
   cursor: grabbing;
+}
+
+.nav-widget-menu-trigger {
+  position: absolute;
+  z-index: 999;
+  bottom: 7rem;
+  right: 1rem;
+}
+
+.nav-widget-menu-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  min-width: 190px;
+}
+.nav-widget-menu-panel bim-slider {
+  width: 100%;
+}
+.nav-widget-menu-size-label {
+  font-size: 0.75rem;
+  color: var(--bim-ui_bg-contrast-60);
+  padding: 0 0.25rem;
+}
+
+.axis-gizmo-parent {
+  position: absolute;
+  z-index: 999;
+  bottom: 1rem;
+  right: 1rem;
+  cursor: grab;
+}
+.axis-gizmo-parent:active {
+  cursor: grabbing;
+}
+
+.axis-gizmo-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+}
+
+.gizmo-line {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  border-radius: 2px;
+  pointer-events: none;
+}
+.gizmo-line-x {
+  width: 68px;
+  height: 2px;
+  margin-left: -34px;
+  margin-top: -1px;
+  background: rgba(229, 57, 53, 0.85);
+}
+.gizmo-line-y {
+  width: 2px;
+  height: 68px;
+  margin-left: -1px;
+  margin-top: -34px;
+  background: rgba(67, 160, 71, 0.85);
+}
+.gizmo-line-z {
+  width: 68px;
+  height: 2px;
+  margin-left: -34px;
+  margin-top: -1px;
+  background: rgba(63, 81, 181, 0.85);
+  transform: rotateY(90deg);
+}
+
+.gizmo-dot {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  /* El transform del dot (ver axis-gizmo.ts) ya incluye su propio
+   * translate(-50%,-50%) de recentrado; si el pivote quedara en el centro
+   * por defecto (50% 50%), el navegador aplicaría ese recentrado dos veces
+   * (una implícita por el pivote, otra explícita en la cadena), descentrando
+   * cada dot según su propio ancho/alto. Con el pivote en la esquina, la
+   * cadena de transform es la única responsable de centrarlo. */
+  transform-origin: 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 700;
+  color: white;
+  user-select: none;
+  cursor: pointer;
+}
+
+.gizmo-dot-positive {
+  width: 22px;
+  height: 22px;
+}
+.gizmo-dot-negative {
+  width: 12px;
+  height: 12px;
+  opacity: 0.55;
+}
+.gizmo-dot-negative:hover {
+  opacity: 0.9;
+}
+
+.gizmo-dot-x-pos, .gizmo-dot-x-neg { background: #e53935; }
+.gizmo-dot-y-pos, .gizmo-dot-y-neg { background: #43a047; }
+.gizmo-dot-z-pos, .gizmo-dot-z-neg { background: #3f51b5; }
+
+.gizmo-dot-positive:hover {
+  filter: brightness(1.3);
 }
 
 #loading-screen {
@@ -323,10 +826,21 @@ bim-view-cube:active {
   position: relative;
   width: min(640px, calc(100vw - 2rem));
   max-height: calc(100vh - 2rem);
-  overflow: hidden auto;
+  /* overflow: hidden en ambos ejes (no "hidden auto") para que el
+   * border-radius siempre recorte de forma consistente entre navegadores;
+   * el scroll real vive en .welcome-scroll, un hijo sin radio propio. */
+  overflow: hidden;
   background: var(--bg-surface);
   border-radius: 12px;
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+}
+
+.welcome-scroll {
+  /* Sin scroll propio: la tarjeta se muestra completa y solo
+   * .welcome-projects/.welcome-recents scrollean internamente. El
+   * overflow:hidden de .welcome-card recorta como resguardo en viewports
+   * muy bajos donde ni así entra todo el contenido. */
+  overflow-y: visible;
 }
 
 .welcome-top-actions {
@@ -395,6 +909,15 @@ bim-view-cube:active {
 }
 .welcome-col h3.welcome-subheading {
   margin-top: 1rem;
+}
+
+.welcome-projects,
+.welcome-recents {
+  /* Altura máxima ~3 elementos; desde el 4to, la sección scrollea sola
+   * en vez de crecer y forzar scroll en toda la tarjeta. */
+  max-height: 184px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .welcome-file-item {
@@ -513,4 +1036,461 @@ bim-view-cube:active {
   border-top: 1px solid var(--border-subtle);
   color: var(--text-muted);
   font-size: 0.75rem;
+}
+
+/* — Modal "Configuración": sidebar de categorías + panel de contenido,
+ * misma idea que las preferencias de Blender (imagen de referencia). — */
+.settings-modal {
+  /* Centrado explícito: el reset global (`* { margin: 0 }`) anula el
+   * `margin: auto` que el navegador usa por defecto para centrar un
+   * <dialog> modal, así que lo hacemos a mano con fixed + transform. El
+   * drag (ver settings-modal.ts) pasa a top/left en px y anula el transform. */
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 12px;
+  width: min(640px, calc(100vw - 2rem));
+  max-height: calc(100vh - 4rem);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+}
+.settings-modal::backdrop {
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.settings-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border-subtle);
+  cursor: move;
+  user-select: none;
+}
+.settings-modal-title {
+  font-size: 1rem;
+  font-weight: 700;
+}
+.settings-modal-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+.settings-modal-close:hover {
+  background: var(--bg-surface-hover);
+}
+
+.settings-modal-body {
+  display: flex;
+  min-height: 320px;
+  max-height: calc(100vh - 10rem);
+}
+
+.settings-sidebar {
+  flex: 0 0 180px;
+  padding: 0.75rem;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  border-right: 1px solid var(--border-subtle);
+}
+.settings-sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.settings-sidebar-item:hover {
+  background: var(--bg-surface-hover);
+}
+.settings-sidebar-item--active,
+.settings-sidebar-item--active:hover {
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.settings-content {
+  flex: 1 1 auto;
+  padding: 1.25rem;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.5rem 0;
+}
+.settings-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.settings-row-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.settings-row-desc {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* — Modal "BCF Topics": lista de topics + acciones (crear/exportar/importar).
+ * Misma receta de centrado/drag/cierre que .settings-modal. — */
+.bcf-list-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 12px;
+  width: min(52rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 4rem);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+}
+.bcf-list-modal::backdrop {
+  background: rgba(0, 0, 0, 0.55);
+}
+.bcf-list-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border-subtle);
+  cursor: move;
+  user-select: none;
+}
+.bcf-list-modal-title {
+  font-size: 1rem;
+  font-weight: 700;
+}
+.bcf-list-modal-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+.bcf-list-modal-close:hover {
+  background: var(--bg-surface-hover);
+}
+.bcf-list-modal-body {
+  max-height: calc(100vh - 10rem);
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+/* — Modal "Nuevo Topic": formulario de creación de topic BCF.
+ * Misma receta de centrado/drag/cierre que .bcf-list-modal. — */
+.bcf-topic-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 12px;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+}
+.bcf-topic-modal::backdrop {
+  background: rgba(0, 0, 0, 0.55);
+}
+.bcf-topic-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border-subtle);
+  cursor: move;
+  user-select: none;
+}
+.bcf-topic-modal-title {
+  font-size: 1rem;
+  font-weight: 700;
+}
+.bcf-topic-modal-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+.bcf-topic-modal-close:hover {
+  background: var(--bg-surface-hover);
+}
+.bcf-topic-modal-body {
+  max-height: calc(100vh - 10rem);
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+/* — WorldLabel: marcador CSS2D anclado a una coordenada del modelo.
+ * Tres estados según data-state: "icon" (lejos), "title" (cerca) y
+ * "expanded" (seleccionado, título + comentario).
+ *
+ * El elemento raíz es intencionalmente pointer-events:none — su bounding box
+ * (columna flex con badge+título+comentario apilados y centrados en el punto
+ * 3D) es más grande que lo que realmente se ve, y si fuera clickeable ahí
+ * "tapaba" el modelo debajo, impidiendo colocar otra etiqueta cerca. Solo las
+ * partes visibles (badge/título/comentario/inputs) son clickeables. */
+.world-label {
+  pointer-events: none;
+  user-select: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 12px;
+  --label-color: #74ac49;
+}
+.world-label-badge {
+  pointer-events: auto;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--label-color);
+  color: #fff;
+  font-size: 13px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+  flex-shrink: 0;
+  z-index: 1;
+  margin-bottom: -6px;
+}
+/* Tarjeta opaca, mismo lenguaje visual que el resto de los paneles flotantes
+ * (bg-elevated + border-subtle + sombra); el color personalizable de la
+ * etiqueta se ve en el badge y en el borde superior a modo de acento. */
+.world-label-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  border-top: 3px solid var(--label-color);
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+.world-label-title-row {
+  display: flex;
+  align-items: flex-start;
+}
+.world-label-title-row .world-label-title,
+.world-label-title-row .world-label-title-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.world-label-color-input {
+  display: none;
+  pointer-events: auto;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  margin: 8px 10px 0 0;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  flex-shrink: 0;
+}
+/* Solo visible en modo edición (título/comentario convertidos en inputs);
+ * si no, compite visualmente con el badge de color al solo ver/seleccionar. */
+.world-label-editing .world-label-color-input {
+  display: inline-block;
+}
+.world-label-color-input::-webkit-color-swatch-wrapper {
+  padding: 0;
+  border-radius: 50%;
+}
+.world-label-color-input::-webkit-color-swatch {
+  border: 1px solid var(--border-subtle);
+  border-radius: 50%;
+}
+.world-label-color-input::-moz-color-swatch {
+  border: 1px solid var(--border-subtle);
+  border-radius: 50%;
+}
+.world-label-title {
+  pointer-events: auto;
+  cursor: pointer;
+  max-width: 12rem;
+  padding: 8px 10px 2px;
+  font-weight: 700;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.world-label-comment {
+  pointer-events: auto;
+  cursor: pointer;
+  max-width: 16rem;
+  padding: 2px 10px 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+}
+.world-label[data-state="icon"] .world-label-card {
+  display: none;
+}
+.world-label[data-state="title"] .world-label-comment {
+  display: none;
+}
+/* El badge (ícono de nota) solo tiene sentido en el estado "icon" (lejos,
+ * sin espacio para texto); en "title" y "expanded" ya se ve el título, así
+ * que mostrarlo también se ve como un ícono duplicado flotando encima. */
+.world-label[data-state="title"] .world-label-badge,
+.world-label[data-state="expanded"] .world-label-badge {
+  display: none;
+}
+.world-label-title-input,
+.world-label-comment-textarea {
+  pointer-events: auto;
+  font: inherit;
+  color: inherit;
+  background: var(--bg-surface-hover);
+  border: 1px solid var(--label-color);
+  border-radius: 4px;
+  padding: 3px 6px;
+  margin: 2px 8px;
+}
+.world-label-title-input {
+  width: 12rem;
+  font-weight: 700;
+}
+.world-label-comment-textarea {
+  width: 16rem;
+  resize: vertical;
+}
+.world-label-edit-actions {
+  pointer-events: auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px 6px;
+}
+.world-label-edit-actions-group {
+  display: flex;
+  gap: 4px;
+}
+.world-label-edit-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 12px;
+  color: #fff;
+  transition: filter 0.15s;
+}
+.world-label-edit-btn:hover {
+  filter: brightness(1.15);
+}
+.world-label-edit-delete {
+  background: transparent;
+  color: var(--text-secondary);
+}
+.world-label-edit-delete:hover {
+  color: #d9463a;
+  filter: none;
+}
+.world-label-edit-cancel {
+  background: #6b6b6b;
+}
+.world-label-edit-accept {
+  background: #3a9e4f;
+}
+
+/* Ícono fantasma de previsualización: sigue el punto raycasteado bajo el
+ * cursor en modo "label", nunca es interactivo. */
+.world-label-preview {
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: transparent;
+  border: 2px dashed var(--accent);
+  color: var(--accent);
+  font-size: 14px;
+  opacity: 0.85;
+}
+
+/* Ícono fantasma de previsualización del plano de corte: mismo lenguaje
+ * visual que .world-label-preview (marco punteado + ícono), pero cuadrado
+ * y con una flecha que orbita el marco señalando la dirección del corte. */
+.section-preview {
+  pointer-events: none;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
+  background: transparent;
+  border: 2px dashed var(--accent);
+  color: var(--accent);
+  font-size: 14px;
+  opacity: 0.85;
+}
+.section-preview-arrow {
+  position: absolute;
+  top: -18px;
+  left: 50%;
+  font-size: 16px;
+  /* El JS actualiza `rotate(...)`; el origen queda fijo en el centro del
+   * marco para que la flecha orbite alrededor del ícono en vez de girar
+   * sobre sí misma. */
+  transform-origin: 50% 31px;
+  transform: translateX(-50%) rotate(0deg);
 }
