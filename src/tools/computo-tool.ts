@@ -1,7 +1,7 @@
 import * as OBC from "@thatopen/components";
 import * as OBF from "@thatopen/components-front";
 import { getPropertySets, getItemData, getElementTypeName } from "../ifc/properties";
-import { getQuantityForSelection } from "../computo/quantity-extractor";
+import { getQuantityForSelection, isCountedCategory } from "../computo/quantity-extractor";
 
 export interface ComputoItem {
   id: string;
@@ -155,6 +155,10 @@ export function createComputoTool(
       item.cantidad = 0;
       return;
     }
+    if (isCountedCategory(item.tipoIfc)) {
+      item.cantidad = item.elementos.length;
+      return;
+    }
     const quantity = await getQuantityForSelection(toModelIdMap(item.elementos), fragments);
     item.cantidad = quantity?.cantidad ?? item.elementos.length;
   }
@@ -182,7 +186,9 @@ export function createComputoTool(
     const precioStr = findPropertyValue(psets, PRECIO_KEY);
     item.precioUnitario = precioStr ? (parseFloat(precioStr) || 0) : 0;
 
-    let unidad = findPropertyValue(psets, UNIDAD_KEY) ?? "";
+    // Ventanas, puertas y similares se cuentan por pieza aunque tengan
+    // superficie propia — no tiene sentido buscarles un área/volumen.
+    let unidad = isCountedCategory(item.tipoIfc) ? "un" : (findPropertyValue(psets, UNIDAD_KEY) ?? "");
     if (!unidad) {
       const quantity = await getQuantityForSelection({ [modelId]: new Set([localId]) }, fragments);
       unidad = quantity?.unidad ?? "un";
