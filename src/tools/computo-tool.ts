@@ -1,6 +1,6 @@
 import * as OBC from "@thatopen/components";
 import * as OBF from "@thatopen/components-front";
-import { getPropertySets, getItemData } from "../ifc/properties";
+import { getPropertySets, getItemData, getElementTypeName } from "../ifc/properties";
 import { getQuantityForSelection } from "../computo/quantity-extractor";
 
 export interface ComputoItem {
@@ -11,6 +11,15 @@ export interface ComputoItem {
   cantidad: number;
   precioUnitario: number;
   elementos: { modelId: string; localId: number }[];
+  /** Clase IFC (ej. "IFCWALL") del primer elemento del ítem — no editable:
+   *  sirve para detectar cuándo un click en modo Agregar corresponde a un
+   *  tipo distinto y hay que arrancar un ítem nuevo en vez de sumarlo. */
+  tipoIfc: string | null;
+  /** Nombre de tipo/familia (ej. "MUR_LHC200") del primer elemento del ítem
+   *  — no editable: dos elementos pueden compartir clase IFC (ambos
+   *  "IFCWALL") pero ser tipos distintos (espesor/material), y eso también
+   *  tiene que separarlos en ítems distintos. */
+  tipoElemento: string | null;
 }
 
 export type ComputoAddMode = "add" | "remove";
@@ -55,6 +64,13 @@ function findPropertyValue(
   return null;
 }
 
+/** Clave de agrupación por tipo: nombre de tipo/familia si se pudo resolver
+ *  (más específico), si no la clase IFC, si no `null` (sin identidad
+ *  conocida — nunca se fusiona con otro ítem en ese caso). */
+function identityKey(identity: { tipoIfc: string | null; tipoElemento: string | null }): string | null {
+  return identity.tipoElemento ?? identity.tipoIfc ?? null;
+}
+
 function toModelIdMap(elementos: { modelId: string; localId: number }[]): OBC.ModelIdMap {
   const map: OBC.ModelIdMap = {};
   for (const { modelId, localId } of elementos) {
@@ -62,6 +78,33 @@ function toModelIdMap(elementos: { modelId: string; localId: number }[]): OBC.Mo
     map[modelId].add(localId);
   }
   return map;
+}
+
+interface IfcIdentity {
+  tipoIfc: string | null;
+  tipoElemento: string | null;
+}
+
+/** Identidad de un elemento a los efectos de agrupar/separar ítems de
+ *  cómputo: clase IFC (ej. "IFCWALL") + nombre de tipo/familia (ej.
+ *  "MUR_LHC200") — dos elementos de la misma clase pero tipo distinto
+ *  (espesor/material) no deben terminar en el mismo ítem. */
+async function getIfcIdentity(
+  fragments: OBC.FragmentsManager,
+  modelId: string,
+  localId: number,
+): Promise<IfcIdentity> {
+  const model = fragments.list.get(modelId);
+  if (!model) return { tipoIfc: null, tipoElemento: null };
+
+  let tipoIfc: string | null = null;
+  try {
+    tipoIfc = await model.getItem(localId).getCategory();
+  } catch { /* sin categoría resoluble */ }
+
+  const tipoElemento = await getElementTypeName(model, localId).catch(() => null);
+
+  return { tipoIfc, tipoElemento };
 }
 
 /**
@@ -85,8 +128,10 @@ export function createComputoTool(
   let active = false;
   let addMode: ComputoAddMode = "add";
   /** Ítem que está recibiendo clicks en modo Agregar. Se cierra (null) al
-   *  salir de la herramienta — volver a entrar y usar Agregar arranca uno
-   *  nuevo, en vez de seguir sumando al anterior. */
+   *  salir de la herramienta. Un click de un tipo distinto al del ítem en
+   *  curso no lo cierra "para siempre": si ya existe un ítem de ese mismo
+   *  tipo en cualquier parte del cómputo, se reabre y se suma ahí; solo se
+   *  crea uno nuevo cuando el tipo es realmente inédito. */
   let currentItemId: string | null = null;
   let itemCounter = 0;
 
@@ -116,7 +161,10 @@ export function createComputoTool(
 
     item.rubro = findPropertyValue(psets, RUBRO_KEY) ?? "";
 
-    let descripcion = findPropertyValue(psets, DESC_KEY) ?? "";
+    // Preferir el nombre de tipo/familia (compartido entre instancias del
+    // mismo tipo, ej. "MUR_LHC200") por sobre el Name de la instancia (que
+    // suele traer un sufijo único por elemento y ensucia la tabla).
+    let descripcion = findPropertyValue(psets, DESC_KEY) ?? item.tipoElemento ?? "";
     if (!descripcion) {
       const model = fragments.list.get(modelId);
       const itemData = model ? await getItemData(model, localId, false) : null;
@@ -140,18 +188,35 @@ export function createComputoTool(
   }
 
   async function handleAdd(modelId: string, localId: number): Promise<void> {
+    const identity = await getIfcIdentity(fragments, modelId, localId);
+    const key = identityKey(identity);
+
     let item = currentItemId ? list.get(currentItemId) : undefined;
+
+    // El ítem en curso ya no sirve si es de otro tipo — no se cierra "para
+    // siempre", solo deja de ser el "actual" (ver búsqueda debajo).
+    if (item && key && identityKey(item) !== key) item = undefined;
+
+    // Sin ítem en curso compatible: si ya existe un ítem de este mismo tipo
+    // en cualquier parte del cómputo (aunque no sea el que se estaba
+    // armando), se reabre y se suma ahí en vez de crear uno duplicado.
+    if (!item && key) {
+      for (const candidate of list.values()) {
+        if (identityKey(candidate) === key) { item = candidate; break; }
+      }
+    }
+
     if (!item) {
       itemCounter += 1;
       item = {
         id: `computo-${Date.now()}-${itemCounter}`,
         rubro: "", descripcion: "", unidad: "", cantidad: 0, precioUnitario: 0,
-        elementos: [],
+        elementos: [], tipoIfc: identity.tipoIfc, tipoElemento: identity.tipoElemento,
       };
       list.set(item.id, item);
-      currentItemId = item.id;
       onItemAdded.trigger(item);
     }
+    currentItemId = item.id;
 
     const already = item.elementos.some((e) => e.modelId === modelId && e.localId === localId);
     if (already) return;

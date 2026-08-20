@@ -257,7 +257,7 @@ export function createDataLayersTree(
     const label = document.createElement("span");
     label.className = "models-row-name";
     const rubro = item.rubro || "Sin rubro";
-    const descripcion = item.descripcion || item.id;
+    const descripcion = item.descripcion || item.tipoElemento || item.tipoIfc || item.id;
     label.textContent = `${rubro} — ${descripcion}`;
 
     const actions = document.createElement("div");
