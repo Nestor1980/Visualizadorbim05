@@ -7,15 +7,20 @@ const DEFAULT_PANEL_WIDTH = 380;
  * ("viewport" | "panel"), misma jerarquía y sin overlay flotante: el panel
  * ocupa una columna propia y redimensionarlo empuja el viewport, en vez de
  * superponerse por encima con position:fixed.
+ *
+ * `mount` es la solapa "Layout" del sistema de tabs del frame principal
+ * (ver main-tabs.ts): el grid vive anidado ahí en vez de fijo a document.body,
+ * para poder alternar el contenido del frame sin desmontar el visualizador.
  */
 export async function setupLayout(
   viewport: HTMLElement,
   panel: HTMLElement,
   toolbar: HTMLElement,
+  mount: HTMLElement,
   attachResize?: (pane: HTMLElement, grid: HTMLElement) => void,
 ): Promise<void> {
   const grid = document.createElement("bim-grid") as BUI.Grid<["main"]>;
-  document.body.append(grid);
+  mount.append(grid);
   await new Promise<void>((r) => setTimeout(r, 50));
 
   const pane = createPanelPane(panel, grid, attachResize);

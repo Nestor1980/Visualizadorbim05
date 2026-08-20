@@ -27,6 +27,7 @@ import type { ProjectIoDeps }     from "./project/project-io";
 import { createSettingsModal }    from "./ui/settings-modal";
 import { setupLayout }            from "./ui/layout";
 import { createPanelSplit }       from "./ui/panel-split";
+import { createMainTabs }         from "./ui/main-tabs";
 import { setupBCFSection }        from "./bcf/bcf-manager";
 import { SelectionManager }       from "./selection/selection-manager";
 import { guardHovererVisibility } from "./selection/visibility-sync";
@@ -209,18 +210,37 @@ async function startApp(): Promise<{
 
   const floatingToolbars = document.createElement("div");
   floatingToolbars.className = "floating-toolbars";
-  floatingToolbars.append(toolbar, projectToolbar);
+  floatingToolbars.append(toolbar);
 
   // Frame derecho dividido en dos: "Escena" (árbol de modelos IFC cargados,
   // estilo outliner, con exploración Espacial/Tipos por modelo) arriba,
   // paneles dinámicos (Renderizado, BCF) abajo.
   const panelSplit = createPanelSplit(leftPanel.element, rightPanel.element);
 
-  await setupLayout(viewport, panelSplit, floatingToolbars, attachRightPanelResize);
+  // App shell: primer contenedor horizontal = barra superior con las
+  // acciones de proyecto (Nuevo/Abrir/Guardar/Exportar/Config) y, a su
+  // derecha, las solapas del frame principal (Layout / BCF Topic / Cómputo);
+  // segundo contenedor = el frame de contenido que esas solapas alternan,
+  // sin cerrar el proyecto.
+  const mainTabs = createMainTabs();
 
-  // Force renderer + camera to pick up the real DOM dimensions after layout is mounted.
-  world.renderer?.resize(undefined);
-  (world.camera as OBC.OrthoPerspectiveCamera).updateAspect();
+  const topbar = document.createElement("div");
+  topbar.className = "app-topbar";
+  topbar.append(projectToolbar, mainTabs.tabsBar);
+
+  document.body.append(topbar, mainTabs.element);
+
+  await setupLayout(viewport, panelSplit, floatingToolbars, mainTabs.layoutPane, attachRightPanelResize);
+
+  // Force renderer + camera to pick up the real DOM dimensions after layout is
+  // mounted, y de nuevo cada vez que se vuelve a la solapa Layout tras
+  // haber estado oculta (display:none la deja con tamaño 0 mientras tanto).
+  const syncViewportSize = () => {
+    world.renderer?.resize(undefined);
+    (world.camera as OBC.OrthoPerspectiveCamera).updateAspect();
+  };
+  mainTabs.onLayoutShown(syncViewportSize);
+  syncViewportSize();
 
   return { triggerLoadIfc: leftPanel.triggerLoadIfc, loadIfcBytes: leftPanel.loadIfcBytes };
 }

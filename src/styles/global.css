@@ -31,6 +31,15 @@ html, body {
   font-family: var(--font-body);
 }
 
+/* App shell: dos contenedores horizontales apilados — barra superior con las
+ * acciones de proyecto, y debajo el frame principal (solapas Layout/BCF
+ * Topic/Cómputo). Los overlays fijos (welcome screen, modales) ignoran este
+ * flujo porque usan position:fixed. */
+body {
+  display: flex;
+  flex-direction: column;
+}
+
 /* Scrollbars del DOM "de luz" (paneles propios, fuera de los shadow roots
  * bim-*): mismo look que @thatopen/ui ya aplica dentro de sus componentes
  * (thin, thumb redondeado con --bim-ui_bg-contrast-60), para que no se note
@@ -56,14 +65,95 @@ html, body {
   background-color: transparent;
 }
 
+/* El bim-grid vive anidado en la solapa "Layout" del frame principal (ver
+ * main-tabs.ts) en vez de fijo a toda la pantalla, para poder alternar el
+ * contenido del frame sin desmontar el visualizador. */
 bim-grid {
-  position: fixed;
-  inset: 0;
-  z-index: 10;
+  width: 100%;
+  height: 100%;
   /* La grilla no-flotante de @thatopen/ui deja 1px de gap entre columnas
    * (se ve como una línea negra entre viewport y panel); lo anulamos porque
    * el propio panel-resize-handle ya marca la división. */
   gap: 0 !important;
+}
+
+.app-topbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  height: 3rem;
+  padding: 0 0.75rem;
+  gap: 0.75rem;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.app-topbar bim-toolbar {
+  box-shadow: none;
+}
+
+/* Riel de solapas del frame principal (Layout/BCF Topic/Cómputo): vive en la
+ * misma barra superior que el bim-toolbar de proyecto, empujado a la derecha. */
+.main-tabs-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-left: auto;
+}
+.main-tabs-tab {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  height: 2rem;
+  padding: 0 0.75rem;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.main-tabs-tab:hover {
+  color: var(--text-primary);
+  background: var(--bg-surface-hover);
+}
+.main-tabs-tab.active {
+  color: var(--bim-ui_main-base, var(--text-primary));
+  background: var(--accent);
+}
+
+/* Segundo contenedor horizontal del app shell: el frame de contenido que las
+ * solapas de arriba alternan (Layout / BCF Topic / Cómputo). */
+.main-tabs-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+}
+.main-tab-pane {
+  width: 100%;
+  height: 100%;
+}
+.main-tab-placeholder {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 2rem;
+}
+.main-tab-placeholder iconify-icon {
+  font-size: 2.5rem;
+  opacity: 0.6;
+}
+.main-tab-placeholder h3 {
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+  font-weight: 700;
 }
 
 bim-panel {
