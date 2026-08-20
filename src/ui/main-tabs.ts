@@ -33,17 +33,6 @@ const TABS: TabDef[] = [
   { id: "computo",   label: "Cómputo",    icon: "material-symbols:calculate-outline" },
 ];
 
-function createPlaceholderPane(title: string, description: string): HTMLElement {
-  const pane = document.createElement("div");
-  pane.className = "main-tab-placeholder";
-  pane.innerHTML = `
-    <iconify-icon icon="material-symbols:construction-rounded"></iconify-icon>
-    <h3>${title}</h3>
-    <p>${description}</p>
-  `;
-  return pane;
-}
-
 const BCF_TABLE_MIN_WIDTH = 280;
 const BCF_TABLE_MAX_WIDTH_RATIO = 0.6;
 
@@ -117,7 +106,7 @@ function attachBcfSplitResize(split: HTMLElement, tableEl: HTMLElement): void {
  * la derecha un frame estático con el contenido del modal "BCF Topics"
  * (acciones + tabla), ver bcfTopicsFrame en bcf-manager.ts.
  */
-export function createMainTabs(bcfTopicsFrame: HTMLElement): MainTabsPanel {
+export function createMainTabs(bcfTopicsFrame: HTMLElement, computoPane: HTMLElement): MainTabsPanel {
   const bar = document.createElement("div");
   bar.className = "main-tabs-bar";
 
@@ -139,7 +128,7 @@ export function createMainTabs(bcfTopicsFrame: HTMLElement): MainTabsPanel {
   const panes = new Map<string, HTMLElement>([
     ["layout", layoutPane],
     ["bcf-topic", bcfPane],
-    ["computo", createPlaceholderPane("Cómputo", "Próximamente: tablas de cómputo y costos.")],
+    ["computo", computoPane],
   ]);
 
   for (const pane of panes.values()) {

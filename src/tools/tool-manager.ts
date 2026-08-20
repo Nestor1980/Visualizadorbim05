@@ -5,11 +5,12 @@ import type { SectionTool } from "./section-tool";
 import type { WorldLabelTool } from "./world-label-tool";
 import type { DrawTool } from "./draw-tool";
 import type { CotaTool } from "./cota-tool";
+import type { ComputoTool } from "./computo-tool";
 import type * as BUI from "@thatopen/ui";
 import type { ToolOptionsView } from "../ui/tool-options-panel";
 import type { SelectionManager } from "../selection/selection-manager";
 
-export type ToolMode = "navigate" | "cota" | "section" | "label" | "draw" | "properties";
+export type ToolMode = "navigate" | "cota" | "section" | "label" | "draw" | "properties" | "computo";
 
 interface ToolOptionsPanelLike {
   setView: (view: ToolOptionsView) => void;
@@ -31,6 +32,7 @@ export class ToolManager {
   labelBtnEl: BUI.Button | null = null;
   drawBtnEl: BUI.Button | null = null;
   propertiesBtnEl: BUI.Button | null = null;
+  computoBtnEl: BUI.Button | null = null;
 
   private highlighter: OBF.Highlighter;
   private hoverer: OBF.Hoverer;
@@ -38,6 +40,7 @@ export class ToolManager {
   private worldLabelTool: WorldLabelTool;
   private drawTool: DrawTool;
   private cotaTool: CotaTool;
+  private computoTool: ComputoTool;
   private postproduction: { enabled: boolean } | null = null;
   private toolOptionsPanel: ToolOptionsPanelLike | null = null;
   private camera: OBC.OrthoPerspectiveCamera | null = null;
@@ -49,6 +52,7 @@ export class ToolManager {
     worldLabelTool: WorldLabelTool,
     drawTool: DrawTool,
     cotaTool: CotaTool,
+    computoTool: ComputoTool,
   ) {
     this.highlighter   = highlighter;
     this.hoverer       = hoverer;
@@ -56,6 +60,7 @@ export class ToolManager {
     this.worldLabelTool = worldLabelTool;
     this.drawTool       = drawTool;
     this.cotaTool       = cotaTool;
+    this.computoTool    = computoTool;
   }
 
   setPostproduction(pp: { enabled: boolean }): void {
@@ -75,7 +80,7 @@ export class ToolManager {
     this.sectionTool.sectionFillGroup.visible  = false;
     if (mode !== "section") this.sectionTool.hidePreview();
 
-    if (mode === "navigate" || mode === "properties") {
+    if (mode === "navigate" || mode === "properties" || mode === "computo") {
       this.highlighter.enabled = true;
       this.hoverer.enabled     = true;
     } else if (mode === "section") {
@@ -90,6 +95,9 @@ export class ToolManager {
     if (mode === "cota") this.cotaTool.activate();
     else if (this.cotaTool.active) this.cotaTool.deactivate();
 
+    if (mode === "computo") this.computoTool.activate();
+    else if (this.computoTool.active) this.computoTool.deactivate();
+
     const modeButtons: Record<ToolMode, BUI.Button | null> = {
       navigate:   this.navigateBtnEl,
       cota:       this.cotaBtnEl,
@@ -97,6 +105,7 @@ export class ToolManager {
       label:      this.labelBtnEl,
       draw:       this.drawBtnEl,
       properties: this.propertiesBtnEl,
+      computo:    this.computoBtnEl,
     };
     for (const [btnMode, btn] of Object.entries(modeButtons)) {
       if (btn) btn.active = btnMode === mode;
@@ -107,6 +116,7 @@ export class ToolManager {
       mode === "section"    ? "section" :
       mode === "draw"       ? "draw" :
       mode === "properties" ? "properties" :
+      mode === "computo"    ? "computo" :
       null;
     this.toolOptionsPanel?.setView(view);
   }

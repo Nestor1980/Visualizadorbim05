@@ -31,7 +31,10 @@ export function getExpressId(obj: any): number | null {
 
 export function extractPropValue(prop: any): string {
   if (!prop || typeof prop !== "object") return "—";
-  const raw = prop.NominalValue ?? prop.Value;
+  // IfcQuantityArea/Volume/Length/Weight/Count (Qto_ sets) guardan el valor en
+  // su propio campo *Value en vez de NominalValue/Value como un IfcPropertySingleValue.
+  const raw = prop.NominalValue ?? prop.Value
+    ?? prop.AreaValue ?? prop.VolumeValue ?? prop.LengthValue ?? prop.WeightValue ?? prop.CountValue;
   if (raw === null || raw === undefined) return "—";
   if (typeof raw === "object" && raw.value !== undefined) return String(raw.value);
   if (typeof raw === "object") return JSON.stringify(raw);

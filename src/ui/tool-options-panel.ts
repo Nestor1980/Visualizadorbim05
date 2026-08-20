@@ -4,12 +4,14 @@ import { createSectionPanel } from "./right-panel/section-panel";
 import { createLabelPanel } from "./right-panel/label-panel";
 import { createDrawPanel } from "./right-panel/draw-panel";
 import { createCotaPanel } from "./right-panel/cota-panel";
+import { createComputoPanel } from "./right-panel/computo-panel";
 import type { SectionTool } from "../tools/section-tool";
 import type { WorldLabelTool } from "../tools/world-label-tool";
 import type { DrawTool } from "../tools/draw-tool";
 import type { CotaTool } from "../tools/cota-tool";
+import type { ComputoTool } from "../tools/computo-tool";
 
-export type ToolOptionsView = "cota" | "section" | "properties" | "label" | "draw" | null;
+export type ToolOptionsView = "cota" | "section" | "properties" | "label" | "draw" | "computo" | null;
 
 export interface ToolOptionsPanel {
   element: HTMLElement;
@@ -31,12 +33,14 @@ export function createToolOptionsPanel(
   worldLabelTool: WorldLabelTool,
   drawTool: DrawTool,
   cotaTool: CotaTool,
+  computoTool: ComputoTool,
 ): ToolOptionsPanel {
   const propertiesPanel = createPropertiesPanel(components, fragments);
   const sectionPanel    = createSectionPanel(sectionTool);
   const labelPanel      = createLabelPanel(worldLabelTool);
   const drawPanel       = createDrawPanel(drawTool);
   const cotaPanel       = createCotaPanel(cotaTool);
+  const computoPanel    = createComputoPanel(computoTool);
 
   propertiesPanel.section.collapsed = false;
 
@@ -46,11 +50,12 @@ export function createToolOptionsPanel(
     properties: propertiesPanel.section,
     label:      labelPanel.element,
     draw:       drawPanel.element,
+    computo:    computoPanel.element,
   };
 
   const element = document.createElement("div");
   element.className = "tool-options-panel";
-  element.append(views.cota, views.section, views.properties, views.label, views.draw);
+  element.append(views.cota, views.section, views.properties, views.label, views.draw, views.computo);
 
   const applyView = (view: ToolOptionsView): void => {
     element.style.display = view ? "" : "none";

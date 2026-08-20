@@ -135,25 +135,110 @@ bim-grid {
   width: 100%;
   height: 100%;
 }
-.main-tab-placeholder {
-  height: 100%;
+/* Solapa "Cómputo": frame estático con la tabla de cómputo y presupuesto
+ * (ver computo-manager.ts), agrupada por Rubro con subtotal/% de incidencia
+ * por grupo y fila de TOTAL general. Las celdas de Cantidad y Precio Unit.
+ * son inputs editables que recalculan importes al vuelo. */
+.computo-frame {
   display: flex;
   flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+.computo-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+.computo-empty {
+  padding: 2rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+.computo-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.computo-table th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-surface);
+  text-align: left;
+  padding: 8px 10px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.computo-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--bim-ui_bg-contrast-20, var(--border-subtle));
+  vertical-align: middle;
+}
+.computo-table .computo-num {
+  text-align: right;
+  white-space: nowrap;
+}
+.computo-rubro-row td {
+  background: var(--bg-surface-hover);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.computo-total-row td {
+  font-weight: 700;
+  color: var(--text-primary);
+  border-top: 2px solid var(--border-subtle);
+  border-bottom: none;
+}
+.computo-input {
+  width: 100%;
+  min-width: 0;
+  padding: 3px 6px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+}
+.computo-input:hover {
+  border-color: var(--border-subtle);
+}
+.computo-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--bg-surface);
+}
+.computo-actions {
+  text-align: center;
+}
+.computo-delete {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
+  border: none;
+  background: transparent;
   color: var(--text-muted);
-  text-align: center;
-  padding: 2rem;
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 4px;
+  font-size: 15px;
 }
-.main-tab-placeholder iconify-icon {
-  font-size: 2.5rem;
-  opacity: 0.6;
+.computo-delete:hover {
+  color: var(--text-primary);
+  background: var(--bg-surface-hover);
 }
-.main-tab-placeholder h3 {
-  color: var(--text-secondary);
-  font-size: 1.1rem;
-  font-weight: 700;
+
+/* Texto de ayuda del panel flotante de la herramienta "Cómputo" (botones
+ * Agregar/Quitar): ver computo-panel.ts. */
+.computo-staging-hint {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  padding: 0 0 6px;
+  line-height: 1.5;
 }
 
 /* Solapa "BCF Topic": dos columnas reales — visualizador a la izquierda

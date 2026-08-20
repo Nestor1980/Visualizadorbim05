@@ -14,7 +14,7 @@ interface Project {
 }
 
 const PROJECTS: Project[] = [
-  { name: "prototipo_iapv.ifc", label: "Prototipo IAPV", url: "/model_ifc/prototipo_iapv.ifc" },
+  { name: "Modulo Ahora Tu Casa.ifc", label: "Modulo Ahora Tu Casa", url: "/model_ifc/Modulo%20Ahora%20Tu%20Casa.ifc" },
 ];
 
 const formatSize = (bytes: number): string => `${(bytes / (1024 * 1024)).toFixed(1)} MB`;

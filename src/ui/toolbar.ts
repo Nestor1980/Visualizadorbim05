@@ -116,6 +116,21 @@ export function createToolbar(
           </bim-button>
         </bim-toolbar-section>
 
+        <bim-toolbar-section label="Cómputo">
+          <bim-button
+            icon="material-symbols:calculate-outline"
+            ${BUI.ref((el: Element | undefined) => { toolManager.computoBtnEl = el as BUI.Button ?? null; })}
+            @click=${() => {
+              if (toolManager.activeMode === "computo") toolManager.setMode("navigate");
+              else toolManager.setMode("computo");
+            }}>
+            <bim-tooltip>
+              <div style="font-weight:600;">Cómputo</div>
+              <div style="opacity:0.75;">Seleccioná elementos para agregarlos al cómputo y presupuesto</div>
+            </bim-tooltip>
+          </bim-button>
+        </bim-toolbar-section>
+
         <bim-toolbar-section label="Visibilidad">
           <bim-button
             icon="material-symbols:filter-center-focus"
