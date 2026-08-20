@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import * as OBC from "@thatopen/components";
 import * as OBF from "@thatopen/components-front";
 import { createRenderizadoPanel } from "./renderizado-panel";
 import { createDynamicTabsPanel, type DynamicPanelTab } from "./dynamic-tabs-panel";
@@ -16,13 +17,14 @@ export interface RightPanel {
  * addTab/removeTab según lo que esté ocurriendo en la escena.
  */
 export function createRightPanel(
+  world: OBC.World,
   postproduction: OBF.Postproduction,
   sunLight: THREE.DirectionalLight,
   threeRenderer: THREE.WebGLRenderer,
 ): RightPanel {
   const dynamicPanel = createDynamicTabsPanel();
 
-  const renderizadoPanel = createRenderizadoPanel(postproduction, sunLight, threeRenderer);
+  const renderizadoPanel = createRenderizadoPanel(world, postproduction, sunLight, threeRenderer);
   dynamicPanel.addTab({
     id: "renderizado",
     label: "Renderizado",

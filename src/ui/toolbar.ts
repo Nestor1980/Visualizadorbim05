@@ -1,8 +1,10 @@
-import * as THREE from "three";
 import * as OBC from "@thatopen/components";
+import * as OBF from "@thatopen/components-front";
 import * as BUI from "@thatopen/ui";
 import type { ToolManager } from "../tools/tool-manager";
 import type { SelectionManager } from "../selection/selection-manager";
+import { fitViewToModels } from "../camera/fit-view";
+import { syncPickableWithVisibility } from "../selection/visibility-sync";
 
 export function createToolbar(
   world: OBC.World,
@@ -10,6 +12,7 @@ export function createToolbar(
   toolManager: ToolManager,
   selectionManager: SelectionManager,
   openBcfModal: () => void,
+  highlighter: OBF.Highlighter,
 ): BUI.Toolbar {
   const toolbar = BUI.Component.create<BUI.Toolbar>(() => {
     return BUI.html`
@@ -29,24 +32,8 @@ export function createToolbar(
 
         <bim-toolbar-section label="Cámara">
           <bim-button
-            icon="tabler:camera"
-            @click=${() => world.camera.projection.toggle()}>
-            <bim-tooltip>
-              <div style="font-weight:600;">Perspectiva</div>
-              <div style="opacity:0.75;">Alternar cámara ortográfica / perspectiva</div>
-            </bim-tooltip>
-          </bim-button>
-          <bim-button
             icon="material-symbols:fit-screen"
-            @click=${async () => {
-              const meshes: THREE.Mesh[] = [];
-              for (const model of fragments.list.values()) {
-                model.object?.traverse((obj) => {
-                  if (obj instanceof THREE.Mesh) meshes.push(obj);
-                });
-              }
-              if (meshes.length > 0) await world.camera.fit(meshes);
-            }}>
+            @click=${async () => { await fitViewToModels(world, fragments); }}>
             <bim-tooltip>
               <div style="font-weight:600;">Ajustar vista</div>
               <div style="opacity:0.75;">Ajustar vista al modelo</div>
@@ -152,6 +139,7 @@ export function createToolbar(
                 }
                 selectionManager.isIsolated = true;
               }
+              await syncPickableWithVisibility(fragments, highlighter);
               fragments.core.update(true);
             }}>
             <bim-tooltip>
@@ -166,6 +154,7 @@ export function createToolbar(
                 await model.setVisible(undefined, true);
               }
               selectionManager.isIsolated = false;
+              await syncPickableWithVisibility(fragments, highlighter);
               fragments.core.update(true);
             }}>
             <bim-tooltip>Mostrar todo</bim-tooltip>

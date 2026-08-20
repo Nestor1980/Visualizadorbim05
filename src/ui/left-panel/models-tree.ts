@@ -2,6 +2,7 @@ import * as OBC from "@thatopen/components";
 import * as OBF from "@thatopen/components-front";
 import type { DataLayersController } from "./data-layers-tree";
 import { createModelTreeView, ModelTreeView, TreeViewMode } from "./tree-panel";
+import { syncPickableWithVisibility } from "../../selection/visibility-sync";
 
 interface Collection {
   id: string;
@@ -220,6 +221,7 @@ export function createModelsTree(
     const hidden = isModelHidden(modelId);
     const eyeBtn = makeIconButton(hidden ? "mdi:eye-off" : "mdi:eye", hidden ? "Mostrar" : "Ocultar", async () => {
       await setModelVisible(modelId, isModelHidden(modelId));
+      await syncPickableWithVisibility(fragments, highlighter);
       await fragments.core.update(true);
       render();
     });
@@ -321,6 +323,7 @@ export function createModelsTree(
       async () => {
         col.hidden = !col.hidden;
         await Promise.all(memberIds.map((id) => setModelVisible(id, !col.hidden)));
+        await syncPickableWithVisibility(fragments, highlighter);
         await fragments.core.update(true);
         render();
       },

@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import * as OBC from "@thatopen/components";
 import * as OBF from "@thatopen/components-front";
+import CameraControls from "camera-controls";
 import { HIGHLIGHT_COLOR } from "../config/constants";
 
 export function setupPostprocessing(
@@ -20,9 +21,14 @@ export function setupPostprocessing(
 
     if (pp._basePass) pp._basePass.camera = newCam;
     if (pp._aoPass)   pp._aoPass.camera   = newCam;
+    // GlossPass caches the camera under `renderCamera`, not `camera`, and only
+    // reads it once at initialization — it must be patched separately or it
+    // keeps rendering from the old (now frozen) camera, producing a ghost.
+    if (pp._glossPass) pp._glossPass.renderCamera = newCam;
     if (pp.composer?.passes) {
       for (const pass of pp.composer.passes) {
         if (pass.camera !== undefined) pass.camera = newCam;
+        if (pass.renderCamera !== undefined) pass.renderCamera = newCam;
       }
     }
 
@@ -36,6 +42,14 @@ export function setupPostprocessing(
     rdr.autoClear = true;
     rdr.clear();
     rdr.autoClear = prev;
+
+    // ThatOpen's ProjectionManager hardcodes mouseButtons.middle to
+    // ZOOM/DOLLY on every projection switch, clobbering our custom
+    // middle-button-orbit binding (see scene.ts) and leaving no button
+    // bound to ROTATE — restore it here after every toggle.
+    const cc = world.camera.controls;
+    cc.mouseButtons.left   = CameraControls.ACTION.NONE;
+    cc.mouseButtons.middle = CameraControls.ACTION.ROTATE;
 
     world.camera.updateAspect();
   });

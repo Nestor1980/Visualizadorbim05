@@ -3,6 +3,7 @@ import * as CUI from "@thatopen/ui-obc";
 import * as OBF from "@thatopen/components-front";
 import * as FRAGS from "@thatopen/fragments";
 import { IFC_LABEL, IFC_ICON } from "../../config/constants";
+import { syncPickableWithVisibility } from "../../selection/visibility-sync";
 
 export type TreeViewMode = "spatial" | "types";
 
@@ -127,6 +128,18 @@ export function createModelTreeView(
   let onElementClickCb: ((modelId: string, localId: number) => void) | null = null;
   let onTypeGroupClickCb: ((map: OBC.ModelIdMap, typeLabel: string, count: number) => void) | null = null;
 
+  /** Tree row clicks (spatial and types views) bypass the 3D raycast entirely,
+   *  so they must be filtered against the same highlighter.selectable.select
+   *  restriction that keeps hidden elements out of click-to-select — otherwise
+   *  clicking a hidden element's row would still open it in the properties
+   *  panel even though it can't be picked in the viewport. */
+  const filterToVisible = (map: OBC.ModelIdMap): OBC.ModelIdMap => {
+    const restriction = highlighter.selectable.select;
+    return restriction ? OBC.ModelIdMapUtils.intersect([map, restriction]) : map;
+  };
+  const countIds = (map: OBC.ModelIdMap): number =>
+    Object.values(map).reduce((n, ids) => n + ids.size, 0);
+
   /** localIds propios (no de hijos) marcados como ocultos a mano desde el árbol. */
   const hiddenIds = new Set<number>();
 
@@ -188,6 +201,7 @@ export function createModelTreeView(
       if (typeof localId === "number") {
         if (hidden) hiddenIds.delete(localId); else hiddenIds.add(localId);
       }
+      await syncPickableWithVisibility(components.get(OBC.FragmentsManager), highlighter);
       refresh();
     });
 
@@ -266,9 +280,11 @@ export function createModelTreeView(
           if (!modelIdMap[inst.modelId]) modelIdMap[inst.modelId] = new Set();
           modelIdMap[inst.modelId].add(inst.localId);
         }
+        const visibleMap = filterToVisible(modelIdMap);
+        if (countIds(visibleMap) === 0) return;
         selectTypesRow(catRow);
         highlighter.highlightByID("select", modelIdMap, true, false).catch(console.error);
-        onTypeGroupClickCb?.(modelIdMap, label, instances.length);
+        onTypeGroupClickCb?.(visibleMap, label, countIds(visibleMap));
       });
 
       for (const inst of instances) {
@@ -283,6 +299,7 @@ export function createModelTreeView(
 
         instRow.addEventListener("click", () => {
           const map: OBC.ModelIdMap = { [inst.modelId]: new Set([inst.localId]) };
+          if (countIds(filterToVisible(map)) === 0) return;
           selectTypesRow(instRow);
           highlighter.highlightByID("select", map, true, false).catch(console.error);
           onElementClickCb?.(inst.modelId, inst.localId);
@@ -369,6 +386,7 @@ export function createModelTreeView(
     const modelId = row.data.modelId as string;
     const localId = row.data.localId as number;
     if (!modelId || localId === undefined) return;
+    if (countIds(filterToVisible({ [modelId]: new Set([localId]) })) === 0) return;
     selectTypesRow(null);
     onElementClickCb?.(modelId, localId);
   });

@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import * as OBC from "@thatopen/components";
 import * as OBF from "@thatopen/components-front";
 import * as BUI from "@thatopen/ui";
 
@@ -7,6 +8,7 @@ export interface RenderizadoPanel {
 }
 
 export function createRenderizadoPanel(
+  world: OBC.World,
   postproduction: OBF.Postproduction,
   sunLight: THREE.DirectionalLight,
   threeRenderer: THREE.WebGLRenderer,
@@ -14,6 +16,13 @@ export function createRenderizadoPanel(
   const section = BUI.Component.create<BUI.PanelSection>(() => {
     return BUI.html`
       <bim-panel-section label="Renderizado" icon="material-symbols:photo-camera">
+        <bim-dropdown label="Vista" required
+          @change="${({ target }: { target: BUI.Dropdown }) => {
+            world.camera.projection.set(target.value[0] as OBC.CameraProjection);
+          }}">
+          <bim-option checked label="Perspectiva" value="Perspective"></bim-option>
+          <bim-option label="Ortogonal"            value="Orthographic"></bim-option>
+        </bim-dropdown>
         <bim-checkbox checked label="Postproducción"
           @change="${({ target }: { target: BUI.Checkbox }) => { postproduction.enabled = target.value; }}">
         </bim-checkbox>

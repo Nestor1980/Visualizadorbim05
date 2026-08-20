@@ -10,6 +10,7 @@ import { createScene }            from "./core/scene";
 import { setupPostprocessing }    from "./core/postprocessing";
 import { setupPivotRaycaster }    from "./camera/pivot-raycaster";
 import { createNavWidget }        from "./camera/nav-widget";
+import { fitViewToModels }        from "./camera/fit-view";
 import { createSectionTool }      from "./tools/section-tool";
 import { createWorldLabelTool }   from "./tools/world-label-tool";
 import { createDrawTool }         from "./tools/draw-tool";
@@ -28,6 +29,7 @@ import { setupLayout }            from "./ui/layout";
 import { createPanelSplit }       from "./ui/panel-split";
 import { setupBCFSection }        from "./bcf/bcf-manager";
 import { SelectionManager }       from "./selection/selection-manager";
+import { guardHovererVisibility } from "./selection/visibility-sync";
 import { showWelcomeScreen }      from "./ui/welcome-screen";
 import { saveThumbnail }          from "./ifc/recent-files";
 
@@ -98,6 +100,7 @@ async function startApp(): Promise<{
     transparent:   true,
     renderedFaces: FRAGS.RenderedFaces.TWO,
   });
+  guardHovererVisibility(hoverer, highlighter);
 
   // — Tools —
   const sectionTool    = createSectionTool(components, world);
@@ -152,11 +155,7 @@ async function startApp(): Promise<{
   const onModelLoaded = async (model: any, name: string) => {
     await processModel(model, fragments, sectionTool, adjustGridToModel);
     try {
-      const meshes: THREE.Mesh[] = [];
-      model.object?.traverse((obj: THREE.Object3D) => {
-        if (obj instanceof THREE.Mesh) meshes.push(obj);
-      });
-      if (meshes.length > 0) await world.camera.fit(meshes);
+      await fitViewToModels(world, fragments);
       const dataUrl = await captureNextFrame(world, threeRenderer);
       await saveThumbnail(name, dataUrl);
     } catch (error) {
@@ -170,7 +169,7 @@ async function startApp(): Promise<{
   );
 
   // Panel dinámico de abajo: Renderizado.
-  const rightPanel = createRightPanel(postproduction, sunLight, threeRenderer);
+  const rightPanel = createRightPanel(world, postproduction, sunLight, threeRenderer);
 
   // Selecting an element (tree or 3D click) switches the right panel to the
   // Propiedades view, mirroring an explicit click on the toolbar button.
@@ -199,7 +198,7 @@ async function startApp(): Promise<{
   const { openModal, openTopicsModal, selectTopic } = setupBCFSection(components, world, rightPanel);
   leftPanel.onTopicSelect((topicGuid) => selectTopic(topicGuid));
   leftPanel.onOpenTopicsTable(() => openTopicsModal());
-  const toolbar        = createToolbar(world, fragments, toolManager, selectionManager, openModal);
+  const toolbar        = createToolbar(world, fragments, toolManager, selectionManager, openModal, highlighter);
   const settingsModal   = createSettingsModal();
   const projectIoDeps: ProjectIoDeps = { fragments, topics, viewpoints, world, leftPanel };
   const projectToolbar  = createProjectToolbar(projectIoDeps, settingsModal.openModal);
