@@ -7,6 +7,8 @@ import { shareTopicByEmail, shareTopicToDiscord } from "./share";
 
 const BCF_TOPIC_TAB_ID = "bcf-topic";
 
+type TopicsTable = ReturnType<typeof CUI.tables.topicsList>[0];
+
 const TOPIC_USERS: CUI.TopicUserStyles = {
   "arquitecto@proyecto.com": { name: "Arquitecto Principal", picture: "https://i.pravatar.cc/150?img=3" },
   "ingeniero@proyecto.com":  { name: "Ingeniero Estructural",  picture: "https://i.pravatar.cc/150?img=7" },
@@ -19,13 +21,13 @@ export function setupBCFSection(
 ): {
   modal: HTMLDialogElement;
   openModal: () => void;
-  openTopicsModal: () => void;
   selectTopic: (topicGuid: string) => void;
+  /** Frame estático (mismo contenido que el modal "BCF Topics": acciones +
+   *  tabla) para la solapa "BCF Topic" del frame principal. */
+  topicsFrame: HTMLElement;
 } {
   const topics    = components.get(OBC.BCFTopics);
   const viewpoints = components.get(OBC.Viewpoints);
-
-  const [topicsList] = CUI.tables.topicsList({ components, dataStyles: { users: TOPIC_USERS } });
 
   const exportTopicsAsFile = async (toExport: OBC.Topic[]): Promise<void> => {
     if (toExport.length === 0) return;
@@ -103,59 +105,114 @@ export function setupBCFSection(
     vp.go({ transition: true }).catch(console.error);
   };
 
-  topicsList.selectableRows = true;
+  // Fábrica de tabla de topics: se usa tanto para la del modal "BCF Topics"
+  // como para la del frame estático de la solapa "BCF Topic" — mismo look &
+  // comportamiento (hover, click para ver detalle, borrar), cada una con su
+  // propia instancia de tabla (un mismo nodo no puede vivir en dos lugares).
+  const createTopicsTable = (onRowClick: (topic: OBC.Topic) => void): TopicsTable => {
+    const [table] = CUI.tables.topicsList({ components, dataStyles: { users: TOPIC_USERS } });
+    table.selectableRows = true;
 
-  // @ts-ignore
-  topicsList.addEventListener("rowcreated",
-    (event: CustomEvent<BUI.RowCreatedEventDetail<{ Guid: string }>>) => {
-      const { row } = event.detail;
-      row.style.cursor = "pointer";
+    // @ts-ignore
+    table.addEventListener("rowcreated",
+      (event: CustomEvent<BUI.RowCreatedEventDetail<{ Guid: string }>>) => {
+        const { row } = event.detail;
+        row.style.cursor = "pointer";
+        row.style.position = "relative";
 
-      row.addEventListener("mouseover", () => {
-        row.style.backgroundColor = `color-mix(in lab, var(--bim-ui_bg-contrast-20) 30%, var(--bim-ui_main-base) 10%)`;
-      });
-      row.addEventListener("mouseout", () => row.style.removeProperty("background-color"));
+        row.addEventListener("mouseover", () => {
+          row.style.backgroundColor = `color-mix(in lab, var(--bim-ui_bg-contrast-20) 30%, var(--bim-ui_main-base) 10%)`;
+        });
+        row.addEventListener("mouseout", () => row.style.removeProperty("background-color"));
 
-      row.addEventListener("click", (e: MouseEvent) => {
-        if ((e.target as HTMLElement).closest("bim-button, button")) return;
-        const { Guid } = row.data;
-        if (!Guid) return;
-        const topic = topics.list.get(Guid);
-        if (!topic) return;
-        showTopicPanel(topic);
-        focusTopicViewpoint(topic);
-        // El detalle se ve en el panel dinámico, detrás del modal: cerrarlo
-        // acá es lo que efectivamente lo "despliega" a la vista del usuario.
-        listModal.close();
-      });
+        row.addEventListener("click", (e: MouseEvent) => {
+          if ((e.target as HTMLElement).closest("bim-button, button")) return;
+          const { Guid } = row.data;
+          if (!Guid) return;
+          const topic = topics.list.get(Guid);
+          if (!topic) return;
+          onRowClick(topic);
+        });
 
-      const deleteBtn = document.createElement("bim-button") as any;
-      deleteBtn.icon  = "material-symbols:delete-outline";
-      deleteBtn.label = "";
-      deleteBtn.title = "Eliminar topic";
-      Object.assign(deleteBtn.style, {
-        position: "absolute", right: "4px", top: "50%",
-        transform: "translateY(-50%)", zIndex: "10",
-        opacity: "0", transition: "opacity 0.15s",
-        "--bim-button--bgc": "transparent",
-        "--bim-button--c":   "var(--bim-ui_bg-contrast-60)",
-      });
-      deleteBtn.addEventListener("click", (e: Event) => {
-        e.stopPropagation();
-        const { Guid } = row.data;
-        if (!Guid) return;
-        const topic = topics.list.get(Guid);
-        if (!topic) return;
-        if (!confirm(`¿Eliminar topic "${topic.title}"?`)) return;
-        topics.list.delete(topic.guid);
-        rightPanel.removeTab(BCF_TOPIC_TAB_ID);
-      });
-      row.style.position = "relative";
-      row.addEventListener("mouseover", () => { deleteBtn.style.opacity = "1"; });
-      row.addEventListener("mouseout",  () => { deleteBtn.style.opacity = "0"; });
-      row.append(deleteBtn);
-    },
-  );
+        const deleteBtn = document.createElement("bim-button") as any;
+        deleteBtn.icon  = "material-symbols:delete-outline";
+        deleteBtn.label = "";
+        deleteBtn.title = "Eliminar topic";
+        Object.assign(deleteBtn.style, {
+          position: "absolute", right: "4px", top: "50%",
+          transform: "translateY(-50%)", zIndex: "10",
+          opacity: "0", transition: "opacity 0.15s",
+          "--bim-button--bgc": "transparent",
+          "--bim-button--c":   "var(--bim-ui_bg-contrast-60)",
+        });
+        deleteBtn.addEventListener("click", (e: Event) => {
+          e.stopPropagation();
+          const { Guid } = row.data;
+          if (!Guid) return;
+          const topic = topics.list.get(Guid);
+          if (!topic) return;
+          if (!confirm(`¿Eliminar topic "${topic.title}"?`)) return;
+          topics.list.delete(topic.guid);
+          rightPanel.removeTab(BCF_TOPIC_TAB_ID);
+        });
+        row.addEventListener("mouseover", () => { deleteBtn.style.opacity = "1"; });
+        row.addEventListener("mouseout",  () => { deleteBtn.style.opacity = "0"; });
+        row.append(deleteBtn);
+      },
+    );
+
+    return table;
+  };
+
+  // Fábrica de los botones de acción (Crear/Descargar/Importar): "Descargar"
+  // exporta la selección de la tabla que se le pase (o todos los topics si
+  // no hay selección) — cada frame (modal y solapa estática) tiene su propia
+  // tabla, así que cada uno arma su propio juego de botones.
+  const createActionButtons = (sourceTable: TopicsTable): HTMLElement[] => {
+    const createTopicBtn = BUI.Component.create(() => BUI.html`
+      <bim-button label="Crear Topic BCF" icon="material-symbols:task"
+        @click=${() => {
+          resetModalPosition(modal);
+          modal.showModal();
+        }}>
+      </bim-button>
+    `);
+
+    const downloadBtn = BUI.Component.create(() => {
+      const onDownload = async () => {
+        const selected = [...sourceTable.selection]
+          .map(({ Guid }) => (Guid && typeof Guid === "string") ? topics.list.get(Guid) : null)
+          .filter(Boolean) as OBC.Topic[];
+        const toExport = selected.length > 0 ? selected : [...topics.list.values()];
+        await exportTopicsAsFile(toExport);
+      };
+      return BUI.html`
+        <bim-button label="Descargar BCF" icon="material-symbols:download" @click=${onDownload}></bim-button>
+      `;
+    });
+
+    const importBtn = BUI.Component.create(() => {
+      const onImport = async () => {
+        const input    = document.createElement("input");
+        input.type     = "file";
+        input.accept   = ".bcf,.bcfzip";
+        input.onchange = async () => {
+          const file = input.files?.[0];
+          if (!file) return;
+          await topics.load(new Uint8Array(await file.arrayBuffer()));
+          for (const vp of viewpoints.list.values()) {
+            if (!vp.world) vp.world = world;
+          }
+        };
+        input.click();
+      };
+      return BUI.html`
+        <bim-button label="Importar BCF" icon="material-symbols:upload" @click=${onImport}></bim-button>
+      `;
+    });
+
+    return [createTopicBtn, downloadBtn, importBtn];
+  };
 
   // — Modal —
   const [topicForm, updateTopicForm] = CUI.forms.topic({ components, styles: { users: TOPIC_USERS } });
@@ -183,77 +240,35 @@ export function setupBCFSection(
   const topicModalHeader = modal.querySelector(".bcf-topic-modal-header") as HTMLElement;
   makeModalDraggable(modal, topicModalHeader, ".bcf-topic-modal-close");
 
-  // — BCF Topics modal (lista + detalle del topic seleccionado) —
-  const createTopicBtn = BUI.Component.create(() => BUI.html`
-    <bim-button label="Crear Topic BCF" icon="material-symbols:task"
-      @click=${() => {
-        resetModalPosition(modal);
-        modal.showModal();
-      }}>
-    </bim-button>
-  `);
-
-  const downloadBtn = BUI.Component.create(() => {
-    const onDownload = async () => {
-      const selected = [...topicsList.selection]
-        .map(({ Guid }) => (Guid && typeof Guid === "string") ? topics.list.get(Guid) : null)
-        .filter(Boolean) as OBC.Topic[];
-      const toExport = selected.length > 0 ? selected : [...topics.list.values()];
-      await exportTopicsAsFile(toExport);
-    };
-    return BUI.html`
-      <bim-button label="Descargar BCF" icon="material-symbols:download" @click=${onDownload}></bim-button>
-    `;
+  // — Frame estático de la solapa "BCF Topic" (reemplaza al antiguo modal de
+  // lista "BCF Topics": acciones + tabla) — vive siempre montado en esa
+  // solapa, sin dialog ni backdrop, con su propia instancia de tabla y botones.
+  const staticTopicsList = createTopicsTable((topic) => {
+    showTopicPanel(topic);
+    focusTopicViewpoint(topic);
   });
+  const [staticCreateBtn, staticDownloadBtn, staticImportBtn] = createActionButtons(staticTopicsList);
 
-  const importBtn = BUI.Component.create(() => {
-    const onImport = async () => {
-      const input    = document.createElement("input");
-      input.type     = "file";
-      input.accept   = ".bcf,.bcfzip";
-      input.onchange = async () => {
-        const file = input.files?.[0];
-        if (!file) return;
-        await topics.load(new Uint8Array(await file.arrayBuffer()));
-        for (const vp of viewpoints.list.values()) {
-          if (!vp.world) vp.world = world;
-        }
-      };
-      input.click();
-    };
-    return BUI.html`
-      <bim-button label="Importar BCF" icon="material-symbols:upload" @click=${onImport}></bim-button>
-    `;
-  });
-
-  const listModal = BUI.Component.create<HTMLDialogElement>(() => BUI.html`
-    <dialog class="bcf-list-modal">
-      <div class="bcf-list-modal-header">
-        <span class="bcf-list-modal-title">BCF Topics</span>
-        <button class="bcf-list-modal-close" type="button" aria-label="Cerrar"
-          @click=${() => listModal.close()}>
-          <iconify-icon icon="material-symbols:close"></iconify-icon>
-        </button>
+  const topicsFrame = BUI.Component.create<HTMLElement>(() => BUI.html`
+    <div class="bcf-static-frame">
+      <div class="panel-frame-header">
+        <bim-icon icon="material-symbols:task"></bim-icon>
+        <span>BCF Topics</span>
       </div>
-      <div class="bcf-list-modal-body">
-        <bim-panel style="border-radius:0;">
-          <bim-panel-section label="Acciones" icon="material-symbols:settings">
-            ${createTopicBtn}
-            ${downloadBtn}
-            ${importBtn}
-          </bim-panel-section>
-          <bim-panel-section label="Topics" icon="material-symbols:task">
-            ${topicsList}
-          </bim-panel-section>
-        </bim-panel>
-      </div>
-    </dialog>
+      <bim-panel style="border-radius:0;">
+        <bim-panel-section label="Acciones" icon="material-symbols:settings">
+          <div class="bcf-actions-row">
+            ${staticCreateBtn}
+            ${staticDownloadBtn}
+            ${staticImportBtn}
+          </div>
+        </bim-panel-section>
+        <bim-panel-section label="Topics" icon="material-symbols:task">
+          ${staticTopicsList}
+        </bim-panel-section>
+      </bim-panel>
+    </div>
   `);
-  document.body.append(listModal);
-
-  closeOnBackdropClick(listModal);
-  const listModalHeader = listModal.querySelector(".bcf-list-modal-header") as HTMLElement;
-  makeModalDraggable(listModal, listModalHeader, ".bcf-list-modal-close");
 
   const selectTopic = (topicGuid: string): void => {
     const topic = topics.list.get(topicGuid);
@@ -265,10 +280,7 @@ export function setupBCFSection(
   return {
     modal,
     openModal: () => modal.showModal(),
-    openTopicsModal: () => {
-      resetModalPosition(listModal);
-      listModal.showModal();
-    },
+    topicsFrame,
     selectTopic,
   };
 }

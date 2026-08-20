@@ -156,6 +156,88 @@ bim-grid {
   font-weight: 700;
 }
 
+/* Solapa "BCF Topic": dos columnas reales — visualizador a la izquierda
+ * (el mismo <bim-viewport> de la solapa Layout, reubicado ahí mientras esta
+ * solapa está activa, ver moveViewportTo en main.ts), frame estático tipo
+ * tabla con los topics BCF a la derecha (bcf-manager.ts: topicsFrame).
+ * Split 60/40 por defecto, redimensionable arrastrando .bcf-split-handle
+ * (attachBcfSplitResize en main-tabs.ts muta --bcf-split-table-w). */
+.bcf-split {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+.bcf-split-viewport {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+}
+.bcf-split-viewport bim-viewport {
+  width: 100%;
+  height: 100%;
+}
+.bcf-split-handle {
+  flex-shrink: 0;
+  width: 4px;
+  cursor: ew-resize;
+  touch-action: none;
+  position: relative;
+}
+.bcf-split-handle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 1.5px;
+  width: 1px;
+  border-radius: 1px;
+  background: transparent;
+  transition: background 0.15s;
+}
+.bcf-split-handle:hover::after,
+.bcf-split-handle:active::after {
+  background: var(--accent);
+}
+.bcf-split-table {
+  flex: 0 0 var(--bcf-split-table-w, 40%);
+  min-width: 280px;
+  max-width: 60%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-surface);
+}
+.bcf-static-frame {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+.bcf-static-frame bim-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  border-radius: 0 !important;
+}
+/* bim-panel-section apila su contenido en columna por dentro de su shadow
+ * DOM (no hay CSS var para cambiarlo) — envolver los botones en este div y
+ * ponerlo EN COLUMNA como único hijo hace que, adentro suyo, se acomoden en
+ * fila. */
+.bcf-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.bcf-actions-row bim-button {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 bim-panel {
   position: relative;
 }
@@ -1244,63 +1326,10 @@ bim-view-cube:active {
   color: var(--text-muted);
 }
 
-/* — Modal "BCF Topics": lista de topics + acciones (crear/exportar/importar).
- * Misma receta de centrado/drag/cierre que .settings-modal. — */
-.bcf-list-modal {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  margin: 0;
-  padding: 0;
-  border: none;
-  border-radius: 12px;
-  width: min(52rem, calc(100vw - 2rem));
-  max-height: calc(100vh - 4rem);
-  background: var(--bg-surface);
-  color: var(--text-primary);
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
-}
-.bcf-list-modal::backdrop {
-  background: rgba(0, 0, 0, 0.55);
-}
-.bcf-list-modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 1rem 1.25rem;
-  border-bottom: 1px solid var(--border-subtle);
-  cursor: move;
-  user-select: none;
-}
-.bcf-list-modal-title {
-  font-size: 1rem;
-  font-weight: 700;
-}
-.bcf-list-modal-close {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: none;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--text-primary);
-  font-size: 1.1rem;
-  cursor: pointer;
-}
-.bcf-list-modal-close:hover {
-  background: var(--bg-surface-hover);
-}
-.bcf-list-modal-body {
-  max-height: calc(100vh - 10rem);
-  overflow: auto;
-  scrollbar-gutter: stable;
-}
-
 /* — Modal "Nuevo Topic": formulario de creación de topic BCF.
- * Misma receta de centrado/drag/cierre que .bcf-list-modal. — */
+ * Misma receta de centrado/drag/cierre que .settings-modal. El antiguo modal
+ * de lista "BCF Topics" (.bcf-list-modal) fue reemplazado por la solapa
+ * dedicada — ver .bcf-static-frame más abajo. — */
 .bcf-topic-modal {
   position: fixed;
   top: 50%;

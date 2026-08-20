@@ -196,9 +196,11 @@ async function startApp(): Promise<{
     toolOptionsPanel.applySelection(modelIdMap).catch(console.error);
   });
 
-  const { openModal, openTopicsModal, selectTopic } = setupBCFSection(components, world, rightPanel);
+  const { openModal, selectTopic, topicsFrame } = setupBCFSection(components, world, rightPanel);
   leftPanel.onTopicSelect((topicGuid) => selectTopic(topicGuid));
-  leftPanel.onOpenTopicsTable(() => openTopicsModal());
+  // El modal de lista "BCF Topics" fue reemplazado por la solapa dedicada: el
+  // botón "Ver tabla de BCF Topics" del árbol ahora lleva directo a esa solapa.
+  leftPanel.onOpenTopicsTable(() => mainTabs.activateTab("bcf-topic"));
   const toolbar        = createToolbar(world, fragments, toolManager, selectionManager, openModal, highlighter);
   const settingsModal   = createSettingsModal();
   const projectIoDeps: ProjectIoDeps = { fragments, topics, viewpoints, world, leftPanel };
@@ -222,7 +224,7 @@ async function startApp(): Promise<{
   // derecha, las solapas del frame principal (Layout / BCF Topic / Cómputo);
   // segundo contenedor = el frame de contenido que esas solapas alternan,
   // sin cerrar el proyecto.
-  const mainTabs = createMainTabs();
+  const mainTabs = createMainTabs(topicsFrame);
 
   const topbar = document.createElement("div");
   topbar.className = "app-topbar";
@@ -232,14 +234,30 @@ async function startApp(): Promise<{
 
   await setupLayout(viewport, panelSplit, floatingToolbars, mainTabs.layoutPane, attachRightPanelResize);
 
+  // El <bim-viewport> es un único nodo: al abandonar la solapa Layout se
+  // guarda acá su lugar original dentro del bim-grid, para poder devolverlo
+  // exactamente ahí (en vez de recrear el grid) al volver a esa solapa.
+  const layoutViewportHost = viewport.parentElement as HTMLElement;
+  const moveViewportTo = (host: HTMLElement) => {
+    if (viewport.parentElement !== host) host.append(viewport);
+  };
+
   // Force renderer + camera to pick up the real DOM dimensions after layout is
-  // mounted, y de nuevo cada vez que se vuelve a la solapa Layout tras
-  // haber estado oculta (display:none la deja con tamaño 0 mientras tanto).
+  // mounted, y de nuevo cada vez que se vuelve a una solapa que aloja el
+  // visualizador tras haber estado oculta (display:none, o recién reubicado
+  // en otra columna, la dejan con tamaño 0 mientras tanto).
   const syncViewportSize = () => {
     world.renderer?.resize(undefined);
     (world.camera as OBC.OrthoPerspectiveCamera).updateAspect();
   };
-  mainTabs.onLayoutShown(syncViewportSize);
+  mainTabs.onLayoutShown(() => {
+    moveViewportTo(layoutViewportHost);
+    syncViewportSize();
+  });
+  mainTabs.onBcfTopicShown(() => {
+    moveViewportTo(mainTabs.bcfViewportSlot);
+    syncViewportSize();
+  });
   syncViewportSize();
 
   return { triggerLoadIfc: leftPanel.triggerLoadIfc, loadIfcBytes: leftPanel.loadIfcBytes };
