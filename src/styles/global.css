@@ -193,6 +193,38 @@ bim-grid {
   border-top: 2px solid var(--border-subtle);
   border-bottom: none;
 }
+/* Detalle de cantidades físicas por unidad (m², m³, ml, un...), aparte del
+ * TOTAL monetario de la tabla — ver renderTable en computo-manager.ts. */
+.computo-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-surface-hover);
+}
+.computo-summary-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+}
+.computo-summary-item {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+.computo-summary-value {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.computo-summary-unit {
+  font-size: 10.5px;
+  color: var(--text-secondary);
+}
 .computo-input {
   width: 100%;
   min-width: 0;
@@ -833,6 +865,19 @@ bim-tooltip {
 .collection-group .data-layer-group .data-layer-item-row,
 .collection-group .data-layer-group .data-layer-item-empty {
   padding-left: 84px;
+}
+/* — Elementos IFC de un ítem de cómputo, anidados un nivel más adentro que
+ * su ítem (ver renderComputoElementRow en data-layers-tree.ts). — */
+.data-layer-item-row--child {
+  padding-left: 84px;
+  cursor: default;
+}
+.data-layer-item-row--child .models-row-name {
+  opacity: 0.75;
+  font-size: 11px;
+}
+.collection-group .data-layer-group .data-layer-item-row--child {
+  padding-left: 104px;
 }
 
 /* — Árbol Espacial/Tipos anidado dentro de la fila de un modelo. — */

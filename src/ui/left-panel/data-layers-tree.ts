@@ -106,6 +106,9 @@ export function createDataLayersTree(
 
   let draggedItem: DraggedItem = null;
   let draggedDataLayerId: string | null = null;
+  /** Ítems de cómputo con sus elementos IFC expandidos en el árbol — estado
+   *  efímero de UI, no se persiste con el proyecto. */
+  const computoItemExpanded = new Set<string>();
 
   function pruneStaleEntries(): void {
     const livePlaneIds = new Set(clipper.list.keys());
@@ -232,9 +235,39 @@ export function createDataLayersTree(
     return row;
   }
 
+  /** Fila hija de un ítem de cómputo: un elemento IFC puntual de sus
+   *  `elementos` (ver ComputoItem.elementos), para ver/editar la
+   *  trazabilidad tabla ↔ árbol ↔ modelo sin salir del árbol. */
+  function renderComputoElementRow(item: ComputoItem, el: { modelId: string; localId: number }): HTMLElement {
+    const row = document.createElement("div");
+    row.className = "models-row models-row--nested data-layer-item-row--child";
+
+    const icon = document.createElement("bim-icon") as any;
+    icon.icon = "material-symbols:category-outline";
+    icon.className = "models-row-icon";
+
+    const label = document.createElement("span");
+    label.className = "models-row-name";
+    label.textContent = `Elemento #${el.localId}`;
+
+    const actions = document.createElement("div");
+    actions.className = "models-row-actions";
+    const removeBtn = makeIconButton("mdi:close", "Quitar este elemento del ítem", () => {
+      computos.removeElementFromItem(item.id, el.modelId, el.localId);
+      requestRender();
+    });
+    actions.append(removeBtn);
+
+    row.append(icon, label, actions);
+    return row;
+  }
+
   function renderComputoRow(itemId: string): HTMLElement {
     const item = computos.list.get(itemId);
     if (!item) return document.createElement("div");
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "data-layer-item-group";
 
     const row = document.createElement("div");
     row.className = "models-row models-row--nested data-layer-item-row";
@@ -250,6 +283,24 @@ export function createDataLayersTree(
       row.classList.remove("is-dragging");
     });
 
+    const hasElements = item.elementos.length > 0;
+    const expanded = computoItemExpanded.has(itemId);
+
+    const arrow = document.createElement("button");
+    arrow.type = "button";
+    arrow.className = "types-arrow" + (expanded ? " expanded" : "");
+    arrow.setAttribute("aria-label", expanded ? "Colapsar" : "Expandir");
+    arrow.style.visibility = hasElements ? "" : "hidden";
+    const arrowIcon = document.createElement("bim-icon") as any;
+    arrowIcon.icon = "material-symbols:chevron-right";
+    arrow.append(arrowIcon);
+    arrow.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (!hasElements) return;
+      if (expanded) computoItemExpanded.delete(itemId); else computoItemExpanded.add(itemId);
+      requestRender();
+    });
+
     const icon = document.createElement("bim-icon") as any;
     icon.icon = "material-symbols:calculate-outline";
     icon.className = "models-row-icon";
@@ -258,7 +309,7 @@ export function createDataLayersTree(
     label.className = "models-row-name";
     const rubro = item.rubro || "Sin rubro";
     const descripcion = item.descripcion || item.tipoElemento || item.tipoIfc || item.id;
-    label.textContent = `${rubro} — ${descripcion}`;
+    label.textContent = `${rubro} — ${descripcion} (${item.elementos.length})`;
 
     const actions = document.createElement("div");
     actions.className = "models-row-actions";
@@ -269,8 +320,14 @@ export function createDataLayersTree(
     });
 
     actions.append(deleteBtn);
-    row.append(icon, label, actions);
-    return row;
+    row.append(arrow, icon, label, actions);
+    wrapper.append(row);
+
+    if (expanded) {
+      for (const el of item.elementos) wrapper.append(renderComputoElementRow(item, el));
+    }
+
+    return wrapper;
   }
 
   function renderSectionRow(planeId: string): HTMLElement {
@@ -873,7 +930,7 @@ export function createDataLayersTree(
     requestRender();
   });
   computos.onItemChanged.add(() => requestRender());
-  computos.onItemDeleted.add((id) => { computoDataLayer.delete(id); requestRender(); });
+  computos.onItemDeleted.add((id) => { computoDataLayer.delete(id); computoItemExpanded.delete(id); requestRender(); });
 
   const v3 = (v: THREE.Vector3): Vec3Tuple => [v.x, v.y, v.z];
   const toVec3 = (v: Vec3Tuple): THREE.Vector3 => new THREE.Vector3(v[0], v[1], v[2]);

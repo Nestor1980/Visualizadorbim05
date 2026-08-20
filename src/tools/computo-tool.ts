@@ -35,6 +35,9 @@ export interface ComputoTool {
   onItemChanged: OBC.Event<ComputoItem>;
   onItemDeleted: OBC.Event<string>;
   registerClick: (modelId: string, localId: number) => void;
+  /** Saca un elemento puntual de un ítem (usado por la fila hija del árbol
+   *  de Capas de Datos) — si era el último, borra el ítem entero. */
+  removeElementFromItem: (itemId: string, modelId: string, localId: number) => void;
   updateItem: (
     id: string,
     patch: Partial<Pick<ComputoItem, "rubro" | "descripcion" | "unidad" | "cantidad" | "precioUnitario">>,
@@ -228,27 +231,42 @@ export function createComputoTool(
     onItemChanged.trigger(item);
   }
 
-  async function handleRemove(modelId: string, localId: number): Promise<void> {
+  function findItemContaining(modelId: string, localId: number): ComputoItem | undefined {
     for (const item of list.values()) {
-      const idx = item.elementos.findIndex((e) => e.modelId === modelId && e.localId === localId);
-      if (idx === -1) continue;
-
-      item.elementos.splice(idx, 1);
-      if (item.elementos.length === 0) {
-        list.delete(item.id);
-        if (currentItemId === item.id) currentItemId = null;
-        onItemDeleted.trigger(item.id);
-      } else {
-        await recomputeCantidad(item);
-        onItemChanged.trigger(item);
-      }
-      return;
+      if (item.elementos.some((e) => e.modelId === modelId && e.localId === localId)) return item;
     }
+    return undefined;
+  }
+
+  async function removeElement(item: ComputoItem, modelId: string, localId: number): Promise<void> {
+    const idx = item.elementos.findIndex((e) => e.modelId === modelId && e.localId === localId);
+    if (idx === -1) return;
+
+    item.elementos.splice(idx, 1);
+    if (item.elementos.length === 0) {
+      list.delete(item.id);
+      if (currentItemId === item.id) currentItemId = null;
+      onItemDeleted.trigger(item.id);
+    } else {
+      await recomputeCantidad(item);
+      onItemChanged.trigger(item);
+    }
+  }
+
+  async function handleRemove(modelId: string, localId: number): Promise<void> {
+    const item = findItemContaining(modelId, localId);
+    if (item) await removeElement(item, modelId, localId);
   }
 
   function registerClick(modelId: string, localId: number): void {
     const task = addMode === "add" ? handleAdd(modelId, localId) : handleRemove(modelId, localId);
     task.then(repaintHighlight).catch(console.error);
+  }
+
+  function removeElementFromItem(itemId: string, modelId: string, localId: number): void {
+    const item = list.get(itemId);
+    if (!item) return;
+    removeElement(item, modelId, localId).then(repaintHighlight).catch(console.error);
   }
 
   function updateItem(
@@ -286,6 +304,7 @@ export function createComputoTool(
     onItemChanged,
     onItemDeleted,
     registerClick,
+    removeElementFromItem,
     updateItem,
     deleteItem,
     restoreItem,

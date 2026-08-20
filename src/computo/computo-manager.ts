@@ -69,6 +69,22 @@ export function setupComputoSection(computoTool: ComputoTool): { pane: HTMLEleme
       }
     }
 
+    // Detalle de cantidades físicas por unidad (m², m³, ml, un...), aparte
+    // del TOTAL monetario — ej. "m2: 245,30" + "un: 42" cuando el cómputo
+    // mezcla superficies (paredes con área) y elementos contados por pieza.
+    const byUnidad = new Map<string, number>();
+    for (const item of items) {
+      const key = item.unidad || "—";
+      byUnidad.set(key, (byUnidad.get(key) ?? 0) + item.cantidad);
+    }
+    const summaryHtml = [...byUnidad.entries()]
+      .map(([unidad, cantidad]) => `
+        <div class="computo-summary-item">
+          <span class="computo-summary-value">${formatMoney(cantidad)}</span>
+          <span class="computo-summary-unit">${unidad}</span>
+        </div>`)
+      .join("");
+
     tableContainer.innerHTML = `
       <table class="computo-table">
         <thead>
@@ -82,7 +98,11 @@ export function setupComputoSection(computoTool: ComputoTool): { pane: HTMLEleme
             <td></td>
           </tr>
         </tfoot>
-      </table>`;
+      </table>
+      <div class="computo-summary">
+        <span class="computo-summary-label">Detalle de cantidades</span>
+        ${summaryHtml}
+      </div>`;
 
     tableContainer.querySelectorAll<HTMLInputElement>(".computo-input").forEach((input) => {
       input.addEventListener("change", () => {
