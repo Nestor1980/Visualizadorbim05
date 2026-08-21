@@ -31,7 +31,10 @@ export function getExpressId(obj: any): number | null {
 
 export function extractPropValue(prop: any): string {
   if (!prop || typeof prop !== "object") return "—";
-  const raw = prop.NominalValue ?? prop.Value;
+  // IfcQuantityArea/Volume/Length/Weight/Count (Qto_ sets) guardan el valor en
+  // su propio campo *Value en vez de NominalValue/Value como un IfcPropertySingleValue.
+  const raw = prop.NominalValue ?? prop.Value
+    ?? prop.AreaValue ?? prop.VolumeValue ?? prop.LengthValue ?? prop.WeightValue ?? prop.CountValue;
   if (raw === null || raw === undefined) return "—";
   if (typeof raw === "object" && raw.value !== undefined) return String(raw.value);
   if (typeof raw === "object") return JSON.stringify(raw);
@@ -176,6 +179,79 @@ export async function getTypePsets(
   }
 
   return Array.from(out.values());
+}
+
+/**
+ * Nombre del tipo/familia de un elemento (ej. "MUR_LHC200") — a diferencia
+ * de `getTypePsets` (que trae los Psets del tipo), esto solo resuelve el
+ * `Name` del `IfcElementType` relacionado (vía `IsTypedBy` → `RelatingType`),
+ * con `ObjectType` de la instancia como respaldo. Se usa para separar
+ * elementos que comparten clase IFC (ej. todos "IFCWALL") pero son de tipos
+ * distintos (paredes de espesores/materiales distintos), algo que la sola
+ * categoría IFC no distingue.
+ */
+export async function getElementTypeName(model: any, localId: number): Promise<string | null> {
+  const itemData = await getItemData(model, localId, true);
+  if (!itemData) return null;
+
+  const isTypedBy = itemData.IsTypedBy;
+  if (Array.isArray(isTypedBy)) {
+    for (const relRef of isTypedBy) {
+      if (relRef === null || relRef === undefined) continue;
+
+      let relObj: any;
+      if (typeof relRef === "number") {
+        relObj = await getItemData(model, relRef, false);
+      } else if (typeof relRef === "object" && typeof relRef.value === "number") {
+        relObj = await getItemData(model, relRef.value, false);
+      } else {
+        relObj = relRef;
+      }
+      if (!relObj || typeof relObj !== "object") continue;
+
+      const relatingTypeRef = relObj.RelatingType;
+      if (!relatingTypeRef) continue;
+
+      let typeObj: any;
+      if (typeof relatingTypeRef === "number") {
+        typeObj = await getItemData(model, relatingTypeRef, false);
+      } else if (typeof relatingTypeRef === "object" && typeof relatingTypeRef.value === "number") {
+        typeObj = await getItemData(model, relatingTypeRef.value, false);
+      } else {
+        typeObj = relatingTypeRef;
+      }
+      if (!typeObj || typeof typeObj !== "object") continue;
+
+      const rawName = typeObj.Name;
+      const name =
+        typeof rawName === "string" ? rawName
+        : rawName?.value !== undefined ? String(rawName.value)
+        : null;
+      if (name) return name;
+    }
+  }
+
+  const rawObjectType = itemData.ObjectType;
+  const objectType =
+    typeof rawObjectType === "string" ? rawObjectType
+    : rawObjectType?.value !== undefined ? String(rawObjectType.value)
+    : null;
+  return objectType;
+}
+
+/**
+ * PredefinedType de una instancia (ej. "BASESLAB", "ROOF", "SKIRTINGBOARD")
+ * — el atributo IFC que distingue usos distintos de una misma clase (ej.
+ * IFCSLAB de fundación vs de piso, IFCCOVERING de zócalo vs de revoque). Se
+ * usa para desambiguar la regla de cuantificación cuando la sola clase IFC
+ * no alcanza (ver ifc-quantity-rules.ts).
+ */
+export async function getPredefinedType(model: any, localId: number): Promise<string | null> {
+  const itemData = await getItemData(model, localId, false);
+  const raw = itemData?.PredefinedType;
+  return typeof raw === "string" ? raw
+    : raw?.value !== undefined ? String(raw.value)
+    : null;
 }
 
 export async function getPropertySets(

@@ -105,7 +105,9 @@ async function clearScene(deps: ProjectIoDeps): Promise<void> {
   }
   for (const guid of [...deps.topics.list.keys()]) deps.topics.list.delete(guid);
   deps.leftPanel.restoreCollections({ collections: [], modelCollection: [] });
-  deps.leftPanel.restoreDataLayers({ layers: [], sections: [], topics: [], labels: [], drawings: [], cotas: [] });
+  deps.leftPanel.restoreDataLayers({
+    layers: [], sections: [], topics: [], labels: [], drawings: [], cotas: [], computo: [], computoCategorias: [],
+  });
 }
 
 /** Vacía la escena para empezar un proyecto nuevo desde cero. */

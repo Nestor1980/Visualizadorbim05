@@ -87,27 +87,44 @@ bim-grid {
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border-subtle);
 }
+/* Sin chip propio: que el botón "Archivo" quede integrado a la misma
+ * superficie de la topbar en vez de flotar como una caja aparte (fondo y
+ * borde propios) encima de ella. */
 .app-topbar bim-toolbar {
   box-shadow: none;
+  --bim-toolbar--bgc: transparent;
+  --bim-toolbar--border: none;
+  --bim-toolbar--bdrs: 0;
+  --bim-toolbar-section--gap: 2px;
+  --bim-toolbar-section--p: 0;
 }
 
 /* Riel de solapas del frame principal (Layout/BCF Topic/Cómputo): vive en la
- * misma barra superior que el bim-toolbar de proyecto, empujado a la derecha. */
+ * misma barra superior que el bim-toolbar de proyecto, empujado a la derecha.
+ * align-self:stretch + align-items:flex-end para que las solapas se apoyen
+ * contra el borde inferior de la topbar (ver .main-tabs-tab), como si
+ * sobresalieran de esa línea. */
 .main-tabs-bar {
   flex: 0 0 auto;
+  align-self: stretch;
   display: flex;
-  align-items: center;
-  gap: 0.25rem;
+  align-items: flex-end;
+  gap: 0.5rem;
   margin-left: auto;
 }
 .main-tabs-tab {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  height: 2rem;
-  padding: 0 0.75rem;
+  height: 2.25rem;
+  margin-bottom: -1px;
+  padding: 0 0.9rem;
   border: none;
-  border-radius: 8px;
+  /* Solo curvatura arriba: la de abajo la resuelven los pseudo-elementos de
+   * .active, hacia afuera, para que la solapa activa parezca "salir" del
+   * borde inferior de la topbar en vez de flotar como una píldora suelta. */
+  border-radius: 10px 10px 0 0;
   background: transparent;
   color: var(--text-secondary);
   font: inherit;
@@ -123,6 +140,28 @@ bim-grid {
   color: var(--bim-ui_main-base, var(--text-primary));
   background: var(--accent);
 }
+/* Curvatura inferior "hacia afuera" (estilo solapa de carpeta / tab de
+ * navegador): un cuarto de círculo tangente a cada lado de la base de la
+ * solapa activa, transparente en el centro y con el color de la solapa en el
+ * borde — el efecto óptico es que la esquina se curva alejándose de la
+ * solapa en vez de redondearse hacia adentro. */
+.main-tabs-tab.active::before,
+.main-tabs-tab.active::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  width: 10px;
+  height: 10px;
+  background: radial-gradient(circle at top left, transparent 70%, var(--accent) 72%);
+  pointer-events: none;
+}
+.main-tabs-tab.active::before {
+  left: -10px;
+}
+.main-tabs-tab.active::after {
+  right: -10px;
+  transform: scaleX(-1);
+}
 
 /* Segundo contenedor horizontal del app shell: el frame de contenido que las
  * solapas de arriba alternan (Layout / BCF Topic / Cómputo). */
@@ -131,29 +170,306 @@ bim-grid {
   min-height: 0;
   position: relative;
 }
+/* Apiladas unas sobre otras (en vez de una sola en flujo normal) para poder
+ * ocultar las inactivas con visibility en vez de display — ver main-tabs.ts:
+ * display:none les colapsa la caja a 0×0, y el IntersectionObserver interno
+ * de los íconos (@thatopen/ui, iconify) lee eso como "no visible" y limpia el
+ * ícono ya renderizado; al volver a mostrar la solapa a veces no se vuelve a
+ * pintar (bug reportado: los íconos del bim-toolbar desaparecen al volver de
+ * Cómputo). visibility:hidden mantiene la geometría intacta — el
+ * IntersectionObserver nunca deja de verla "intersecando" — así que el
+ * ícono nunca se limpia. */
 .main-tab-pane {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
 }
-.main-tab-placeholder {
-  height: 100%;
+/* Solapa "Cómputo": frame estático con la tabla de cómputo y presupuesto
+ * (ver computo-manager.ts), agrupada por Rubro con subtotal/% de incidencia
+ * por grupo y fila de TOTAL general. Las celdas de Cantidad y Precio Unit.
+ * son inputs editables que recalculan importes al vuelo. */
+.computo-frame {
   display: flex;
   flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+.computo-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+.computo-empty {
+  padding: 2rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+.computo-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.computo-table th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-surface);
+  text-align: left;
+  padding: 8px 10px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.computo-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--bim-ui_bg-contrast-20, var(--border-subtle));
+  vertical-align: middle;
+}
+.computo-table .computo-num {
+  text-align: right;
+  white-space: nowrap;
+}
+.computo-rubro-row td {
+  background: var(--bg-surface-hover);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.computo-total-row td {
+  font-weight: 700;
+  color: var(--text-primary);
+  border-top: 2px solid var(--border-subtle);
+  border-bottom: none;
+}
+/* Detalle de cantidades físicas por unidad (m², m³, ml, un...), aparte del
+ * TOTAL monetario de la tabla — ver renderTable en computo-manager.ts. */
+.computo-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-surface-hover);
+}
+.computo-summary-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+}
+.computo-summary-item {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+.computo-summary-value {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.computo-summary-unit {
+  font-size: 10.5px;
+  color: var(--text-secondary);
+}
+.computo-input {
+  width: 100%;
+  min-width: 0;
+  padding: 3px 6px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+}
+.computo-input:hover {
+  border-color: var(--border-subtle);
+}
+.computo-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--bg-surface);
+}
+.computo-actions {
+  text-align: center;
+}
+.computo-delete {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
+  border: none;
+  background: transparent;
   color: var(--text-muted);
-  text-align: center;
-  padding: 2rem;
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 4px;
+  font-size: 15px;
 }
-.main-tab-placeholder iconify-icon {
-  font-size: 2.5rem;
-  opacity: 0.6;
+.computo-delete:hover {
+  color: var(--text-primary);
+  background: var(--bg-surface-hover);
 }
-.main-tab-placeholder h3 {
-  color: var(--text-secondary);
-  font-size: 1.1rem;
+
+/* Botón "Agregar categoría" (header de la solapa) y filas de sección que
+ * crea: agrupador manual ortogonal al Rubro, ver ComputoCategoria en
+ * computo-tool.ts y renderTable en computo-manager.ts. */
+.computo-add-categoria-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 10.5px;
   font-weight: 700;
+  text-transform: none;
+  letter-spacing: normal;
+  background: var(--bim-ui_bg-contrast-10);
+  color: var(--bim-ui_bg-contrast-70);
+  transition: background 0.15s, color 0.15s;
+}
+.computo-add-categoria-btn:hover {
+  background: var(--bim-ui_bg-contrast-20);
+  color: var(--bim-ui_bg-contrast-100);
+}
+.computo-add-categoria-btn iconify-icon {
+  font-size: 13px;
+}
+/* Botón "Exportar cómputo" (header de la solapa, junto a "Agregar
+ * categoría") y su menú desplegable Excel/PDF — ver computo-export.ts. */
+.computo-export-wrap {
+  position: relative;
+  display: inline-block;
+}
+.computo-export-menu {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  flex-direction: column;
+  min-width: 150px;
+  padding: 4px;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+.computo-export-menu.is-open {
+  display: flex;
+}
+.computo-export-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  text-align: left;
+  text-transform: none;
+  letter-spacing: normal;
+}
+.computo-export-option:hover {
+  background: var(--bg-surface-hover);
+}
+.computo-export-option iconify-icon {
+  font-size: 14px;
+}
+.computo-categoria-row td {
+  background: var(--bg-surface-hover);
+  border-top: 2px solid var(--border-subtle);
+}
+.computo-categoria-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.computo-categoria-name {
+  font-weight: 700;
+  color: var(--text-primary);
+  cursor: text;
+  border-radius: 3px;
+  padding: 1px 3px;
+}
+.computo-categoria-name:hover {
+  background: var(--bg-surface);
+}
+.computo-categoria-name--fixed {
+  cursor: default;
+  font-style: italic;
+  color: var(--text-muted);
+}
+.computo-categoria-name--fixed:hover {
+  background: none;
+}
+.computo-categoria-qtys {
+  display: flex;
+  gap: 10px;
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+.computo-categoria-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 4px;
+  font-size: 14px;
+}
+.computo-categoria-delete:hover {
+  color: var(--text-primary);
+  background: var(--bg-surface);
+}
+.computo-categoria-rename-input {
+  font: inherit;
+  font-weight: 700;
+  color: inherit;
+  background: var(--bg-surface);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 1px 4px;
+  min-width: 0;
+}
+/* Filas de ítem arrastrándose y secciones recibiendo el drag — mismo
+ * lenguaje visual que el árbol de Capas de Datos (ver .models-row.is-dragging). */
+.computo-table tr[data-item-id] {
+  cursor: grab;
+}
+.computo-table tr[data-item-id].is-dragging {
+  opacity: 0.4;
+}
+.computo-categoria-section.is-drop-target .computo-categoria-row td {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  background: var(--accent-dim);
+}
+
+/* Texto de ayuda del panel flotante de la herramienta "Cómputo" (botones
+ * Agregar/Quitar): ver computo-panel.ts. */
+.computo-staging-hint {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  padding: 0 0 6px;
+  line-height: 1.5;
 }
 
 /* Solapa "BCF Topic": dos columnas reales — visualizador a la izquierda
@@ -749,6 +1065,19 @@ bim-tooltip {
 .collection-group .data-layer-group .data-layer-item-empty {
   padding-left: 84px;
 }
+/* — Elementos IFC de un ítem de cómputo, anidados un nivel más adentro que
+ * su ítem (ver renderComputoElementRow en data-layers-tree.ts). — */
+.data-layer-item-row--child {
+  padding-left: 84px;
+  cursor: default;
+}
+.data-layer-item-row--child .models-row-name {
+  opacity: 0.75;
+  font-size: 11px;
+}
+.collection-group .data-layer-group .data-layer-item-row--child {
+  padding-left: 104px;
+}
 
 /* — Árbol Espacial/Tipos anidado dentro de la fila de un modelo. — */
 .models-row-group {
@@ -797,14 +1126,24 @@ bim-toolbar {
 
 /* Panel de opciones de la herramienta activa: flota sobre la esquina
  * superior derecha del viewport (no del layout completo) y desaparece
- * cuando no hay ninguna herramienta seleccionada (ver ToolManager.setMode). */
+ * cuando no hay ninguna herramienta seleccionada (ver ToolManager.setMode).
+ * Es un flex row [handle, content] para poder redimensionarlo arrastrando
+ * su borde izquierdo (el panel queda anclado por `right`, así que agrandar
+ * significa mover ese borde hacia la izquierda — ver tool-options-panel.ts). */
 .tool-options-panel {
   position: absolute;
   top: 1.5rem;
   right: 1.5rem;
   z-index: 100;
-  width: 260px;
   max-height: calc(100% - 3rem);
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+}
+.tool-options-panel-content {
+  width: 260px;
+  min-width: 0;
+  flex-shrink: 0;
   overflow-y: auto;
   scrollbar-gutter: stable;
   display: flex;
@@ -818,10 +1157,34 @@ bim-toolbar {
 }
 /* El medidor envuelve dos bim-panel-section (ajustes + lista) en un <div>
  * plano: le damos el mismo layout en columna para que no queden pegadas. */
-.tool-options-panel > div {
+.tool-options-panel-content > div {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+}
+
+.tool-options-panel-resize-handle {
+  flex-shrink: 0;
+  width: 10px;
+  cursor: ew-resize;
+  touch-action: none;
+  position: relative;
+  z-index: 1;
+}
+.tool-options-panel-resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4.5px;
+  width: 1px;
+  border-radius: 1px;
+  background: transparent;
+  transition: background 0.15s;
+}
+.tool-options-panel-resize-handle:hover::after,
+.tool-options-panel-resize-handle:active::after {
+  background: var(--accent);
 }
 
 bim-view-cube {
@@ -1311,6 +1674,11 @@ bim-view-cube:active {
   gap: 1rem;
   padding: 0.5rem 0;
 }
+.settings-row--divider {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-subtle);
+}
 .settings-row-text {
   display: flex;
   flex-direction: column;
@@ -1324,6 +1692,123 @@ bim-view-cube:active {
 .settings-row-desc {
   font-size: 0.75rem;
   color: var(--text-muted);
+}
+
+.quantity-rules-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+  max-height: 260px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+.quantity-rule-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0;
+}
+.quantity-rule-tipo {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.8rem;
+  font-family: monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.quantity-rule-select,
+.quantity-rule-add-select {
+  flex: 0 0 auto;
+  font-size: 0.8rem;
+  padding: 0.25rem 0.4rem;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+.quantity-rule-reset {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.quantity-rule-reset:hover:not(:disabled) {
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
+}
+.quantity-rule-reset:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.quantity-rule-add {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-subtle);
+}
+.quantity-rule-add-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.8rem;
+  padding: 0.3rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+.quantity-rule-add-btn {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  padding: 0.3rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.quantity-rule-add-btn:hover {
+  background: var(--bg-surface-hover);
+}
+
+/* Reglas de categoría automática (settings-modal.ts, renderCategoriaRules):
+ * grilla de verdad en vez del flex de arriba — con textos de largo dispar
+ * (IFCWALL vs IFCCABLECARRIERSEGMENT) un flex corre el borde entre columnas
+ * fila a fila; acá el ancho de cada columna lo fija el contenido más largo
+ * de toda la lista, así el input queda en la misma posición en todas las
+ * filas (incluida la fila de "Agregar", que son más celdas de esta misma
+ * grilla, no un bloque aparte). */
+.categoria-rules-grid {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  column-gap: 0.5rem;
+  row-gap: 0.35rem;
+  align-items: center;
+  margin-top: 0.5rem;
+  max-height: 260px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  padding-right: 2px;
+}
+.categoria-rules-grid .quantity-rule-tipo {
+  max-width: 180px;
+}
+.categoria-rules-grid .quantity-rule-add-input {
+  width: 100%;
 }
 
 /* — Modal "Nuevo Topic": formulario de creación de topic BCF.

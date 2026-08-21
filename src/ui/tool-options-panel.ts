@@ -4,12 +4,14 @@ import { createSectionPanel } from "./right-panel/section-panel";
 import { createLabelPanel } from "./right-panel/label-panel";
 import { createDrawPanel } from "./right-panel/draw-panel";
 import { createCotaPanel } from "./right-panel/cota-panel";
+import { createComputoPanel } from "./right-panel/computo-panel";
 import type { SectionTool } from "../tools/section-tool";
 import type { WorldLabelTool } from "../tools/world-label-tool";
 import type { DrawTool } from "../tools/draw-tool";
 import type { CotaTool } from "../tools/cota-tool";
+import type { ComputoTool } from "../tools/computo-tool";
 
-export type ToolOptionsView = "cota" | "section" | "properties" | "label" | "draw" | null;
+export type ToolOptionsView = "cota" | "section" | "properties" | "label" | "draw" | "computo" | null;
 
 export interface ToolOptionsPanel {
   element: HTMLElement;
@@ -31,12 +33,14 @@ export function createToolOptionsPanel(
   worldLabelTool: WorldLabelTool,
   drawTool: DrawTool,
   cotaTool: CotaTool,
+  computoTool: ComputoTool,
 ): ToolOptionsPanel {
   const propertiesPanel = createPropertiesPanel(components, fragments);
   const sectionPanel    = createSectionPanel(sectionTool);
   const labelPanel      = createLabelPanel(worldLabelTool);
   const drawPanel       = createDrawPanel(drawTool);
   const cotaPanel       = createCotaPanel(cotaTool);
+  const computoPanel    = createComputoPanel(computoTool);
 
   propertiesPanel.section.collapsed = false;
 
@@ -46,11 +50,50 @@ export function createToolOptionsPanel(
     properties: propertiesPanel.section,
     label:      labelPanel.element,
     draw:       drawPanel.element,
+    computo:    computoPanel.element,
   };
+
+  const content = document.createElement("div");
+  content.className = "tool-options-panel-content";
+  content.append(views.cota, views.section, views.properties, views.label, views.draw, views.computo);
+
+  const resizeHandle = document.createElement("div");
+  resizeHandle.className = "tool-options-panel-resize-handle";
+  resizeHandle.setAttribute("role", "separator");
+  resizeHandle.setAttribute("aria-orientation", "vertical");
+  resizeHandle.setAttribute("aria-label", "Redimensionar panel de opciones");
 
   const element = document.createElement("div");
   element.className = "tool-options-panel";
-  element.append(views.cota, views.section, views.properties, views.label, views.draw);
+  element.append(resizeHandle, content);
+
+  const MIN_WIDTH = 260;
+  const MAX_WIDTH = 640;
+
+  resizeHandle.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = content.getBoundingClientRect().width;
+    resizeHandle.setPointerCapture(event.pointerId);
+    document.body.classList.add("resizing-panel");
+
+    const onMove = (moveEvent: PointerEvent) => {
+      // El panel queda anclado por `right`, así que el borde arrastrable es
+      // el izquierdo: moverlo a la izquierda (startX - clientX > 0) agranda
+      // el panel.
+      const next = startWidth + (startX - moveEvent.clientX);
+      const clamped = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, next));
+      content.style.width = `${clamped}px`;
+    };
+    const onUp = () => {
+      resizeHandle.releasePointerCapture(event.pointerId);
+      document.body.classList.remove("resizing-panel");
+      resizeHandle.removeEventListener("pointermove", onMove);
+      resizeHandle.removeEventListener("pointerup", onUp);
+    };
+    resizeHandle.addEventListener("pointermove", onMove);
+    resizeHandle.addEventListener("pointerup", onUp);
+  });
 
   const applyView = (view: ToolOptionsView): void => {
     element.style.display = view ? "" : "none";

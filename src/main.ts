@@ -15,6 +15,7 @@ import { createSectionTool }      from "./tools/section-tool";
 import { createWorldLabelTool }   from "./tools/world-label-tool";
 import { createDrawTool }         from "./tools/draw-tool";
 import { createCotaTool }         from "./tools/cota-tool";
+import { createComputoTool }      from "./tools/computo-tool";
 import { ToolManager }            from "./tools/tool-manager";
 import { setupIfcLoader }                  from "./ifc/loader";
 import { setupModelProcessor, processModel } from "./ifc/model-processor";
@@ -29,6 +30,7 @@ import { setupLayout }            from "./ui/layout";
 import { createPanelSplit }       from "./ui/panel-split";
 import { createMainTabs }         from "./ui/main-tabs";
 import { setupBCFSection }        from "./bcf/bcf-manager";
+import { setupComputoSection }    from "./computo/computo-manager";
 import { SelectionManager }       from "./selection/selection-manager";
 import { guardHovererVisibility } from "./selection/visibility-sync";
 import { showWelcomeScreen }      from "./ui/welcome-screen";
@@ -101,6 +103,12 @@ async function startApp(): Promise<{
     transparent:   true,
     renderedFaces: FRAGS.RenderedFaces.TWO,
   });
+  highlighter.styles.set("computo", {
+    color:         new THREE.Color("#4fc3f7"),
+    opacity:       0.55,
+    transparent:   true,
+    renderedFaces: FRAGS.RenderedFaces.TWO,
+  });
   guardHovererVisibility(hoverer, highlighter);
 
   // — Tools —
@@ -108,7 +116,8 @@ async function startApp(): Promise<{
   const worldLabelTool = createWorldLabelTool(world, viewport);
   const drawTool       = createDrawTool(world, threeRenderer.domElement);
   const cotaTool       = createCotaTool(world, fragments, threeRenderer.domElement);
-  const toolManager    = new ToolManager(highlighter, hoverer, sectionTool, worldLabelTool, drawTool, cotaTool);
+  const computoTool    = createComputoTool(fragments, highlighter);
+  const toolManager    = new ToolManager(highlighter, hoverer, sectionTool, worldLabelTool, drawTool, cotaTool, computoTool);
 
   // — Postprocessing —
   const postproduction = setupPostprocessing(world, worldGrid, components, axisMaterials);
@@ -135,7 +144,7 @@ async function startApp(): Promise<{
   CUI.Manager.init();
   createNavWidget(viewport, world, fragments, vcRef);
 
-  const toolOptionsPanel = createToolOptionsPanel(components, fragments, sectionTool, worldLabelTool, drawTool, cotaTool);
+  const toolOptionsPanel = createToolOptionsPanel(components, fragments, sectionTool, worldLabelTool, drawTool, cotaTool, computoTool);
   viewport.append(toolOptionsPanel.element);
 
   toolManager.setToolOptionsPanel(toolOptionsPanel);
@@ -166,7 +175,7 @@ async function startApp(): Promise<{
 
   const leftPanel = createLeftPanel(
     components, fragments, ifcLoader, highlighter, onModelLoaded,
-    sectionTool.clipper, topics, worldLabelTool, drawTool, cotaTool, world,
+    sectionTool.clipper, topics, worldLabelTool, drawTool, cotaTool, computoTool, world,
   );
 
   // Panel dinámico de abajo: Renderizado.
@@ -191,12 +200,18 @@ async function startApp(): Promise<{
 
   highlighter.events["select"].onHighlight.add((modelIdMap) => {
     if (!Object.keys(modelIdMap).length) return;
+    if (toolManager.activeMode === "computo") {
+      const [modelId, ids] = Object.entries(modelIdMap)[0];
+      computoTool.registerClick(modelId, [...ids][0]);
+      return;
+    }
     leftPanel.clearTypesSelection();
     showProperties();
     toolOptionsPanel.applySelection(modelIdMap).catch(console.error);
   });
 
   const { openModal, selectTopic, topicsFrame } = setupBCFSection(components, world, rightPanel);
+  const computo = setupComputoSection(computoTool);
   leftPanel.onTopicSelect((topicGuid) => selectTopic(topicGuid));
   // El modal de lista "BCF Topics" fue reemplazado por la solapa dedicada: el
   // botón "Ver tabla de BCF Topics" del árbol ahora lleva directo a esa solapa.
@@ -204,7 +219,7 @@ async function startApp(): Promise<{
   const toolbar        = createToolbar(world, fragments, toolManager, selectionManager, openModal, highlighter);
   const settingsModal   = createSettingsModal();
   const projectIoDeps: ProjectIoDeps = { fragments, topics, viewpoints, world, leftPanel };
-  const projectToolbar  = createProjectToolbar(projectIoDeps, settingsModal.openModal);
+  const projectToolbar  = createProjectToolbar(projectIoDeps, settingsModal.openModal, leftPanel.triggerLoadIfc);
 
   // Los botones de la toolbar se registran en el ToolManager al crearla, después
   // del setMode inicial: re-aplicar el modo para que "Navegar" arranque activo.
@@ -224,7 +239,7 @@ async function startApp(): Promise<{
   // derecha, las solapas del frame principal (Layout / BCF Topic / Cómputo);
   // segundo contenedor = el frame de contenido que esas solapas alternan,
   // sin cerrar el proyecto.
-  const mainTabs = createMainTabs(topicsFrame);
+  const mainTabs = createMainTabs(topicsFrame, computo.pane);
 
   const topbar = document.createElement("div");
   topbar.className = "app-topbar";

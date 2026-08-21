@@ -33,17 +33,6 @@ const TABS: TabDef[] = [
   { id: "computo",   label: "Cómputo",    icon: "material-symbols:calculate-outline" },
 ];
 
-function createPlaceholderPane(title: string, description: string): HTMLElement {
-  const pane = document.createElement("div");
-  pane.className = "main-tab-placeholder";
-  pane.innerHTML = `
-    <iconify-icon icon="material-symbols:construction-rounded"></iconify-icon>
-    <h3>${title}</h3>
-    <p>${description}</p>
-  `;
-  return pane;
-}
-
 const BCF_TABLE_MIN_WIDTH = 280;
 const BCF_TABLE_MAX_WIDTH_RATIO = 0.6;
 
@@ -117,7 +106,7 @@ function attachBcfSplitResize(split: HTMLElement, tableEl: HTMLElement): void {
  * la derecha un frame estático con el contenido del modal "BCF Topics"
  * (acciones + tabla), ver bcfTopicsFrame en bcf-manager.ts.
  */
-export function createMainTabs(bcfTopicsFrame: HTMLElement): MainTabsPanel {
+export function createMainTabs(bcfTopicsFrame: HTMLElement, computoPane: HTMLElement): MainTabsPanel {
   const bar = document.createElement("div");
   bar.className = "main-tabs-bar";
 
@@ -139,7 +128,7 @@ export function createMainTabs(bcfTopicsFrame: HTMLElement): MainTabsPanel {
   const panes = new Map<string, HTMLElement>([
     ["layout", layoutPane],
     ["bcf-topic", bcfPane],
-    ["computo", createPlaceholderPane("Cómputo", "Próximamente: tablas de cómputo y costos.")],
+    ["computo", computoPane],
   ]);
 
   for (const pane of panes.values()) {
@@ -154,7 +143,15 @@ export function createMainTabs(bcfTopicsFrame: HTMLElement): MainTabsPanel {
   const activate = (id: string): void => {
     for (const [tabId, pane] of panes) {
       const isActive = tabId === id;
-      pane.style.display = isActive ? "" : "none";
+      // visibility, no display: la solapa Layout aloja el <bim-viewport> (y,
+      // colgando de él, el bim-toolbar flotante — ver layout.ts) sin
+      // desmontarlo al cambiar de solapa; display:none le colapsa la caja a
+      // 0×0, y eso hace que los íconos del toolbar (IntersectionObserver de
+      // @thatopen/ui) a veces no vuelvan a pintarse al volver a "Layout".
+      // Las solapas quedan apiladas (position:absolute, ver .main-tab-pane
+      // en global.css) para que ocultar con visibility no las deje
+      // compitiendo por el mismo espacio en flujo normal.
+      pane.style.visibility = isActive ? "" : "hidden";
       buttons.get(tabId)?.classList.toggle("active", isActive);
     }
     if (id === "layout") {
