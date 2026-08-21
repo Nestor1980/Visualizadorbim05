@@ -14,22 +14,38 @@ export interface ExtractedQuantity {
 // el schema IFC para paredes/losas (Qto_WallBaseQuantities, etc.) — "Area" a
 // secas casi nunca aparece; dejarlo como único candidato hacía que las
 // paredes nunca encontraran su área y cayeran al respaldo por conteo.
-// Qué claves probar depende del método de cuantificación del tipo IFC (ver
-// ifc-quantity-rules.ts): "auto" prueba las tres en este orden, cualquier
-// otro método restringe la búsqueda a su propia magnitud.
-const KEYS_BY_METHOD: Record<"area" | "volumen" | "longitud", { unidad: string; keys: string[] }> = {
+// "area" busca primero las claves Net* (consumo real de material, la
+// convención por defecto — ver ifc-quantity-rules.ts); "area_bruta" invierte
+// la prioridad para los rubros que piden la geometría idealizada sin
+// descuentos (cubiertas inclinadas, contrapisos). Qué claves probar depende
+// del método de cuantificación del tipo IFC: "auto" prueba las tres
+// magnitudes (con la variante neta de área) en este orden, cualquier otro
+// método restringe la búsqueda a su propia magnitud/convención.
+const KEYS_BY_METHOD: Record<"area" | "area_bruta" | "volumen" | "longitud", { unidad: string; keys: string[] }> = {
   area: { unidad: "m2", keys: ["NetSideArea", "GrossSideArea", "NetFootprintArea", "GrossFootprintArea", "NetArea", "GrossArea", "Area"] },
+  area_bruta: { unidad: "m2", keys: ["GrossSideArea", "GrossFootprintArea", "GrossArea", "NetSideArea", "NetFootprintArea", "NetArea", "Area"] },
   volumen: { unidad: "m3", keys: ["NetVolume", "GrossVolume", "Volume"] },
-  longitud: { unidad: "ml", keys: ["Length", "NetLength", "Perimeter"] },
+  longitud: { unidad: "ml", keys: ["Length", "NetLength", "Perimeter", "NetPerimeter"] },
 };
 const AUTO_ORDER: ("area" | "volumen" | "longitud")[] = ["area", "volumen", "longitud"];
 
-/** Ídem `getQuantityMethod(tipoIfc) === "cantidad"` — se mide por pieza
- *  ("un") aunque el elemento tenga área/volumen geométrico propio (una
- *  ventana o una puerta ocupan una superficie física, pero en un cómputo se
- *  cuentan, no se miden). */
-export function isCountedCategory(tipoIfc: string | null): boolean {
-  return getQuantityMethod(tipoIfc) === "cantidad";
+/** Unidad por defecto de un método de cuantificación — se usa para no dejar
+ *  el campo Unidad en "un" cuando el tipo se mide por volumen/longitud/área
+ *  pero el modelo no trae ningún quantity set legible (ver
+ *  `seedFieldsFromElement` en computo-tool.ts). */
+export function defaultUnidadForMethod(method: QuantityMethod): string {
+  if (method === "area" || method === "area_bruta") return "m2";
+  if (method === "volumen") return "m3";
+  if (method === "longitud") return "ml";
+  return "un";
+}
+
+/** Ídem `getQuantityMethod(tipoIfc, predefinedType) === "cantidad"` — se
+ *  mide por pieza ("un") aunque el elemento tenga área/volumen geométrico
+ *  propio (una ventana o una puerta ocupan una superficie física, pero en un
+ *  cómputo se cuentan, no se miden). */
+export function isCountedCategory(tipoIfc: string | null, predefinedType?: string | null): boolean {
+  return getQuantityMethod(tipoIfc, predefinedType) === "cantidad";
 }
 
 function isQuantitySet(name: string): boolean {
@@ -131,7 +147,7 @@ async function getElementQuantity(
   // El respaldo geométrico solo tiene sentido para tipos que se miden por
   // área (o sin regla conocida, "auto") — un tipo que se mide por volumen o
   // longitud no debe terminar reportando el área de su cara más grande.
-  if (method === "area" || method === "auto") {
+  if (method === "area" || method === "area_bruta" || method === "auto") {
     const area = await getDominantFaceArea(modelId, localId, fragments);
     if (area !== null && area > 0) return { unidad: "m2", cantidad: area };
   }
@@ -152,6 +168,7 @@ export async function getQuantityForSelection(
   modelIdMap: OBC.ModelIdMap,
   fragments: OBC.FragmentsManager,
   tipoIfc: string | null,
+  predefinedType?: string | null,
 ): Promise<ExtractedQuantity | null> {
   const pairs: { modelId: string; localId: number }[] = [];
   for (const [modelId, ids] of Object.entries(modelIdMap)) {
@@ -159,7 +176,7 @@ export async function getQuantityForSelection(
   }
   if (pairs.length === 0) return null;
 
-  const method = getQuantityMethod(tipoIfc);
+  const method = getQuantityMethod(tipoIfc, predefinedType);
   if (method === "cantidad") return { unidad: "un", cantidad: pairs.length };
 
   const quantities = await Promise.all(

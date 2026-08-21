@@ -143,7 +143,15 @@ export function createMainTabs(bcfTopicsFrame: HTMLElement, computoPane: HTMLEle
   const activate = (id: string): void => {
     for (const [tabId, pane] of panes) {
       const isActive = tabId === id;
-      pane.style.display = isActive ? "" : "none";
+      // visibility, no display: la solapa Layout aloja el <bim-viewport> (y,
+      // colgando de él, el bim-toolbar flotante — ver layout.ts) sin
+      // desmontarlo al cambiar de solapa; display:none le colapsa la caja a
+      // 0×0, y eso hace que los íconos del toolbar (IntersectionObserver de
+      // @thatopen/ui) a veces no vuelvan a pintarse al volver a "Layout".
+      // Las solapas quedan apiladas (position:absolute, ver .main-tab-pane
+      // en global.css) para que ocultar con visibility no las deje
+      // compitiendo por el mismo espacio en flujo normal.
+      pane.style.visibility = isActive ? "" : "hidden";
       buttons.get(tabId)?.classList.toggle("active", isActive);
     }
     if (id === "layout") {

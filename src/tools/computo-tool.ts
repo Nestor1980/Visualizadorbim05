@@ -1,7 +1,9 @@
 import * as OBC from "@thatopen/components";
 import * as OBF from "@thatopen/components-front";
-import { getPropertySets, getItemData, getElementTypeName } from "../ifc/properties";
-import { getQuantityForSelection, isCountedCategory } from "../computo/quantity-extractor";
+import { getPropertySets, getItemData, getElementTypeName, getPredefinedType } from "../ifc/properties";
+import { getQuantityForSelection, isCountedCategory, defaultUnidadForMethod } from "../computo/quantity-extractor";
+import { getQuantityMethod } from "../computo/ifc-quantity-rules";
+import { getCategoriaNombre } from "../computo/ifc-categoria-rules";
 
 export interface ComputoItem {
   id: string;
@@ -20,6 +22,25 @@ export interface ComputoItem {
    *  "IFCWALL") pero ser tipos distintos (espesor/material), y eso también
    *  tiene que separarlos en ítems distintos. */
   tipoElemento: string | null;
+  /** PredefinedType IFC (ej. "BASESLAB", "SKIRTINGBOARD") del primer
+   *  elemento del ítem — no editable: desambigua la regla de cuantificación
+   *  cuando la sola clase IFC no alcanza (ver ifc-quantity-rules.ts), ej. una
+   *  losa de fundación (volumen) contra una losa de piso (área) que
+   *  comparten "IFCSLAB". */
+  predefinedType: string | null;
+  /** Sección de la tabla de cómputo a la que pertenece este ítem (ver
+   *  `ComputoCategoria`), o `null` si todavía no se arrastró a ninguna. Hoy
+   *  la asignación es manual (drag & drop en computo-manager.ts); a futuro se
+   *  planea auto-agrupar por tipo IFC. */
+  categoriaId: string | null;
+}
+
+/** Sección de la tabla de cómputo creada a mano por el usuario (botón
+ *  "Agregar categoría") — un agrupador orthogonal al Rubro, pensado para que
+ *  el usuario organice los ítems como quiera arrastrándolos entre secciones. */
+export interface ComputoCategoria {
+  id: string;
+  nombre: string;
 }
 
 export type ComputoAddMode = "add" | "remove";
@@ -34,6 +55,22 @@ export interface ComputoTool {
   onItemAdded: OBC.Event<ComputoItem>;
   onItemChanged: OBC.Event<ComputoItem>;
   onItemDeleted: OBC.Event<string>;
+  /** Secciones de la tabla de cómputo (ver `ComputoCategoria`). */
+  categorias: Map<string, ComputoCategoria>;
+  onCategoriaAdded: OBC.Event<ComputoCategoria>;
+  onCategoriaChanged: OBC.Event<ComputoCategoria>;
+  onCategoriaDeleted: OBC.Event<string>;
+  addCategoria: (nombre: string) => ComputoCategoria;
+  renameCategoria: (id: string, nombre: string) => void;
+  /** Borra la sección; los ítems que tenía quedan sin sección (`categoriaId: null`),
+   *  no se borran. */
+  deleteCategoria: (id: string) => void;
+  /** Mueve un ítem a una sección (o a `null` para sacarlo de todas) — usado
+   *  por el drag & drop de filas entre secciones en computo-manager.ts. */
+  moveItemToCategoria: (itemId: string, categoriaId: string | null) => void;
+  /** Recrea una sección ya armada (sin pasar por `addCategoria`) — usado al
+   *  restaurar un proyecto guardado. */
+  restoreCategoria: (data: ComputoCategoria) => void;
   registerClick: (modelId: string, localId: number) => void;
   /** Saca un elemento puntual de un ítem (usado por la fila hija del árbol
    *  de Capas de Datos) — si era el último, borra el ítem entero. */
@@ -86,6 +123,7 @@ function toModelIdMap(elementos: { modelId: string; localId: number }[]): OBC.Mo
 interface IfcIdentity {
   tipoIfc: string | null;
   tipoElemento: string | null;
+  predefinedType: string | null;
 }
 
 /** Mapa localId → clase IFC por modelo, cacheado: `model.getItem(id).getCategory()`
@@ -129,14 +167,15 @@ async function getIfcIdentity(
   localId: number,
 ): Promise<IfcIdentity> {
   const model = fragments.list.get(modelId);
-  if (!model) return { tipoIfc: null, tipoElemento: null };
+  if (!model) return { tipoIfc: null, tipoElemento: null, predefinedType: null };
 
   const categoryMap = await getCategoryMap(fragments, modelId);
   const tipoIfc = categoryMap.get(localId) ?? null;
 
   const tipoElemento = await getElementTypeName(model, localId).catch(() => null);
+  const predefinedType = await getPredefinedType(model, localId).catch(() => null);
 
-  return { tipoIfc, tipoElemento };
+  return { tipoIfc, tipoElemento, predefinedType };
 }
 
 /**
@@ -156,6 +195,12 @@ export function createComputoTool(
   const onItemAdded = new OBC.Event<ComputoItem>();
   const onItemChanged = new OBC.Event<ComputoItem>();
   const onItemDeleted = new OBC.Event<string>();
+
+  const categorias = new Map<string, ComputoCategoria>();
+  const onCategoriaAdded = new OBC.Event<ComputoCategoria>();
+  const onCategoriaChanged = new OBC.Event<ComputoCategoria>();
+  const onCategoriaDeleted = new OBC.Event<string>();
+  let categoriaCounter = 0;
 
   let active = false;
   let addMode: ComputoAddMode = "add";
@@ -184,7 +229,7 @@ export function createComputoTool(
       item.cantidad = 0;
       return;
     }
-    if (isCountedCategory(item.tipoIfc)) {
+    if (isCountedCategory(item.tipoIfc, item.predefinedType)) {
       item.cantidad = item.elementos.length;
       // Se fuerza acá (no solo al sembrar el primer elemento) para que un
       // ítem que haya quedado con una unidad vieja (ej. de antes de que esta
@@ -193,7 +238,9 @@ export function createComputoTool(
       item.unidad = "un";
       return;
     }
-    const quantity = await getQuantityForSelection(toModelIdMap(item.elementos), fragments, item.tipoIfc);
+    const quantity = await getQuantityForSelection(
+      toModelIdMap(item.elementos), fragments, item.tipoIfc, item.predefinedType,
+    );
     item.cantidad = quantity?.cantidad ?? item.elementos.length;
   }
 
@@ -222,10 +269,18 @@ export function createComputoTool(
 
     // Ventanas, puertas y similares se cuentan por pieza aunque tengan
     // superficie propia — no tiene sentido buscarles un área/volumen.
-    let unidad = isCountedCategory(item.tipoIfc) ? "un" : (findPropertyValue(psets, UNIDAD_KEY) ?? "");
+    const counted = isCountedCategory(item.tipoIfc, item.predefinedType);
+    let unidad = counted ? "un" : (findPropertyValue(psets, UNIDAD_KEY) ?? "");
     if (!unidad) {
-      const quantity = await getQuantityForSelection({ [modelId]: new Set([localId]) }, fragments, item.tipoIfc);
-      unidad = quantity?.unidad ?? "un";
+      const quantity = await getQuantityForSelection(
+        { [modelId]: new Set([localId]) }, fragments, item.tipoIfc, item.predefinedType,
+      );
+      // Si no hay quantity set legible, la unidad igual debe reflejar la
+      // magnitud del método resuelto (m2/m3/ml) y no caer siempre en "un" —
+      // si no, un elemento medido por volumen o longitud sin Qto_* queda con
+      // una unidad incorrecta que además invita a cargar la cantidad a mano
+      // sin saber en qué magnitud.
+      unidad = quantity?.unidad ?? defaultUnidadForMethod(getQuantityMethod(item.tipoIfc, item.predefinedType));
     }
     item.unidad = unidad;
   }
@@ -251,10 +306,18 @@ export function createComputoTool(
 
     if (!item) {
       itemCounter += 1;
+      // Auto-categoría por tipo IFC (ver ifc-categoria-rules.ts, configurable
+      // desde el modal de Configuración) — de una sola vez, al crear el ítem,
+      // igual que Rubro/Descripción: si el usuario después arrastra el ítem a
+      // otra sección a mano, un click nuevo del mismo tipo reabre este mismo
+      // ítem (ver búsqueda por `key` arriba) y no vuelve a tocar categoriaId.
+      const categoriaNombre = getCategoriaNombre(identity.tipoIfc, identity.predefinedType);
       item = {
         id: `computo-${Date.now()}-${itemCounter}`,
         rubro: "", descripcion: "", unidad: "", cantidad: 0, precioUnitario: 0,
         elementos: [], tipoIfc: identity.tipoIfc, tipoElemento: identity.tipoElemento,
+        predefinedType: identity.predefinedType,
+        categoriaId: categoriaNombre ? findOrCreateCategoriaByName(categoriaNombre).id : null,
       };
       list.set(item.id, item);
       onItemAdded.trigger(item);
@@ -328,21 +391,93 @@ export function createComputoTool(
   }
 
   function restoreItem(data: ComputoItem): void {
-    const item: ComputoItem = { ...data, elementos: [...data.elementos] };
+    // `predefinedType`/`categoriaId` pueden faltar en proyectos guardados con
+    // una versión anterior del cómputo — se completan con `null` (equivale a
+    // "sin dato"/"sin sección", igual que antes de que existieran estos campos).
+    const item: ComputoItem = {
+      ...data,
+      predefinedType: data.predefinedType ?? null,
+      categoriaId: data.categoriaId ?? null,
+      elementos: [...data.elementos],
+    };
     list.set(item.id, item);
     onItemAdded.trigger(item);
   }
 
+  function addCategoria(nombre: string): ComputoCategoria {
+    categoriaCounter += 1;
+    const categoria: ComputoCategoria = { id: `categoria-${Date.now()}-${categoriaCounter}`, nombre };
+    categorias.set(categoria.id, categoria);
+    onCategoriaAdded.trigger(categoria);
+    return categoria;
+  }
+
+  /** Busca una categoría existente por nombre (case-insensitive) antes de
+   *  crear una nueva — usado por la auto-asignación en `handleAdd` para que
+   *  dos tipos IFC mapeados al mismo nombre (ej. IFCWALL e IFCCURTAINWALL →
+   *  "Paredes") terminen en la misma sección en vez de una por tipo. */
+  function findOrCreateCategoriaByName(nombre: string): ComputoCategoria {
+    for (const categoria of categorias.values()) {
+      if (categoria.nombre.toLowerCase() === nombre.toLowerCase()) return categoria;
+    }
+    return addCategoria(nombre);
+  }
+
+  function renameCategoria(id: string, nombre: string): void {
+    const categoria = categorias.get(id);
+    if (!categoria) return;
+    categoria.nombre = nombre;
+    onCategoriaChanged.trigger(categoria);
+  }
+
+  function deleteCategoria(id: string): void {
+    if (!categorias.delete(id)) return;
+    for (const item of list.values()) {
+      if (item.categoriaId === id) {
+        item.categoriaId = null;
+        onItemChanged.trigger(item);
+      }
+    }
+    onCategoriaDeleted.trigger(id);
+  }
+
+  function moveItemToCategoria(itemId: string, categoriaId: string | null): void {
+    const item = list.get(itemId);
+    if (!item) return;
+    if (categoriaId !== null && !categorias.has(categoriaId)) return;
+    if (item.categoriaId === categoriaId) return;
+    item.categoriaId = categoriaId;
+    onItemChanged.trigger(item);
+  }
+
+  function restoreCategoria(data: ComputoCategoria): void {
+    categorias.set(data.id, { ...data });
+    onCategoriaAdded.trigger(data);
+  }
+
   return {
     get active() { return active; },
-    activate: () => { active = true; },
-    deactivate: () => { active = false; currentItemId = null; },
+    activate: () => { active = true; repaintHighlight(); },
+    deactivate: () => {
+      active = false;
+      currentItemId = null;
+      highlighter.clear("computo").catch(console.error);
+    },
     getAddMode: () => addMode,
     setAddMode: (mode) => { addMode = mode; },
     list,
     onItemAdded,
     onItemChanged,
     onItemDeleted,
+    categorias,
+    onCategoriaAdded,
+    onCategoriaChanged,
+    onCategoriaDeleted,
+    addCategoria,
+    renameCategoria,
+    deleteCategoria,
+    moveItemToCategoria,
+    restoreCategoria,
     registerClick,
     removeElementFromItem,
     updateItem,

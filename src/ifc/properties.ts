@@ -239,6 +239,21 @@ export async function getElementTypeName(model: any, localId: number): Promise<s
   return objectType;
 }
 
+/**
+ * PredefinedType de una instancia (ej. "BASESLAB", "ROOF", "SKIRTINGBOARD")
+ * — el atributo IFC que distingue usos distintos de una misma clase (ej.
+ * IFCSLAB de fundación vs de piso, IFCCOVERING de zócalo vs de revoque). Se
+ * usa para desambiguar la regla de cuantificación cuando la sola clase IFC
+ * no alcanza (ver ifc-quantity-rules.ts).
+ */
+export async function getPredefinedType(model: any, localId: number): Promise<string | null> {
+  const itemData = await getItemData(model, localId, false);
+  const raw = itemData?.PredefinedType;
+  return typeof raw === "string" ? raw
+    : raw?.value !== undefined ? String(raw.value)
+    : null;
+}
+
 export async function getPropertySets(
   modelId: string,
   localId: number,

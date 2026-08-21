@@ -3,7 +3,7 @@ import * as OBC from "@thatopen/components";
 import type { WorldLabelTool } from "../../tools/world-label-tool";
 import type { DrawTool } from "../../tools/draw-tool";
 import type { CotaTool } from "../../tools/cota-tool";
-import type { ComputoTool, ComputoItem } from "../../tools/computo-tool";
+import type { ComputoTool, ComputoItem, ComputoCategoria } from "../../tools/computo-tool";
 
 export interface DataLayer {
   id: string;
@@ -46,6 +46,9 @@ export interface SerializedDataLayers {
     layerId: string; name: string; start: Vec3Tuple; end: Vec3Tuple; visible: boolean;
   }[];
   computo: ({ layerId: string } & ComputoItem)[];
+  /** Secciones de la tabla de cómputo (ver `ComputoCategoria`) — no tienen
+   *  `layerId`: son un agrupador propio de la tabla, no de las capas de datos. */
+  computoCategorias?: ComputoCategoria[];
   /** Opcional: proyectos guardados con la herramienta de medición vieja
    *  (deprecada) traían este campo. Ya no hay dónde restaurarlos — se ignora
    *  al cargar, en vez de romper la carga del resto del proyecto. */
@@ -990,10 +993,12 @@ export function createDataLayersTree(
       })
       .filter((c): c is NonNullable<typeof c> => c !== null);
 
+    const computoCategoriasOut = [...computos.categorias.values()].map((c) => ({ ...c }));
+
     return {
       layers: dataLayers.map((l) => ({ ...l })),
       sections, topics: topicsOut, labels: labelsOut, drawings: drawingsOut, cotas: cotasOut,
-      computo: computoOut,
+      computo: computoOut, computoCategorias: computoCategoriasOut,
     };
   }
 
@@ -1006,6 +1011,7 @@ export function createDataLayersTree(
     for (const id of [...drawings.list.keys()]) drawings.deleteStroke(id);
     for (const id of [...cotas.list.keys()]) cotas.deleteCota(id);
     for (const id of [...computos.list.keys()]) computos.deleteItem(id);
+    for (const id of [...computos.categorias.keys()]) computos.deleteCategoria(id);
 
     dataLayers.length = 0;
     planeDataLayer.clear();
@@ -1058,6 +1064,8 @@ export function createDataLayersTree(
       cotaDataLayer.set(cota.id, c.layerId);
       cotaName.set(cota.id, c.name);
     }
+
+    for (const cat of data.computoCategorias ?? []) computos.restoreCategoria(cat);
 
     for (const c of data.computo ?? []) {
       const { layerId, ...item } = c;
