@@ -1,60 +1,35 @@
 import * as THREE from "three";
 import * as OBC from "@thatopen/components";
 import { getPropertySets } from "../ifc/properties";
+import { getQuantityMethod, type QuantityMethod } from "./ifc-quantity-rules";
 
 export interface ExtractedQuantity {
   unidad: string;
   cantidad: number;
 }
 
-// Orden de prioridad: la primera magnitud con datos en el Qto_ del elemento
-// gana. Varias claves por unidad porque distintos exportadores IFC nombran
-// las quantities de forma distinta (Net vs Gross, con o sin prefijo).
+// Varias claves por unidad porque distintos exportadores IFC nombran las
+// quantities de forma distinta (Net vs Gross, con o sin prefijo).
 // "SideArea"/"FootprintArea" van primero porque son las claves reales que usa
 // el schema IFC para paredes/losas (Qto_WallBaseQuantities, etc.) — "Area" a
 // secas casi nunca aparece; dejarlo como único candidato hacía que las
 // paredes nunca encontraran su área y cayeran al respaldo por conteo.
-const QUANTITY_KEYS_BY_UNIT: { unidad: string; keys: string[] }[] = [
-  { unidad: "m2", keys: ["NetSideArea", "GrossSideArea", "NetFootprintArea", "GrossFootprintArea", "NetArea", "GrossArea", "Area"] },
-  { unidad: "m3", keys: ["NetVolume", "GrossVolume", "Volume"] },
-  { unidad: "ml", keys: ["Length", "NetLength", "Perimeter"] },
-  { unidad: "un", keys: ["Count"] },
-];
+// Qué claves probar depende del método de cuantificación del tipo IFC (ver
+// ifc-quantity-rules.ts): "auto" prueba las tres en este orden, cualquier
+// otro método restringe la búsqueda a su propia magnitud.
+const KEYS_BY_METHOD: Record<"area" | "volumen" | "longitud", { unidad: string; keys: string[] }> = {
+  area: { unidad: "m2", keys: ["NetSideArea", "GrossSideArea", "NetFootprintArea", "GrossFootprintArea", "NetArea", "GrossArea", "Area"] },
+  volumen: { unidad: "m3", keys: ["NetVolume", "GrossVolume", "Volume"] },
+  longitud: { unidad: "ml", keys: ["Length", "NetLength", "Perimeter"] },
+};
+const AUTO_ORDER: ("area" | "volumen" | "longitud")[] = ["area", "volumen", "longitud"];
 
-/**
- * Clases IFC que se miden por pieza ("un") aunque tengan área/volumen
- * geométrico propio — una ventana o una puerta ocupan una superficie física,
- * pero en un cómputo se cuentan, no se miden. Para estas categorías no tiene
- * sentido ni buscar Qto_*Area/Volume ni calcular área por geometría: la
- * cantidad es directamente la cantidad de elementos del ítem.
- */
-const COUNTED_CATEGORIES = new Set([
-  "IFCWINDOW",
-  "IFCDOOR",
-  "IFCFURNISHINGELEMENT",
-  "IFCFURNITURE",
-  "IFCSANITARYTERMINAL",
-  "IFCLIGHTFIXTURE",
-  "IFCOUTLET",
-  "IFCSWITCHINGDEVICE",
-  "IFCFLOWTERMINAL",
-  "IFCSTAIRFLIGHT",
-  "IFCRAMPFLIGHT",
-]);
-
-// IFC4 tiene variantes "StandardCase" de varias entidades (IfcWindowStandardCase,
-// IfcDoorStandardCase, etc.) que muchos exportadores (Revit incluido) emiten en
-// vez de la entidad simple cuando la geometría sigue la representación
-// estándar — sin normalizar esto, una ventana exportada como
-// "IFCWINDOWSTANDARDCASE" no matcheaba contra "IFCWINDOW" y se seguía
-// midiendo por área.
-function normalizeCategory(tipoIfc: string): string {
-  const upper = tipoIfc.toUpperCase();
-  return upper.endsWith("STANDARDCASE") ? upper.slice(0, -"STANDARDCASE".length) : upper;
-}
-
+/** Ídem `getQuantityMethod(tipoIfc) === "cantidad"` — se mide por pieza
+ *  ("un") aunque el elemento tenga área/volumen geométrico propio (una
+ *  ventana o una puerta ocupan una superficie física, pero en un cómputo se
+ *  cuentan, no se miden). */
 export function isCountedCategory(tipoIfc: string | null): boolean {
-  return !!tipoIfc && COUNTED_CATEGORIES.has(normalizeCategory(tipoIfc));
+  return getQuantityMethod(tipoIfc) === "cantidad";
 }
 
 function isQuantitySet(name: string): boolean {
@@ -65,12 +40,18 @@ async function getQuantityFromPsets(
   modelId: string,
   localId: number,
   fragments: OBC.FragmentsManager,
+  method: QuantityMethod,
 ): Promise<ExtractedQuantity | null> {
   const psets = await getPropertySets(modelId, localId, fragments);
   const quantitySets = psets.filter((p) => isQuantitySet(p.name));
   if (quantitySets.length === 0) return null;
 
-  for (const { unidad, keys } of QUANTITY_KEYS_BY_UNIT) {
+  const candidates =
+    method === "auto" ? AUTO_ORDER.map((m) => KEYS_BY_METHOD[m])
+    : method === "cantidad" ? []
+    : [KEYS_BY_METHOD[method]];
+
+  for (const { unidad, keys } of candidates) {
     for (const key of keys) {
       for (const qset of quantitySets) {
         const raw = qset.properties[key];
@@ -142,27 +123,35 @@ async function getElementQuantity(
   modelId: string,
   localId: number,
   fragments: OBC.FragmentsManager,
+  method: QuantityMethod,
 ): Promise<ExtractedQuantity | null> {
-  const fromPsets = await getQuantityFromPsets(modelId, localId, fragments);
+  const fromPsets = await getQuantityFromPsets(modelId, localId, fragments, method);
   if (fromPsets) return fromPsets;
 
-  const area = await getDominantFaceArea(modelId, localId, fragments);
-  if (area !== null && area > 0) return { unidad: "m2", cantidad: area };
+  // El respaldo geométrico solo tiene sentido para tipos que se miden por
+  // área (o sin regla conocida, "auto") — un tipo que se mide por volumen o
+  // longitud no debe terminar reportando el área de su cara más grande.
+  if (method === "area" || method === "auto") {
+    const area = await getDominantFaceArea(modelId, localId, fragments);
+    if (area !== null && area > 0) return { unidad: "m2", cantidad: area };
+  }
 
   return null;
 }
 
 /**
  * Suma la magnitud de cantidad (m², m³, ml o unidades) de todos los
- * elementos seleccionados, siempre que compartan el mismo tipo de magnitud
- * detectado en el primero que traiga datos. Si ningún elemento tiene
- * quantity sets IFC (`Qto_*`/BaseQuantities) — muy común en modelos reales —
- * devuelve null y el llamador cae a carga manual (cantidad = cant. de
- * elementos seleccionados, editable).
+ * elementos seleccionados, según el método de cuantificación del tipo IFC
+ * (ver ifc-quantity-rules.ts). Si el método es "cantidad" se cuenta
+ * directamente, sin ir a buscar quantity sets. Para el resto, si ningún
+ * elemento tiene quantity sets IFC (`Qto_*`/BaseQuantities) — muy común en
+ * modelos reales — devuelve null y el llamador cae a carga manual (cantidad
+ * = cant. de elementos seleccionados, editable).
  */
 export async function getQuantityForSelection(
   modelIdMap: OBC.ModelIdMap,
   fragments: OBC.FragmentsManager,
+  tipoIfc: string | null,
 ): Promise<ExtractedQuantity | null> {
   const pairs: { modelId: string; localId: number }[] = [];
   for (const [modelId, ids] of Object.entries(modelIdMap)) {
@@ -170,8 +159,11 @@ export async function getQuantityForSelection(
   }
   if (pairs.length === 0) return null;
 
+  const method = getQuantityMethod(tipoIfc);
+  if (method === "cantidad") return { unidad: "un", cantidad: pairs.length };
+
   const quantities = await Promise.all(
-    pairs.map(({ modelId, localId }) => getElementQuantity(modelId, localId, fragments)),
+    pairs.map(({ modelId, localId }) => getElementQuantity(modelId, localId, fragments, method)),
   );
 
   const found = quantities.filter((q): q is ExtractedQuantity => q !== null);

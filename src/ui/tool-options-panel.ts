@@ -53,9 +53,47 @@ export function createToolOptionsPanel(
     computo:    computoPanel.element,
   };
 
+  const content = document.createElement("div");
+  content.className = "tool-options-panel-content";
+  content.append(views.cota, views.section, views.properties, views.label, views.draw, views.computo);
+
+  const resizeHandle = document.createElement("div");
+  resizeHandle.className = "tool-options-panel-resize-handle";
+  resizeHandle.setAttribute("role", "separator");
+  resizeHandle.setAttribute("aria-orientation", "vertical");
+  resizeHandle.setAttribute("aria-label", "Redimensionar panel de opciones");
+
   const element = document.createElement("div");
   element.className = "tool-options-panel";
-  element.append(views.cota, views.section, views.properties, views.label, views.draw, views.computo);
+  element.append(resizeHandle, content);
+
+  const MIN_WIDTH = 260;
+  const MAX_WIDTH = 640;
+
+  resizeHandle.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = content.getBoundingClientRect().width;
+    resizeHandle.setPointerCapture(event.pointerId);
+    document.body.classList.add("resizing-panel");
+
+    const onMove = (moveEvent: PointerEvent) => {
+      // El panel queda anclado por `right`, así que el borde arrastrable es
+      // el izquierdo: moverlo a la izquierda (startX - clientX > 0) agranda
+      // el panel.
+      const next = startWidth + (startX - moveEvent.clientX);
+      const clamped = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, next));
+      content.style.width = `${clamped}px`;
+    };
+    const onUp = () => {
+      resizeHandle.releasePointerCapture(event.pointerId);
+      document.body.classList.remove("resizing-panel");
+      resizeHandle.removeEventListener("pointermove", onMove);
+      resizeHandle.removeEventListener("pointerup", onUp);
+    };
+    resizeHandle.addEventListener("pointermove", onMove);
+    resizeHandle.addEventListener("pointerup", onUp);
+  });
 
   const applyView = (view: ToolOptionsView): void => {
     element.style.display = view ? "" : "none";

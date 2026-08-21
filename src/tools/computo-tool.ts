@@ -88,6 +88,37 @@ interface IfcIdentity {
   tipoElemento: string | null;
 }
 
+/** Mapa localId → clase IFC por modelo, cacheado: `model.getItem(id).getCategory()`
+ *  invoca en el worker una acción ("getItemCategory", singular) que esta versión
+ *  de @thatopen/fragments no expone y siempre tira TypeError, dejando la
+ *  categoría en null para cualquier elemento. `getItemsOfCategories` sí existe
+ *  en el worker (variante batch) — se pide una sola vez por modelo con un
+ *  regex que matchea todo, y se invierte a un mapa localId → categoría. */
+const categoryMapByModel = new Map<string, Promise<Map<number, string>>>();
+
+function getCategoryMap(
+  fragments: OBC.FragmentsManager,
+  modelId: string,
+): Promise<Map<number, string>> {
+  let cached = categoryMapByModel.get(modelId);
+  if (cached) return cached;
+
+  cached = (async () => {
+    const map = new Map<number, string>();
+    const model = fragments.list.get(modelId);
+    if (!model) return map;
+    try {
+      const byCategory = await model.getItemsOfCategories([/.*/]);
+      for (const [category, localIds] of Object.entries(byCategory)) {
+        for (const localId of localIds) map.set(localId, category);
+      }
+    } catch { /* sin categorías resolubles */ }
+    return map;
+  })();
+  categoryMapByModel.set(modelId, cached);
+  return cached;
+}
+
 /** Identidad de un elemento a los efectos de agrupar/separar ítems de
  *  cómputo: clase IFC (ej. "IFCWALL") + nombre de tipo/familia (ej.
  *  "MUR_LHC200") — dos elementos de la misma clase pero tipo distinto
@@ -100,10 +131,8 @@ async function getIfcIdentity(
   const model = fragments.list.get(modelId);
   if (!model) return { tipoIfc: null, tipoElemento: null };
 
-  let tipoIfc: string | null = null;
-  try {
-    tipoIfc = await model.getItem(localId).getCategory();
-  } catch { /* sin categoría resoluble */ }
+  const categoryMap = await getCategoryMap(fragments, modelId);
+  const tipoIfc = categoryMap.get(localId) ?? null;
 
   const tipoElemento = await getElementTypeName(model, localId).catch(() => null);
 
@@ -157,9 +186,14 @@ export function createComputoTool(
     }
     if (isCountedCategory(item.tipoIfc)) {
       item.cantidad = item.elementos.length;
+      // Se fuerza acá (no solo al sembrar el primer elemento) para que un
+      // ítem que haya quedado con una unidad vieja (ej. de antes de que esta
+      // categoría se marcara como "contada") se autocorrija apenas se le
+      // suma o saca un elemento, sin depender de borrarlo y recrearlo.
+      item.unidad = "un";
       return;
     }
-    const quantity = await getQuantityForSelection(toModelIdMap(item.elementos), fragments);
+    const quantity = await getQuantityForSelection(toModelIdMap(item.elementos), fragments, item.tipoIfc);
     item.cantidad = quantity?.cantidad ?? item.elementos.length;
   }
 
@@ -190,7 +224,7 @@ export function createComputoTool(
     // superficie propia — no tiene sentido buscarles un área/volumen.
     let unidad = isCountedCategory(item.tipoIfc) ? "un" : (findPropertyValue(psets, UNIDAD_KEY) ?? "");
     if (!unidad) {
-      const quantity = await getQuantityForSelection({ [modelId]: new Set([localId]) }, fragments);
+      const quantity = await getQuantityForSelection({ [modelId]: new Set([localId]) }, fragments, item.tipoIfc);
       unidad = quantity?.unidad ?? "un";
     }
     item.unidad = unidad;

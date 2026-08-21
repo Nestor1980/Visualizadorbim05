@@ -927,14 +927,24 @@ bim-toolbar {
 
 /* Panel de opciones de la herramienta activa: flota sobre la esquina
  * superior derecha del viewport (no del layout completo) y desaparece
- * cuando no hay ninguna herramienta seleccionada (ver ToolManager.setMode). */
+ * cuando no hay ninguna herramienta seleccionada (ver ToolManager.setMode).
+ * Es un flex row [handle, content] para poder redimensionarlo arrastrando
+ * su borde izquierdo (el panel queda anclado por `right`, así que agrandar
+ * significa mover ese borde hacia la izquierda — ver tool-options-panel.ts). */
 .tool-options-panel {
   position: absolute;
   top: 1.5rem;
   right: 1.5rem;
   z-index: 100;
-  width: 260px;
   max-height: calc(100% - 3rem);
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+}
+.tool-options-panel-content {
+  width: 260px;
+  min-width: 0;
+  flex-shrink: 0;
   overflow-y: auto;
   scrollbar-gutter: stable;
   display: flex;
@@ -948,10 +958,34 @@ bim-toolbar {
 }
 /* El medidor envuelve dos bim-panel-section (ajustes + lista) en un <div>
  * plano: le damos el mismo layout en columna para que no queden pegadas. */
-.tool-options-panel > div {
+.tool-options-panel-content > div {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+}
+
+.tool-options-panel-resize-handle {
+  flex-shrink: 0;
+  width: 10px;
+  cursor: ew-resize;
+  touch-action: none;
+  position: relative;
+  z-index: 1;
+}
+.tool-options-panel-resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4.5px;
+  width: 1px;
+  border-radius: 1px;
+  background: transparent;
+  transition: background 0.15s;
+}
+.tool-options-panel-resize-handle:hover::after,
+.tool-options-panel-resize-handle:active::after {
+  background: var(--accent);
 }
 
 bim-view-cube {
@@ -1454,6 +1488,97 @@ bim-view-cube:active {
 .settings-row-desc {
   font-size: 0.75rem;
   color: var(--text-muted);
+}
+
+.quantity-rules-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+  max-height: 260px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+.quantity-rule-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0;
+}
+.quantity-rule-tipo {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.8rem;
+  font-family: monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.quantity-rule-select,
+.quantity-rule-add-select {
+  flex: 0 0 auto;
+  font-size: 0.8rem;
+  padding: 0.25rem 0.4rem;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+.quantity-rule-reset {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.quantity-rule-reset:hover:not(:disabled) {
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
+}
+.quantity-rule-reset:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.quantity-rule-add {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-subtle);
+}
+.quantity-rule-add-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.8rem;
+  padding: 0.3rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+.quantity-rule-add-btn {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  padding: 0.3rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.quantity-rule-add-btn:hover {
+  background: var(--bg-surface-hover);
 }
 
 /* — Modal "Nuevo Topic": formulario de creación de topic BCF.
