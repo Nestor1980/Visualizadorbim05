@@ -72,6 +72,12 @@ export interface ComputoTool {
    *  restaurar un proyecto guardado. */
   restoreCategoria: (data: ComputoCategoria) => void;
   registerClick: (modelId: string, localId: number) => void;
+  /** Agrega todos los elementos visibles de todos los modelos cargados al
+   *  cómputo, de una sola vez (botón "Seleccionar todo" del panel) — mismo
+   *  agrupado por identidad que un click individual en modo Agregar
+   *  (ver `handleAdd`), solo que iterado sobre todo el modelo. Respeta
+   *  visibilidad (`getItemsByVisibility`) para no traer elementos ocultos. */
+  addAllElements: () => Promise<void>;
   /** Saca un elemento puntual de un ítem (usado por la fila hija del árbol
    *  de Capas de Datos) — si era el último, borra el ítem entero. */
   removeElementFromItem: (itemId: string, modelId: string, localId: number) => void;
@@ -366,6 +372,16 @@ export function createComputoTool(
     task.then(repaintHighlight).catch(console.error);
   }
 
+  async function addAllElements(): Promise<void> {
+    for (const [modelId, model] of fragments.list) {
+      const visibleIds = await model.getItemsByVisibility(true);
+      for (const localId of visibleIds) {
+        await handleAdd(modelId, localId);
+      }
+    }
+    repaintHighlight();
+  }
+
   function removeElementFromItem(itemId: string, modelId: string, localId: number): void {
     const item = list.get(itemId);
     if (!item) return;
@@ -479,6 +495,7 @@ export function createComputoTool(
     moveItemToCategoria,
     restoreCategoria,
     registerClick,
+    addAllElements,
     removeElementFromItem,
     updateItem,
     deleteItem,

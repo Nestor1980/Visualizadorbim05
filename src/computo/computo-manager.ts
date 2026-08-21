@@ -1,7 +1,8 @@
 import * as BUI from "@thatopen/ui";
 import type { ComputoTool, ComputoItem } from "../tools/computo-tool";
+import { exportComputoToExcel, exportComputoToPdf } from "./computo-export";
 
-function formatMoney(n: number): string {
+export function formatMoney(n: number): string {
   return n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
@@ -111,6 +112,42 @@ export function setupComputoSection(computoTool: ComputoTool): { pane: HTMLEleme
   addCategoriaBtn.innerHTML = `
     <iconify-icon icon="material-symbols:add"></iconify-icon>
     <span>Agregar categoría</span>`;
+
+  const exportWrap = document.createElement("div");
+  exportWrap.className = "computo-export-wrap";
+  exportWrap.innerHTML = `
+    <button type="button" class="computo-add-categoria-btn computo-export-btn">
+      <iconify-icon icon="material-symbols:download"></iconify-icon>
+      <span>Exportar cómputo</span>
+    </button>
+    <div class="computo-export-menu">
+      <button type="button" class="computo-export-option" data-format="excel">
+        <iconify-icon icon="mdi:file-excel-outline"></iconify-icon>
+        <span>Excel (.xlsx)</span>
+      </button>
+      <button type="button" class="computo-export-option" data-format="pdf">
+        <iconify-icon icon="mdi:file-pdf-box"></iconify-icon>
+        <span>PDF</span>
+      </button>
+    </div>`;
+  const exportBtn  = exportWrap.querySelector<HTMLButtonElement>(".computo-export-btn")!;
+  const exportMenu = exportWrap.querySelector<HTMLElement>(".computo-export-menu")!;
+
+  const closeExportMenu = (): void => exportMenu.classList.remove("is-open");
+
+  exportBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    exportMenu.classList.toggle("is-open");
+  });
+  document.addEventListener("click", closeExportMenu);
+  exportWrap.querySelectorAll<HTMLButtonElement>(".computo-export-option").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      closeExportMenu();
+      if (computoTool.list.size === 0) return;
+      if (btn.dataset.format === "excel") exportComputoToExcel(computoTool);
+      else exportComputoToPdf(computoTool);
+    });
+  });
 
   const renderTable = (): void => {
     const items = [...computoTool.list.values()];
@@ -324,6 +361,7 @@ export function setupComputoSection(computoTool: ComputoTool): { pane: HTMLEleme
         <bim-icon icon="material-symbols:calculate-outline"></bim-icon>
         <span>Cómputo y Presupuesto</span>
         ${addCategoriaBtn}
+        ${exportWrap}
       </div>
       <div class="computo-body">${tableContainer}</div>
     </div>
