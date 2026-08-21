@@ -87,27 +87,44 @@ bim-grid {
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border-subtle);
 }
+/* Sin chip propio: que el botón "Archivo" quede integrado a la misma
+ * superficie de la topbar en vez de flotar como una caja aparte (fondo y
+ * borde propios) encima de ella. */
 .app-topbar bim-toolbar {
   box-shadow: none;
+  --bim-toolbar--bgc: transparent;
+  --bim-toolbar--border: none;
+  --bim-toolbar--bdrs: 0;
+  --bim-toolbar-section--gap: 2px;
+  --bim-toolbar-section--p: 0;
 }
 
 /* Riel de solapas del frame principal (Layout/BCF Topic/Cómputo): vive en la
- * misma barra superior que el bim-toolbar de proyecto, empujado a la derecha. */
+ * misma barra superior que el bim-toolbar de proyecto, empujado a la derecha.
+ * align-self:stretch + align-items:flex-end para que las solapas se apoyen
+ * contra el borde inferior de la topbar (ver .main-tabs-tab), como si
+ * sobresalieran de esa línea. */
 .main-tabs-bar {
   flex: 0 0 auto;
+  align-self: stretch;
   display: flex;
-  align-items: center;
-  gap: 0.25rem;
+  align-items: flex-end;
+  gap: 0.5rem;
   margin-left: auto;
 }
 .main-tabs-tab {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  height: 2rem;
-  padding: 0 0.75rem;
+  height: 2.25rem;
+  margin-bottom: -1px;
+  padding: 0 0.9rem;
   border: none;
-  border-radius: 8px;
+  /* Solo curvatura arriba: la de abajo la resuelven los pseudo-elementos de
+   * .active, hacia afuera, para que la solapa activa parezca "salir" del
+   * borde inferior de la topbar en vez de flotar como una píldora suelta. */
+  border-radius: 10px 10px 0 0;
   background: transparent;
   color: var(--text-secondary);
   font: inherit;
@@ -122,6 +139,28 @@ bim-grid {
 .main-tabs-tab.active {
   color: var(--bim-ui_main-base, var(--text-primary));
   background: var(--accent);
+}
+/* Curvatura inferior "hacia afuera" (estilo solapa de carpeta / tab de
+ * navegador): un cuarto de círculo tangente a cada lado de la base de la
+ * solapa activa, transparente en el centro y con el color de la solapa en el
+ * borde — el efecto óptico es que la esquina se curva alejándose de la
+ * solapa en vez de redondearse hacia adentro. */
+.main-tabs-tab.active::before,
+.main-tabs-tab.active::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  width: 10px;
+  height: 10px;
+  background: radial-gradient(circle at top left, transparent 70%, var(--accent) 72%);
+  pointer-events: none;
+}
+.main-tabs-tab.active::before {
+  left: -10px;
+}
+.main-tabs-tab.active::after {
+  right: -10px;
+  transform: scaleX(-1);
 }
 
 /* Segundo contenedor horizontal del app shell: el frame de contenido que las

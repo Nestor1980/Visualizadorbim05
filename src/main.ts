@@ -219,7 +219,7 @@ async function startApp(): Promise<{
   const toolbar        = createToolbar(world, fragments, toolManager, selectionManager, openModal, highlighter);
   const settingsModal   = createSettingsModal();
   const projectIoDeps: ProjectIoDeps = { fragments, topics, viewpoints, world, leftPanel };
-  const projectToolbar  = createProjectToolbar(projectIoDeps, settingsModal.openModal);
+  const projectToolbar  = createProjectToolbar(projectIoDeps, settingsModal.openModal, leftPanel.triggerLoadIfc);
 
   // Los botones de la toolbar se registran en el ToolManager al crearla, después
   // del setMode inicial: re-aplicar el modo para que "Navegar" arranque activo.
