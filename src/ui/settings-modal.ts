@@ -1,3 +1,4 @@
+import * as OBC from "@thatopen/components";
 import * as BUI from "@thatopen/ui";
 import { createThemeToggleButton } from "./theme";
 import { makeModalDraggable, resetModalPosition, closeOnBackdropClick } from "./draggable-modal";
@@ -7,6 +8,8 @@ import {
   type QuantityMethod,
 } from "../computo/ifc-quantity-rules";
 import { listCategoriaRules, setCategoriaRule, resetCategoriaRule } from "../computo/ifc-categoria-rules";
+import { listSeenPsets, setPsetVisible, setPropertyVisible } from "../ifc/pset-visibility";
+import { scanAllModelsForPsets } from "../ifc/pset-scan";
 
 export interface SettingsModal {
   modal: HTMLDialogElement;
@@ -155,7 +158,71 @@ function renderCategoriaRules(container: HTMLElement): void {
   });
 }
 
-export function createSettingsModal(): SettingsModal {
+/**
+ * "Property Set Inspector": lista los PSets y propiedades que el visualizador
+ * fue viendo en el modelo (ver `registerSeen` en pset-visibility.ts, llamado
+ * desde properties-panel.ts cada vez que se renderiza un PSet real) con un
+ * checkbox para ocultarlos del panel de propiedades — a nivel de PSet
+ * completo y de propiedad individual dentro de un PSet. No modifica el
+ * modelo IFC, es una preferencia del visualizador guardada en este
+ * navegador. Vacío hasta que el usuario explore el modelo (seleccione algún
+ * elemento), momento en el que empieza a completarse solo.
+ */
+function renderPsetVisibility(container: HTMLElement): void {
+  const psets = listSeenPsets();
+
+  if (psets.length === 0) {
+    container.innerHTML = `
+      <div class="pset-visibility-empty">
+        Todavía no se vio ningún Property Set — seleccioná un elemento en el
+        modelo para que aparezcan acá.
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="pset-visibility-list">
+      ${psets.map((pset) => `
+        <div class="pset-visibility-item">
+          <label class="pset-visibility-header">
+            <input type="checkbox" class="pset-visibility-toggle" data-pset="${escapeHtml(pset.name)}"
+              ${pset.visible ? "checked" : ""}>
+            <span class="pset-visibility-name">${escapeHtml(pset.name)}</span>
+            <span class="pset-visibility-count">${pset.properties.length}</span>
+          </label>
+          <div class="pset-visibility-props">
+            ${pset.properties.map((prop) => `
+              <label class="pset-visibility-prop-row">
+                <input type="checkbox" class="pset-visibility-prop-toggle"
+                  data-pset="${escapeHtml(pset.name)}" data-prop="${escapeHtml(prop.name)}"
+                  ${prop.visible ? "checked" : ""} ${pset.visible ? "" : "disabled"}>
+                <span>${escapeHtml(prop.name)}</span>
+              </label>`).join("")}
+          </div>
+        </div>`).join("")}
+    </div>`;
+
+  container.querySelectorAll<HTMLInputElement>(".pset-visibility-toggle").forEach((toggle) => {
+    toggle.addEventListener("change", () => {
+      const pset = toggle.dataset.pset;
+      if (!pset) return;
+      setPsetVisible(pset, toggle.checked);
+      renderPsetVisibility(container);
+    });
+  });
+
+  container.querySelectorAll<HTMLInputElement>(".pset-visibility-prop-toggle").forEach((toggle) => {
+    toggle.addEventListener("change", () => {
+      const pset = toggle.dataset.pset;
+      const prop = toggle.dataset.prop;
+      if (!pset || !prop) return;
+      setPropertyVisible(pset, prop, toggle.checked);
+      renderPsetVisibility(container);
+    });
+  });
+}
+
+export function createSettingsModal(fragments: OBC.FragmentsManager): SettingsModal {
   const themeToggleBtn = createThemeToggleButton();
 
   const modal = BUI.Component.create<HTMLDialogElement>(() => {
@@ -181,6 +248,10 @@ export function createSettingsModal(): SettingsModal {
             <div class="settings-sidebar-item" data-section="computo">
               <iconify-icon icon="material-symbols:calculate-outline"></iconify-icon>
               <span>Cómputo</span>
+            </div>
+            <div class="settings-sidebar-item" data-section="propiedades">
+              <iconify-icon icon="material-symbols:list-alt-outline"></iconify-icon>
+              <span>Propiedades</span>
             </div>
           </div>
           <div class="settings-content">
@@ -236,6 +307,26 @@ export function createSettingsModal(): SettingsModal {
               </div>
               <div class="categoria-rules-container"></div>
             </div>
+            <div class="settings-section" data-section="propiedades" hidden>
+              <div class="settings-row">
+                <div class="settings-row-text">
+                  <span class="settings-row-title">Property Set Inspector</span>
+                  <span class="settings-row-desc">
+                    Mostrar u ocultar Property Sets completos, o propiedades
+                    individuales dentro de un PSet, en el panel de propiedades
+                    del elemento seleccionado. No modifica el modelo IFC — es
+                    una preferencia de este navegador. La lista se completa
+                    sola a medida que seleccionás elementos en el modelo, o de
+                    una sola vez con "Escanear modelo completo".
+                  </span>
+                </div>
+                <button type="button" class="pset-scan-btn quantity-rule-add-btn">
+                  <iconify-icon icon="material-symbols:search"></iconify-icon>
+                  <span>Escanear modelo completo</span>
+                </button>
+              </div>
+              <div class="pset-visibility-container"></div>
+            </div>
           </div>
         </div>
       </dialog>
@@ -247,6 +338,29 @@ export function createSettingsModal(): SettingsModal {
 
   const categoriaRulesContainer = modal.querySelector<HTMLElement>(".categoria-rules-container")!;
   renderCategoriaRules(categoriaRulesContainer);
+
+  const psetVisibilityContainer = modal.querySelector<HTMLElement>(".pset-visibility-container")!;
+  renderPsetVisibility(psetVisibilityContainer);
+
+  const psetScanBtn = modal.querySelector<HTMLButtonElement>(".pset-scan-btn")!;
+  const psetScanLabel = psetScanBtn.querySelector("span")!;
+  psetScanBtn.addEventListener("click", async () => {
+    psetScanBtn.disabled = true;
+    psetScanLabel.textContent = "Escaneando…";
+    try {
+      const { elementos, psets } = await scanAllModelsForPsets(fragments, (done, total) => {
+        psetScanLabel.textContent = `Escaneando… ${done}/${total}`;
+      });
+      renderPsetVisibility(psetVisibilityContainer);
+      psetScanLabel.textContent = `Listo: ${elementos} elementos, ${psets} PSets`;
+    } catch (error) {
+      console.error("No se pudo escanear el modelo:", error);
+      psetScanLabel.textContent = "Error al escanear";
+    } finally {
+      psetScanBtn.disabled = false;
+      setTimeout(() => { psetScanLabel.textContent = "Escanear modelo completo"; }, 3000);
+    }
+  });
 
   closeOnBackdropClick(modal);
 
@@ -267,6 +381,11 @@ export function createSettingsModal(): SettingsModal {
 
   const openModal = () => {
     resetModalPosition(modal);
+    // Recién en el momento de abrir (no al construir el modal, una sola vez
+    // al arrancar la app) porque el catálogo de PSets vistos se completa a
+    // medida que el usuario selecciona elementos del modelo — abrir el modal
+    // más tarde en la sesión debe reflejar lo que se vio hasta ese momento.
+    renderPsetVisibility(psetVisibilityContainer);
     modal.showModal();
   };
 

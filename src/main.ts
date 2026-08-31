@@ -217,7 +217,7 @@ async function startApp(): Promise<{
   // botón "Ver tabla de BCF Topics" del árbol ahora lleva directo a esa solapa.
   leftPanel.onOpenTopicsTable(() => mainTabs.activateTab("bcf-topic"));
   const toolbar        = createToolbar(world, fragments, toolManager, selectionManager, openModal, highlighter);
-  const settingsModal   = createSettingsModal();
+  const settingsModal   = createSettingsModal(fragments);
   const projectIoDeps: ProjectIoDeps = { fragments, topics, viewpoints, world, leftPanel };
   const projectToolbar  = createProjectToolbar(projectIoDeps, settingsModal.openModal, leftPanel.triggerLoadIfc);
 

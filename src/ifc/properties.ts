@@ -4,8 +4,23 @@ export async function getItemData(model: any, id: number, deep = true): Promise<
   if (!Number.isFinite(id)) return null;
   if (typeof model.getItemsData === "function") {
     try {
+      // `relationsDefault: { relations: true }` no trae `IsTypedBy` pese a lo
+      // que sugiere el ejemplo de "full graph" en los docs de
+      // @thatopen/fragments — se pide acá por nombre, mismo patrón que usa
+      // @thatopen/components internamente (ver su `getTypePsets`). Con este
+      // modelo puntual (Modulo Ahora Tu Hogar.ifc) igual sigue sin resolver
+      // — `itemData.IsTypedBy` queda `undefined` incluso pidiéndolo así, lo
+      // que apunta a que la relación no quedó indexada al convertir este IFC
+      // a Fragments (no algo arreglable solo desde acá) — ver
+      // PLAN_IAPV_PSET_COMPUTO.md, limitación conocida. Se deja este pedido
+      // explícito de todos modos: no rompe nada y es el patrón correcto
+      // según la librería, por si el problema es específico de este modelo.
       const cfg = deep
-        ? { attributesDefault: true, relationsDefault: { attributes: true, relations: true } }
+        ? {
+            attributesDefault: true,
+            relationsDefault: { attributes: true, relations: true },
+            relations: { IsTypedBy: { attributes: true, relations: true } },
+          }
         : { attributesDefault: true };
       const result = model.getItemsData([id], cfg);
       const awaited = result?.then ? await result : result;

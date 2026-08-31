@@ -12,6 +12,24 @@ export interface ComputoItem {
   unidad: string;
   cantidad: number;
   precioUnitario: number;
+  /** Designación del Item del Presupuesto Oficial de IAPV (ej. "4_Mampostería
+   *  de Elevación"), leída del PSet `IAPV_Item` del primer elemento del ítem
+   *  — cadena vacía si el elemento no trae ese PSet. Determina el agrupamiento
+   *  y la nomenclatura del Cómputo cuando está presente (ver `iapv-order.ts`
+   *  y `computo-manager.ts`); si falta, se usa el agrupamiento por Rubro. */
+  iapvItem: string;
+  /** Designación del SubItem del Presupuesto Oficial de IAPV (ej. "4.1 De
+   *  ladrillos huecos de 0,20m de espesor"), leída del PSet `IAPV_Suitem`. */
+  iapvSubItem: string;
+  /** URL a la especificación técnica del Pliego que define este ítem —
+   *  primera propiedad con VALOR con forma de URL que se encuentre entre los
+   *  PSets del primer elemento (no depende de un nombre de propiedad fijo
+   *  como "URL del Pliego" o "IAPV_URL": cada modelo puede llamarla distinto
+   *  — ver `findUrlPropertyValue`), cadena vacía si no hay ninguna. Se
+   *  muestra como link junto a la Designación de la Obra en
+   *  computo-manager.ts (ver también properties-panel.ts, que hace lo mismo
+   *  con cualquier propiedad URL en el panel de propiedades). */
+  urlPliego: string;
   elementos: { modelId: string; localId: number }[];
   /** Clase IFC (ej. "IFCWALL") del primer elemento del ítem — no editable:
    *  sirve para detectar cuándo un click en modo Agregar corresponde a un
@@ -83,7 +101,7 @@ export interface ComputoTool {
   removeElementFromItem: (itemId: string, modelId: string, localId: number) => void;
   updateItem: (
     id: string,
-    patch: Partial<Pick<ComputoItem, "rubro" | "descripcion" | "unidad" | "cantidad" | "precioUnitario">>,
+    patch: Partial<Pick<ComputoItem, "rubro" | "descripcion" | "unidad" | "cantidad" | "precioUnitario" | "iapvItem" | "iapvSubItem">>,
   ) => void;
   deleteItem: (id: string) => void;
   /** Recrea un ítem ya armado (sin pasar por clicks) — usado al restaurar un
@@ -97,6 +115,12 @@ const RUBRO_KEY = /rubro|categor/i;
 const DESC_KEY = /descripcion|^description$|^name$/i;
 const UNIDAD_KEY = /unidad|^unit$/i;
 const PRECIO_KEY = /preciounitario|unitprice|^precio$/i;
+// Claves exactas (no laxas como las de arriba) porque son los nombres de PSet
+// fijos del estándar IAPV — una regex laxa como la de RUBRO_KEY arriesgaría
+// falsos positivos con otras propiedades "IAPV_*" del modelo (IAPV_Local,
+// IAPV_Inspector).
+const IAPV_ITEM_KEY = /^IAPV_Item$/i;
+const IAPV_SUBITEM_KEY = /^IAPV_Suitem$/i;
 
 function findPropertyValue(
   psets: { name: string; properties: Record<string, string> }[],
@@ -110,11 +134,38 @@ function findPropertyValue(
   return null;
 }
 
+/** URL_PATTERN, matching properties-panel.ts. */
+const URL_PATTERN = /^https?:\/\//i;
+
+/** Busca la primera propiedad cuyo VALOR (no el nombre) tenga forma de URL —
+ *  a propósito no está atada a un nombre de propiedad fijo como "URL del
+ *  Pliego": cada IFC/exportador puede llamarla distinto (`IAPV_URL`, `Weblink`,
+ *  etc.), así que sirve para cualquier modelo IFC, no solo el de IAPV. Mismo
+ *  criterio que ya usa properties-panel.ts para mostrar links en el panel de
+ *  propiedades — acá se reutiliza para poblar `ComputoItem.urlPliego`. */
+function findUrlPropertyValue(
+  psets: { name: string; properties: Record<string, string> }[],
+): string | null {
+  for (const pset of psets) {
+    for (const value of Object.values(pset.properties)) {
+      if (value && URL_PATTERN.test(value.trim())) return value.trim();
+    }
+  }
+  return null;
+}
+
 /** Clave de agrupación por tipo: nombre de tipo/familia si se pudo resolver
  *  (más específico), si no la clase IFC, si no `null` (sin identidad
  *  conocida — nunca se fusiona con otro ítem en ese caso). */
 function identityKey(identity: { tipoIfc: string | null; tipoElemento: string | null }): string | null {
   return identity.tipoElemento ?? identity.tipoIfc ?? null;
+}
+
+/** Redondeo a 2 decimales — límite final antes de guardar/mostrar una
+ *  cantidad (no se aplica en pasos intermedios de suma entre elementos, para
+ *  no perder precisión acumulada). */
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
 }
 
 function toModelIdMap(elementos: { modelId: string; localId: number }[]): OBC.ModelIdMap {
@@ -247,13 +298,16 @@ export function createComputoTool(
     const quantity = await getQuantityForSelection(
       toModelIdMap(item.elementos), fragments, item.tipoIfc, item.predefinedType,
     );
-    item.cantidad = quantity?.cantidad ?? item.elementos.length;
+    item.cantidad = round2(quantity?.cantidad ?? item.elementos.length);
   }
 
   async function seedFieldsFromElement(item: ComputoItem, modelId: string, localId: number): Promise<void> {
     const psets = await getPropertySets(modelId, localId, fragments);
 
     item.rubro = findPropertyValue(psets, RUBRO_KEY) ?? "";
+    item.iapvItem = findPropertyValue(psets, IAPV_ITEM_KEY) ?? "";
+    item.iapvSubItem = findPropertyValue(psets, IAPV_SUBITEM_KEY) ?? "";
+    item.urlPliego = findUrlPropertyValue(psets) ?? "";
 
     // Preferir el nombre de tipo/familia (compartido entre instancias del
     // mismo tipo, ej. "MUR_LHC200") por sobre el Name de la instancia (que
@@ -321,6 +375,7 @@ export function createComputoTool(
       item = {
         id: `computo-${Date.now()}-${itemCounter}`,
         rubro: "", descripcion: "", unidad: "", cantidad: 0, precioUnitario: 0,
+        iapvItem: "", iapvSubItem: "", urlPliego: "",
         elementos: [], tipoIfc: identity.tipoIfc, tipoElemento: identity.tipoElemento,
         predefinedType: identity.predefinedType,
         categoriaId: categoriaNombre ? findOrCreateCategoriaByName(categoriaNombre).id : null,
@@ -414,6 +469,9 @@ export function createComputoTool(
       ...data,
       predefinedType: data.predefinedType ?? null,
       categoriaId: data.categoriaId ?? null,
+      iapvItem: data.iapvItem ?? "",
+      iapvSubItem: data.iapvSubItem ?? "",
+      urlPliego: data.urlPliego ?? "",
       elementos: [...data.elementos],
     };
     list.set(item.id, item);

@@ -1,6 +1,7 @@
 import * as BUI from "@thatopen/ui";
 import type { ComputoTool, ComputoItem } from "../tools/computo-tool";
 import { exportComputoToExcel, exportComputoToPdf } from "./computo-export";
+import { compareItemDesignacion } from "./iapv-order";
 
 export function formatMoney(n: number): string {
   return n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -33,14 +34,42 @@ function sumByUnidad(items: ComputoItem[]): { unidad: string; cantidad: number }
   return [...byUnidad.entries()].map(([unidad, cantidad]) => ({ unidad, cantidad }));
 }
 
+/** Ordena por la numeración del Pliego (Item, luego SubItem) — los ítems sin
+ *  esos PSets (designación vacía) quedan al final, en el orden en que ya
+ *  estaban (ver `compareItemDesignacion`, que cae a alfabético si falta el
+ *  número). */
+function sortByIapvOrder(items: ComputoItem[]): ComputoItem[] {
+  return [...items].sort((a, b) => {
+    if (!a.iapvItem && !b.iapvItem) return 0;
+    if (!a.iapvItem) return 1;
+    if (!b.iapvItem) return -1;
+    const byItem = compareItemDesignacion(a.iapvItem, b.iapvItem);
+    if (byItem !== 0) return byItem;
+    return compareItemDesignacion(a.iapvSubItem, b.iapvSubItem);
+  });
+}
+
 function itemRowHtml(item: ComputoItem): string {
   const importe = item.cantidad * item.precioUnitario;
+  // Link a la especificación del Pliego (PSet 'URL del Pliego', ver
+  // urlPliego en computo-tool.ts) — mismo dato que ya se muestra como link
+  // en el panel de propiedades (properties-panel.ts), acá al lado del Item.
+  const pliegoLinkHtml = item.urlPliego
+    ? `<a href="${item.urlPliego}" target="_blank" rel="noopener noreferrer" class="computo-pliego-link" title="Ver Pliego">
+         <iconify-icon icon="material-symbols:open-in-new"></iconify-icon>
+       </a>`
+    : "";
   return `
     <tr data-item-id="${item.id}" draggable="true">
+      <td class="computo-item-cell">
+        <input type="text" class="computo-input" data-field="iapvItem" value="${item.iapvItem}" placeholder="—">
+        ${pliegoLinkHtml}
+      </td>
+      <td><input type="text" class="computo-input" data-field="iapvSubItem" value="${item.iapvSubItem}" placeholder="—"></td>
       <td><input type="text" class="computo-input" data-field="rubro" value="${item.rubro}" placeholder="Rubro"></td>
       <td><input type="text" class="computo-input" data-field="descripcion" value="${item.descripcion}" placeholder="Descripción"></td>
       <td><input type="text" class="computo-input" data-field="unidad" value="${item.unidad}"></td>
-      <td><input type="number" class="computo-input" data-field="cantidad" value="${item.cantidad}" step="any" min="0"></td>
+      <td><input type="number" class="computo-input" data-field="cantidad" value="${item.cantidad.toFixed(2)}" step="0.01" min="0"></td>
       <td><input type="number" class="computo-input" data-field="precioUnitario" value="${item.precioUnitario}" step="any" min="0"></td>
       <td class="computo-num">${formatMoney(importe)}</td>
       <td class="computo-actions">
@@ -68,7 +97,7 @@ function categoriaHeaderHtml(section: ComputoSection, total: number): string {
 
   return `
     <tr class="computo-categoria-row">
-      <td colspan="4">
+      <td colspan="6">
         <div class="computo-categoria-header">
           ${nameHtml}
           <span class="computo-categoria-qtys">${qtysHtml}</span>
@@ -81,12 +110,13 @@ function categoriaHeaderHtml(section: ComputoSection, total: number): string {
 }
 
 /**
- * Solapa "Cómputo": tabla agrupada por Rubro con subtotal/% de incidencia
- * por grupo y TOTAL general, alimentada por `ComputoTool` (ver
- * src/tools/computo-tool.ts) — los ítems se crean/editan clickeando
- * elementos en el viewport con esa herramienta activa; acá solo se muestran
- * y se pueden editar inline (Rubro, Descripción, Unidad, Cantidad, Precio
- * Unitario) o eliminar.
+ * Solapa "Cómputo": tabla agrupada por Rubro (o, si algún ítem trae PSet
+ * `IAPV_Item`, por la numeración del Presupuesto Oficial de IAPV — ver
+ * `iapv-order.ts`) con subtotal/% de incidencia por grupo y TOTAL general,
+ * alimentada por `ComputoTool` (ver src/tools/computo-tool.ts) — los ítems se
+ * crean/editan clickeando elementos en el viewport con esa herramienta
+ * activa; acá solo se muestran y se pueden editar inline (Item/SubItem del
+ * Pliego, Rubro, Descripción, Unidad, Cantidad, Precio Unitario) o eliminar.
  *
  * Además de la tabla, el botón "Agregar categoría" permite crear secciones
  * manuales (ver `ComputoCategoria` en computo-tool.ts) entre las que se
@@ -165,26 +195,42 @@ export function setupComputoSection(computoTool: ComputoTool): { pane: HTMLEleme
     const total = items.reduce((sum, e) => sum + e.cantidad * e.precioUnitario, 0);
     const categorias = [...computoTool.categorias.values()];
 
+    // Si algún ítem trae PSet IAPV_Item, se agrupa/ordena por la numeración
+    // del Pliego en vez de por Rubro/Categoría — así el Cómputo generado
+    // reproduce el mismo orden y nomenclatura que el Presupuesto Oficial de
+    // IAPV. Tiene prioridad por sobre el agrupado por categorías aunque ya
+    // existan (la mayoría de los tipos IFC tienen una regla de categoría
+    // automática — ver ifc-categoria-rules.ts — así que casi siempre hay
+    // categorías creadas de entrada; sin esta prioridad, el agrupado IAPV
+    // nunca llegaría a mostrarse en la práctica). Los ítems sin ese PSet
+    // (modelos sin la convención IAPV) caen en un bucket "Sin clasificar" al
+    // final, para no perder compatibilidad.
+    const hasIapv = items.some((i) => i.iapvItem);
+
     let bodyHtml = "";
-    if (categorias.length === 0) {
-      // Sin categorías creadas: comportamiento original, agrupado por Rubro.
-      const byRubro = new Map<string, ComputoItem[]>();
+    if (hasIapv || categorias.length === 0) {
+      const byGroup = new Map<string, ComputoItem[]>();
       for (const item of items) {
-        const key = item.rubro || "Sin rubro";
-        const list = byRubro.get(key) ?? [];
+        const key = hasIapv ? (item.iapvItem || "Sin clasificar") : (item.rubro || "Sin rubro");
+        const list = byGroup.get(key) ?? [];
         list.push(item);
-        byRubro.set(key, list);
+        byGroup.set(key, list);
       }
-      for (const [rubro, group] of byRubro) {
+      const groupKeys = hasIapv
+        ? [...byGroup.keys()].sort(compareItemDesignacion)
+        : [...byGroup.keys()];
+      for (const key of groupKeys) {
+        const group = byGroup.get(key)!;
         const subtotal = group.reduce((sum, e) => sum + e.cantidad * e.precioUnitario, 0);
         const incidencia = total > 0 ? (subtotal / total) * 100 : 0;
         bodyHtml += `
           <tr class="computo-rubro-row">
-            <td colspan="4">${rubro}</td>
+            <td colspan="6">${key}</td>
             <td class="computo-num">${formatMoney(subtotal)}</td>
             <td class="computo-num">${incidencia.toFixed(2)}%</td>
           </tr>`;
-        for (const item of group) bodyHtml += itemRowHtml(item);
+        const groupItems = hasIapv ? sortByIapvOrder(group) : group;
+        for (const item of groupItems) bodyHtml += itemRowHtml(item);
       }
       bodyHtml = `<tbody class="computo-categoria-section" data-categoria-id="${SIN_CATEGORIA_ID}">${bodyHtml}</tbody>`;
     } else {
@@ -201,7 +247,8 @@ export function setupComputoSection(computoTool: ComputoTool): { pane: HTMLEleme
         const dropId = section.id ?? SIN_CATEGORIA_ID;
         bodyHtml += `<tbody class="computo-categoria-section" data-categoria-id="${dropId}">`;
         bodyHtml += categoriaHeaderHtml(section, total);
-        for (const item of section.items) bodyHtml += itemRowHtml(item);
+        const sectionItems = hasIapv ? sortByIapvOrder(section.items) : section.items;
+        for (const item of sectionItems) bodyHtml += itemRowHtml(item);
         bodyHtml += `</tbody>`;
       }
     }
@@ -212,12 +259,22 @@ export function setupComputoSection(computoTool: ComputoTool): { pane: HTMLEleme
     tableContainer.innerHTML = `
       <table class="computo-table">
         <thead>
-          <tr><th>Rubro</th><th>Descripción</th><th>Unidad</th><th>Cantidad</th><th>Precio Unit.</th><th>Importe</th><th></th></tr>
+          <tr>
+            <th colspan="2">Designación de la Obra</th>
+            <th rowspan="2">Rubro</th>
+            <th rowspan="2">Descripción</th>
+            <th rowspan="2">Unidad</th>
+            <th rowspan="2">Cantidad</th>
+            <th rowspan="2">Precio Unit.</th>
+            <th rowspan="2">Importe</th>
+            <th rowspan="2"></th>
+          </tr>
+          <tr><th>Item</th><th>SubItem</th></tr>
         </thead>
         ${bodyHtml}
         <tfoot>
           <tr class="computo-total-row">
-            <td colspan="5">TOTAL</td>
+            <td colspan="7">TOTAL</td>
             <td class="computo-num">${formatMoney(total)}</td>
             <td></td>
           </tr>
@@ -240,11 +297,12 @@ export function setupComputoSection(computoTool: ComputoTool): { pane: HTMLEleme
       input.addEventListener("change", () => {
         const id = input.closest("tr")?.getAttribute("data-item-id");
         const field = input.getAttribute("data-field") as
-          "rubro" | "descripcion" | "unidad" | "cantidad" | "precioUnitario" | null;
+          "rubro" | "descripcion" | "unidad" | "cantidad" | "precioUnitario" | "iapvItem" | "iapvSubItem" | null;
         if (!id || !field) return;
         if (field === "cantidad") {
           const value = parseFloat(input.value);
-          computoTool.updateItem(id, { cantidad: Number.isFinite(value) ? value : 0 });
+          const rounded = Number.isFinite(value) ? Math.round(value * 100) / 100 : 0;
+          computoTool.updateItem(id, { cantidad: rounded });
         } else if (field === "precioUnitario") {
           const value = parseFloat(input.value);
           computoTool.updateItem(id, { precioUnitario: Number.isFinite(value) ? value : 0 });
@@ -254,6 +312,10 @@ export function setupComputoSection(computoTool: ComputoTool): { pane: HTMLEleme
           computoTool.updateItem(id, { descripcion: input.value });
         } else if (field === "unidad") {
           computoTool.updateItem(id, { unidad: input.value });
+        } else if (field === "iapvItem") {
+          computoTool.updateItem(id, { iapvItem: input.value });
+        } else if (field === "iapvSubItem") {
+          computoTool.updateItem(id, { iapvSubItem: input.value });
         }
       });
     });

@@ -2,6 +2,7 @@ import * as OBC from "@thatopen/components";
 import * as CUI from "@thatopen/ui-obc";
 import * as BUI from "@thatopen/ui";
 import { getPropertySets, getSharedPropertySets } from "../../ifc/properties";
+import { isPsetVisible, isPropertyVisible, registerSeen } from "../../ifc/pset-visibility";
 
 export interface PropertiesPanel {
   section: BUI.PanelSection;
@@ -37,9 +38,25 @@ function injectCollapsibleStyles(): void {
   document.head.append(s);
 }
 
+// Propiedades como 'URL del Pliego' (ver public/model_ifc/*.ifc, PSets IAPV)
+// traen la especificación técnica del elemento como link — cualquier valor
+// con pinta de URL se muestra clickeable en vez de como texto plano, sin
+// necesidad de conocer el nombre exacto de la propiedad (además de
+// funcionar para 'URL del Pliego', sirve para cualquier otra propiedad URL
+// que traiga el modelo).
+const URL_PATTERN = /^https?:\/\//i;
+
 function renderPropertiesTable(properties: Record<string, string>): string {
   const rows = Object.entries(properties).map(([label, value]) => {
     const isEmpty = value === "" || value === "—";
+    const trimmed = value.trim();
+    const isUrl = !isEmpty && URL_PATTERN.test(trimmed);
+    const valueHtml = isUrl
+      ? `<a href="${trimmed}" target="_blank" rel="noopener noreferrer"
+           style="color:var(--bim-ui_main-base);word-break:break-all;">${value}
+           <iconify-icon icon="material-symbols:open-in-new" style="font-size:10px;vertical-align:middle;"></iconify-icon>
+         </a>`
+      : value;
     return `
       <tr>
         <td style="
@@ -53,7 +70,7 @@ function renderPropertiesTable(properties: Record<string, string>): string {
           color:${isEmpty ? "var(--bim-ui_bg-contrast-40)" : "var(--bim-ui_bg-contrast-100)"};
           border-bottom:1px solid var(--bim-ui_bg-contrast-20);
           word-break:break-word; line-height:1.45;
-        ">${value}</td>
+        ">${valueHtml}</td>
       </tr>`;
   }).join("");
   return `<table style="width:100%;border-collapse:collapse;"><tbody>${rows}</tbody></table>`;
@@ -130,6 +147,25 @@ export function createPropertiesPanel(
         text-align:center;padding:20px 8px;line-height:1.5;">${message}</div>`;
   };
 
+  /** Registra el PSet en el catálogo del Property Set Inspector (ver
+   *  pset-visibility.ts) y lo agrega a `sectionsContainer` salvo que el
+   *  usuario lo haya ocultado por completo, o que ocultó todas sus
+   *  propiedades individuales (una colapsable sin filas no aporta nada). */
+  const appendPsetSection = (set: { name: string; properties: Record<string, string> }): boolean => {
+    registerSeen(set.name, Object.keys(set.properties));
+    if (!isPsetVisible(set.name)) return false;
+
+    const visibleProperties = Object.fromEntries(
+      Object.entries(set.properties).filter(([key]) => isPropertyVisible(set.name, key)),
+    );
+    if (Object.keys(visibleProperties).length === 0) return false;
+
+    const { wrapper, body } = createCollapsible(set.name, false);
+    body.innerHTML = renderPropertiesTable(visibleProperties);
+    sectionsContainer.append(wrapper);
+    return true;
+  };
+
   // — Public methods —
   const renderForSelection = async (modelIdMap: OBC.ModelIdMap): Promise<void> => {
     const myGen = ++renderGen;
@@ -147,15 +183,15 @@ export function createPropertiesPanel(
     const propertySets = await getPropertySets(modelId, localId, fragments);
     if (myGen !== renderGen) return;
 
-    if (propertySets.length > 0) {
-      propertySets.forEach(set => {
-        const { wrapper, body } = createCollapsible(set.name, false);
-        body.innerHTML = renderPropertiesTable(set.properties);
-        sectionsContainer.append(wrapper);
-      });
-    } else {
+    const appendedAny = propertySets.map(appendPsetSection).some(Boolean);
+    if (!appendedAny) {
       const { wrapper, body } = createCollapsible("Sin Psets", false);
-      renderPlaceholder(body, "Este elemento no tiene Property Sets definidos.");
+      renderPlaceholder(
+        body,
+        propertySets.length > 0
+          ? "Los Property Sets de este elemento están ocultos (ver Configuración > Propiedades)."
+          : "Este elemento no tiene Property Sets definidos.",
+      );
       sectionsContainer.append(wrapper);
     }
   };
@@ -190,11 +226,12 @@ export function createPropertiesPanel(
     const sharedPsets = await getSharedPropertySets(modelId, localIds, fragments);
     if (myGen !== renderGen) return;
 
-    sharedPsets.forEach(set => {
-      const { wrapper, body } = createCollapsible(set.name, false);
-      body.innerHTML = renderPropertiesTable(set.properties);
+    const appendedAny = sharedPsets.map(appendPsetSection).some(Boolean);
+    if (!appendedAny && sharedPsets.length > 0) {
+      const { wrapper, body } = createCollapsible("Sin Psets", false);
+      renderPlaceholder(body, "Los Property Sets compartidos están ocultos (ver Configuración > Propiedades).");
       sectionsContainer.append(wrapper);
-    });
+    }
   };
 
   const resetScrollTop = () => {

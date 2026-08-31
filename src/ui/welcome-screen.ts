@@ -11,10 +11,21 @@ interface Project {
   name: string;
   label: string;
   url: string;
+  /** Miniatura empaquetada con la app — a diferencia de "Recientes" (cuya
+   *  miniatura se genera y cachea en IndexedDB recién la primera vez que
+   *  alguien la carga, ver `saveThumbnail` en main.ts), un "Proyecto" debe
+   *  mostrar una vista previa desde el primer arranque, sin depender de que
+   *  el usuario ya lo haya abierto antes en ese navegador. */
+  preview: string;
 }
 
 const PROJECTS: Project[] = [
-  { name: "Modulo Ahora Tu Casa.ifc", label: "Modulo Ahora Tu Casa", url: "/model_ifc/Modulo%20Ahora%20Tu%20Casa.ifc" },
+  {
+    name: "Modulo Ahora Tu Hogar.ifc",
+    label: "Ahora Tu Hogar",
+    url: "/model_ifc/Modulo%20Ahora%20Tu%20Hogar.ifc",
+    preview: "/img/preview_ahora_tu_hogar.jpg",
+  },
 ];
 
 const formatSize = (bytes: number): string => `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -26,12 +37,15 @@ const isLightTheme = (): boolean => {
   return window.matchMedia("(prefers-color-scheme: light)").matches;
 };
 
-/** Botón de archivo con miniatura: reserva el espacio de la imagen y muestra un ícono por defecto hasta que haya una en caché. */
+/** Botón de archivo con miniatura: reserva el espacio de la imagen y muestra un ícono por defecto hasta que haya una en caché.
+ *  `staticPreview`, si viene, se usa directo (ver `Project.preview`) y evita la consulta a IndexedDB — para "Recientes",
+ *  que no tiene miniatura empaquetada, sigue resolviéndose desde la caché de `getThumbnail`. */
 function createFileItem(
   name: string,
   label: string,
   subtitle: string | null,
   onSelect: (button: HTMLButtonElement) => Promise<void>,
+  staticPreview?: string,
 ): HTMLButtonElement {
   const btn = document.createElement("button");
   btn.className = "welcome-file-item";
@@ -48,14 +62,20 @@ function createFileItem(
   `;
   btn.addEventListener("click", () => onSelect(btn));
 
-  getThumbnail(name)
-    .then((dataUrl) => {
-      if (!dataUrl) return;
-      const img = btn.querySelector(".welcome-thumb-img") as HTMLImageElement;
-      img.src = dataUrl;
-      img.classList.add("loaded");
-    })
-    .catch((error) => console.error(`No se pudo leer la miniatura de "${name}":`, error));
+  if (staticPreview) {
+    const img = btn.querySelector(".welcome-thumb-img") as HTMLImageElement;
+    img.src = staticPreview;
+    img.classList.add("loaded");
+  } else {
+    getThumbnail(name)
+      .then((dataUrl) => {
+        if (!dataUrl) return;
+        const img = btn.querySelector(".welcome-thumb-img") as HTMLImageElement;
+        img.src = dataUrl;
+        img.classList.add("loaded");
+      })
+      .catch((error) => console.error(`No se pudo leer la miniatura de "${name}":`, error));
+  }
 
   return btn;
 }
@@ -137,7 +157,7 @@ export function showWelcomeScreen({ onLoadIfc, onLoadBytes, onClose }: WelcomeSc
         console.error("Error al cargar el proyecto:", error);
         btn.disabled = false;
       }
-    });
+    }, project.preview);
     projectsEl.appendChild(btn);
   }
 

@@ -223,6 +223,14 @@ bim-grid {
   color: var(--text-secondary);
   border-bottom: 1px solid var(--border-subtle);
 }
+/* Cabecera de dos filas ("Designación de la Obra" > Item/SubItem, ver
+ * computo-manager.ts): las celdas de la 2da fila deben pegarse debajo de la
+ * 1ra (no en top:0, que las haría solaparse al scrollear) — las celdas con
+ * rowspan de la 1ra fila (Rubro, Descripción...) no están en esta fila, así
+ * que no las afecta. */
+.computo-table thead tr:nth-child(2) th {
+  top: 29px;
+}
 .computo-table td {
   padding: 6px 10px;
   border-bottom: 1px solid var(--bim-ui_bg-contrast-20, var(--border-subtle));
@@ -293,6 +301,26 @@ bim-grid {
   outline: none;
   border-color: var(--accent);
   background: var(--bg-surface);
+}
+.computo-item-cell {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.computo-item-cell .computo-input {
+  flex: 1 1 auto;
+}
+.computo-pliego-link {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  color: var(--bim-ui_main-base, var(--accent));
+  font-size: 13px;
+}
+.computo-pliego-link:hover {
+  opacity: 0.75;
 }
 .computo-actions {
   text-align: center;
@@ -1449,8 +1477,9 @@ bim-view-cube:active {
 .welcome-projects,
 .welcome-recents {
   /* Altura máxima ~3 elementos; desde el 4to, la sección scrollea sola
-   * en vez de crecer y forzar scroll en toda la tarjeta. */
-  max-height: 184px;
+   * en vez de crecer y forzar scroll en toda la tarjeta. Recalibrado junto
+   * con el tamaño de .welcome-thumb — ver comentario ahí. */
+  max-height: 224px;
   overflow-y: auto;
   scrollbar-gutter: stable;
 }
@@ -1480,10 +1509,13 @@ bim-view-cube:active {
 }
 
 .welcome-thumb {
+  /* Agrandada respecto del tamaño original (56x36) para mejorar la lectura
+   * de la miniatura del modelo en la pantalla de acceso al Gestor —
+   * mantiene la misma proporción (~1.55:1). */
   position: relative;
   flex-shrink: 0;
-  width: 56px;
-  height: 36px;
+  width: 84px;
+  height: 54px;
   border-radius: 5px;
   overflow: hidden;
   background: var(--bg-app);
@@ -1504,7 +1536,7 @@ bim-view-cube:active {
   display: none;
 }
 .welcome-thumb-placeholder {
-  font-size: 1.2rem;
+  font-size: 1.6rem;
   color: var(--text-muted);
   opacity: 0.6;
 }
@@ -1809,6 +1841,69 @@ bim-view-cube:active {
 }
 .categoria-rules-grid .quantity-rule-add-input {
   width: 100%;
+}
+
+/* Property Set Inspector (settings-modal.ts, renderPsetVisibility): un PSet
+ * por fila con su checkbox, y debajo una sub-lista de checkboxes por
+ * propiedad individual — mismo scroll-container que las otras listas de
+ * Configuración. */
+.pset-visibility-empty {
+  margin-top: 0.5rem;
+  padding: 1rem 0.25rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+.pset-visibility-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin-top: 0.5rem;
+  max-height: 320px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  padding-right: 2px;
+}
+.pset-visibility-item {
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 0.3rem 0;
+}
+.pset-visibility-item:last-child {
+  border-bottom: none;
+}
+.pset-visibility-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+.pset-visibility-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.8rem;
+  font-family: monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pset-visibility-count {
+  flex: 0 0 auto;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+.pset-visibility-props {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin: 0.3rem 0 0.2rem 1.6rem;
+}
+.pset-visibility-prop-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  cursor: pointer;
 }
 
 /* — Modal "Nuevo Topic": formulario de creación de topic BCF.
