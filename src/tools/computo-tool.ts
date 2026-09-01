@@ -4,6 +4,8 @@ import { getPropertySets, getItemData, getElementTypeName, getPredefinedType } f
 import { getQuantityForSelection, isCountedCategory, defaultUnidadForMethod } from "../computo/quantity-extractor";
 import { getQuantityMethod } from "../computo/ifc-quantity-rules";
 import { getCategoriaNombre } from "../computo/ifc-categoria-rules";
+import { psetValueKey } from "../computo/computo-columns";
+import { registerSeen } from "../ifc/pset-visibility";
 
 export interface ComputoItem {
   id: string;
@@ -30,6 +32,13 @@ export interface ComputoItem {
    *  computo-manager.ts (ver también properties-panel.ts, que hace lo mismo
    *  con cualquier propiedad URL en el panel de propiedades). */
   urlPliego: string;
+  /** Valores de propiedades de Property Sets del primer elemento del ítem,
+   *  aplanados con clave `"NombrePset::NombreProp"` (ver `psetValueKey` en
+   *  computo-columns.ts). Alimenta las columnas extra "traídas de un PSet" que
+   *  el usuario agrega desde el modal de Columnas — se captura entero al
+   *  sembrar el ítem para que una columna nueva funcione también en ítems ya
+   *  existentes, sin re-leer el modelo. */
+  psetValues: Record<string, string>;
   elementos: { modelId: string; localId: number }[];
   /** Clase IFC (ej. "IFCWALL") del primer elemento del ítem — no editable:
    *  sirve para detectar cuándo un click en modo Agregar corresponde a un
@@ -304,6 +313,19 @@ export function createComputoTool(
   async function seedFieldsFromElement(item: ComputoItem, modelId: string, localId: number): Promise<void> {
     const psets = await getPropertySets(modelId, localId, fragments);
 
+    // Snapshot completo de PSet::prop → valor, para las columnas extra del
+    // modal de Columnas (ver `psetValues` en la interfaz). Además registra los
+    // PSets vistos para que el modal pueda ofrecerlos aunque el usuario nunca
+    // haya abierto el panel de propiedades de ese elemento.
+    const psetValues: Record<string, string> = {};
+    for (const pset of psets) {
+      registerSeen(pset.name, Object.keys(pset.properties));
+      for (const [prop, value] of Object.entries(pset.properties)) {
+        if (value && value !== "—") psetValues[psetValueKey(pset.name, prop)] = value;
+      }
+    }
+    item.psetValues = psetValues;
+
     item.rubro = findPropertyValue(psets, RUBRO_KEY) ?? "";
     item.iapvItem = findPropertyValue(psets, IAPV_ITEM_KEY) ?? "";
     item.iapvSubItem = findPropertyValue(psets, IAPV_SUBITEM_KEY) ?? "";
@@ -375,7 +397,7 @@ export function createComputoTool(
       item = {
         id: `computo-${Date.now()}-${itemCounter}`,
         rubro: "", descripcion: "", unidad: "", cantidad: 0, precioUnitario: 0,
-        iapvItem: "", iapvSubItem: "", urlPliego: "",
+        iapvItem: "", iapvSubItem: "", urlPliego: "", psetValues: {},
         elementos: [], tipoIfc: identity.tipoIfc, tipoElemento: identity.tipoElemento,
         predefinedType: identity.predefinedType,
         categoriaId: categoriaNombre ? findOrCreateCategoriaByName(categoriaNombre).id : null,
@@ -472,6 +494,7 @@ export function createComputoTool(
       iapvItem: data.iapvItem ?? "",
       iapvSubItem: data.iapvSubItem ?? "",
       urlPliego: data.urlPliego ?? "",
+      psetValues: data.psetValues ?? {},
       elementos: [...data.elementos],
     };
     list.set(item.id, item);

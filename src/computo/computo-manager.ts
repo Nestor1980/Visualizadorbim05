@@ -1,10 +1,21 @@
 import * as BUI from "@thatopen/ui";
+import * as OBC from "@thatopen/components";
 import type { ComputoTool, ComputoItem } from "../tools/computo-tool";
 import { exportComputoToExcel, exportComputoToPdf } from "./computo-export";
 import { compareItemDesignacion } from "./iapv-order";
+import {
+  visibleComputoColumns, subscribeColumns, psetValueKey, type ComputoColumnView,
+} from "./computo-columns";
+import { createComputoColumnsModal } from "../ui/computo-columns-modal";
 
 export function formatMoney(n: number): string {
   return n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function escapeHtml(value: string): string {
+  const div = document.createElement("div");
+  div.textContent = value;
+  return div.innerHTML;
 }
 
 /** Sección sin nombre asignado por el usuario — bucket por defecto donde caen
@@ -49,35 +60,114 @@ function sortByIapvOrder(items: ComputoItem[]): ComputoItem[] {
   });
 }
 
-function itemRowHtml(item: ComputoItem): string {
-  const importe = item.cantidad * item.precioUnitario;
-  // Link a la especificación del Pliego (PSet 'URL del Pliego', ver
-  // urlPliego en computo-tool.ts) — mismo dato que ya se muestra como link
-  // en el panel de propiedades (properties-panel.ts), acá al lado del Item.
-  const pliegoLinkHtml = item.urlPliego
-    ? `<a href="${item.urlPliego}" target="_blank" rel="noopener noreferrer" class="computo-pliego-link" title="Ver Pliego">
-         <iconify-icon icon="material-symbols:open-in-new"></iconify-icon>
-       </a>`
-    : "";
-  return `
-    <tr data-item-id="${item.id}" draggable="true">
-      <td class="computo-item-cell">
+/** Celda (`<td>`) de una fila de ítem para una columna dada — el conjunto y
+ *  el orden de columnas visibles los define `computo-columns.ts` (editable
+ *  desde el modal "Columnas del Cómputo"). Las columnas fijas son inputs
+ *  editables inline; las traídas de un PSet son texto de solo lectura. */
+function itemCellHtml(item: ComputoItem, col: ComputoColumnView): string {
+  if (col.kind === "pset") {
+    const value = item.psetValues[psetValueKey(col.pset ?? "", col.prop ?? "")] ?? "";
+    return `<td class="computo-pset-cell" title="${escapeHtml(value)}">${escapeHtml(value)}</td>`;
+  }
+  switch (col.id) {
+    case "iapvItem": {
+      // Link a la especificación del Pliego (PSet 'URL del Pliego', ver
+      // urlPliego en computo-tool.ts) — mismo dato que ya se muestra como link
+      // en el panel de propiedades (properties-panel.ts), acá al lado del Item.
+      const pliegoLinkHtml = item.urlPliego
+        ? `<a href="${item.urlPliego}" target="_blank" rel="noopener noreferrer" class="computo-pliego-link" title="Ver Pliego">
+             <iconify-icon icon="material-symbols:open-in-new"></iconify-icon>
+           </a>`
+        : "";
+      return `<td class="computo-item-cell">
         <input type="text" class="computo-input" data-field="iapvItem" value="${item.iapvItem}" placeholder="—">
         ${pliegoLinkHtml}
-      </td>
-      <td><input type="text" class="computo-input" data-field="iapvSubItem" value="${item.iapvSubItem}" placeholder="—"></td>
-      <td><input type="text" class="computo-input" data-field="rubro" value="${item.rubro}" placeholder="Rubro"></td>
-      <td><input type="text" class="computo-input" data-field="descripcion" value="${item.descripcion}" placeholder="Descripción"></td>
-      <td><input type="text" class="computo-input" data-field="unidad" value="${item.unidad}"></td>
-      <td><input type="number" class="computo-input" data-field="cantidad" value="${item.cantidad.toFixed(2)}" step="0.01" min="0"></td>
-      <td><input type="number" class="computo-input" data-field="precioUnitario" value="${item.precioUnitario}" step="any" min="0"></td>
-      <td class="computo-num">${formatMoney(importe)}</td>
+      </td>`;
+    }
+    case "iapvSubItem":
+      return `<td><input type="text" class="computo-input" data-field="iapvSubItem" value="${item.iapvSubItem}" placeholder="—"></td>`;
+    case "rubro":
+      return `<td><input type="text" class="computo-input" data-field="rubro" value="${item.rubro}" placeholder="Rubro"></td>`;
+    case "descripcion":
+      return `<td><input type="text" class="computo-input" data-field="descripcion" value="${item.descripcion}" placeholder="Descripción"></td>`;
+    case "unidad":
+      return `<td><input type="text" class="computo-input" data-field="unidad" value="${item.unidad}"></td>`;
+    case "cantidad":
+      return `<td><input type="number" class="computo-input" data-field="cantidad" value="${item.cantidad.toFixed(2)}" step="0.01" min="0"></td>`;
+    case "precioUnitario":
+      return `<td><input type="number" class="computo-input" data-field="precioUnitario" value="${item.precioUnitario}" step="any" min="0"></td>`;
+    case "importe":
+      return `<td class="computo-num">${formatMoney(item.cantidad * item.precioUnitario)}</td>`;
+    default:
+      return `<td></td>`;
+  }
+}
+
+function itemRowHtml(item: ComputoItem): string {
+  const cells = visibleComputoColumns().map((c) => itemCellHtml(item, c)).join("");
+  return `
+    <tr data-item-id="${item.id}" draggable="true">
+      ${cells}
       <td class="computo-actions">
         <button type="button" class="computo-delete" data-item-id="${item.id}" title="Eliminar">
           <iconify-icon icon="material-symbols:delete-outline"></iconify-icon>
         </button>
       </td>
     </tr>`;
+}
+
+/** Si las columnas "Designación de la Obra" (Item/SubItem) visibles forman un
+ *  único bloque contiguo, devuelve su posición y largo; si no hay ninguna, o
+ *  quedaron separadas por un reordenamiento, devuelve `null` (cabecera plana). */
+function designacionRun(cols: ComputoColumnView[]): { start: number; len: number } | null {
+  const idxs = cols.map((c, i) => (c.designacion ? i : -1)).filter((i) => i >= 0);
+  if (idxs.length === 0) return null;
+  const start = idxs[0];
+  return idxs.every((v, k) => v === start + k) ? { start, len: idxs.length } : null;
+}
+
+/** Cabecera de la tabla. Con un bloque contiguo de Item/SubItem visible usa la
+ *  cabecera de dos filas que los agrupa bajo "Designación de la Obra"; si no,
+ *  cae a una cabecera de una sola fila. La última `<th>` vacía es la columna
+ *  de acciones (botón eliminar). */
+function tableHeadHtml(): string {
+  const cols = visibleComputoColumns();
+  const run = designacionRun(cols);
+
+  if (!run) {
+    return `
+      <thead>
+        <tr>
+          ${cols.map((c) => `<th>${escapeHtml(c.label)}</th>`).join("")}
+          <th></th>
+        </tr>
+      </thead>`;
+  }
+
+  const row1 = cols
+    .map((c, i) => {
+      if (i === run.start) return `<th colspan="${run.len}">Designación de la Obra</th>`;
+      if (i > run.start && i < run.start + run.len) return "";
+      return `<th rowspan="2">${escapeHtml(c.label)}</th>`;
+    })
+    .join("");
+  const row2 = cols
+    .slice(run.start, run.start + run.len)
+    .map((c) => `<th>${escapeHtml(c.label)}</th>`)
+    .join("");
+
+  return `
+    <thead>
+      <tr>${row1}<th rowspan="2"></th></tr>
+      <tr>${row2}</tr>
+    </thead>`;
+}
+
+/** Colspan para la celda "etiqueta" de las filas de grupo (categoría / rubro):
+ *  cubre todas las columnas de datos visibles salvo las dos últimas, que
+ *  quedan para subtotal e incidencia. */
+function groupLabelColspan(): number {
+  return Math.max(1, visibleComputoColumns().length - 2);
 }
 
 function categoriaHeaderHtml(section: ComputoSection, total: number): string {
@@ -97,7 +187,7 @@ function categoriaHeaderHtml(section: ComputoSection, total: number): string {
 
   return `
     <tr class="computo-categoria-row">
-      <td colspan="6">
+      <td colspan="${groupLabelColspan()}">
         <div class="computo-categoria-header">
           ${nameHtml}
           <span class="computo-categoria-qtys">${qtysHtml}</span>
@@ -128,7 +218,10 @@ function categoriaHeaderHtml(section: ComputoSection, total: number): string {
  * sección muestra la suma de sus cantidades — separada por unidad cuando el
  * grupo mezcla magnitudes distintas, ej. área y cantidad de piezas.
  */
-export function setupComputoSection(computoTool: ComputoTool): { pane: HTMLElement } {
+export function setupComputoSection(
+  computoTool: ComputoTool,
+  fragments: OBC.FragmentsManager,
+): { pane: HTMLElement } {
   const tableContainer = document.createElement("div");
   tableContainer.className = "computo-table-container";
 
@@ -142,6 +235,19 @@ export function setupComputoSection(computoTool: ComputoTool): { pane: HTMLEleme
   addCategoriaBtn.innerHTML = `
     <iconify-icon icon="material-symbols:add"></iconify-icon>
     <span>Agregar categoría</span>`;
+
+  // Botón "Columnas" (header de la solapa): abre el modal donde se elige qué
+  // columnas ver, en qué orden, y se agregan columnas traídas de un Property
+  // Set (ver computo-columns-modal.ts / computo-columns.ts). La tabla se
+  // re-renderiza sola vía `subscribeColumns` más abajo.
+  const columnsModal = createComputoColumnsModal(fragments);
+  const columnsBtn = document.createElement("button");
+  columnsBtn.type = "button";
+  columnsBtn.className = "computo-add-categoria-btn";
+  columnsBtn.innerHTML = `
+    <iconify-icon icon="material-symbols:view-column-outline"></iconify-icon>
+    <span>Columnas</span>`;
+  columnsBtn.addEventListener("click", () => columnsModal.openModal());
 
   const exportWrap = document.createElement("div");
   exportWrap.className = "computo-export-wrap";
@@ -225,7 +331,7 @@ export function setupComputoSection(computoTool: ComputoTool): { pane: HTMLEleme
         const incidencia = total > 0 ? (subtotal / total) * 100 : 0;
         bodyHtml += `
           <tr class="computo-rubro-row">
-            <td colspan="6">${key}</td>
+            <td colspan="${groupLabelColspan()}">${key}</td>
             <td class="computo-num">${formatMoney(subtotal)}</td>
             <td class="computo-num">${incidencia.toFixed(2)}%</td>
           </tr>`;
@@ -256,25 +362,17 @@ export function setupComputoSection(computoTool: ComputoTool): { pane: HTMLEleme
     // Detalle de cantidades físicas por unidad (m², m³, ml, un...), aparte
     // del TOTAL monetario — ej. "m2: 245,30" + "un: 42" cuando el cómputo
     // mezcla superficies (paredes con área) y elementos contados por pieza.
+    // TOTAL: la etiqueta cubre todas las columnas de datos salvo la última
+    // ("Importe", siempre visible), donde va el monto; la celda final vacía es
+    // la columna de acciones.
+    const totalColspan = Math.max(1, visibleComputoColumns().length - 1);
     tableContainer.innerHTML = `
       <table class="computo-table">
-        <thead>
-          <tr>
-            <th colspan="2">Designación de la Obra</th>
-            <th rowspan="2">Rubro</th>
-            <th rowspan="2">Descripción</th>
-            <th rowspan="2">Unidad</th>
-            <th rowspan="2">Cantidad</th>
-            <th rowspan="2">Precio Unit.</th>
-            <th rowspan="2">Importe</th>
-            <th rowspan="2"></th>
-          </tr>
-          <tr><th>Item</th><th>SubItem</th></tr>
-        </thead>
+        ${tableHeadHtml()}
         ${bodyHtml}
         <tfoot>
           <tr class="computo-total-row">
-            <td colspan="7">TOTAL</td>
+            <td colspan="${totalColspan}">TOTAL</td>
             <td class="computo-num">${formatMoney(total)}</td>
             <td></td>
           </tr>
@@ -416,6 +514,8 @@ export function setupComputoSection(computoTool: ComputoTool): { pane: HTMLEleme
   computoTool.onCategoriaAdded.add(renderTable);
   computoTool.onCategoriaChanged.add(renderTable);
   computoTool.onCategoriaDeleted.add(renderTable);
+  // Cambios de columnas (visibilidad, orden, columnas de PSet) desde el modal.
+  subscribeColumns(renderTable);
 
   const pane = BUI.Component.create<HTMLElement>(() => BUI.html`
     <div class="computo-frame">
@@ -423,6 +523,7 @@ export function setupComputoSection(computoTool: ComputoTool): { pane: HTMLEleme
         <bim-icon icon="material-symbols:calculate-outline"></bim-icon>
         <span>Cómputo y Presupuesto</span>
         ${addCategoriaBtn}
+        ${columnsBtn}
         ${exportWrap}
       </div>
       <div class="computo-body">${tableContainer}</div>

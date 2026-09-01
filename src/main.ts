@@ -211,7 +211,7 @@ async function startApp(): Promise<{
   });
 
   const { openModal, selectTopic, topicsFrame } = setupBCFSection(components, world, rightPanel);
-  const computo = setupComputoSection(computoTool);
+  const computo = setupComputoSection(computoTool, fragments);
   leftPanel.onTopicSelect((topicGuid) => selectTopic(topicGuid));
   // El modal de lista "BCF Topics" fue reemplazado por la solapa dedicada: el
   // botón "Ver tabla de BCF Topics" del árbol ahora lleva directo a esa solapa.

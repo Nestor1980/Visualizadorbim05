@@ -415,6 +415,15 @@ bim-grid {
 .computo-export-option iconify-icon {
   font-size: 14px;
 }
+/* Celda de una columna traída de un Property Set (solo lectura) — ver
+ * computo-columns.ts / itemCellHtml en computo-manager.ts. */
+.computo-pset-cell {
+  color: var(--text-secondary);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .computo-categoria-row td {
   background: var(--bg-surface-hover);
   border-top: 2px solid var(--border-subtle);
@@ -1904,6 +1913,108 @@ bim-view-cube:active {
   font-size: 0.75rem;
   color: var(--text-secondary);
   cursor: pointer;
+}
+
+/* Modal "Columnas del Cómputo" (computo-columns-modal.ts): lista de columnas
+ * con visibilidad + orden, y fila para agregar una columna desde un PSet.
+ * Reusa .settings-modal / .settings-content y varias clases .quantity-rule-*. */
+.computo-columns-modal {
+  width: min(600px, calc(100vw - 2rem));
+}
+.computo-columns-modal .settings-modal-body {
+  min-height: 240px;
+}
+.cc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin-top: 0.5rem;
+  max-height: 320px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  padding-right: 2px;
+}
+.cc-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.cc-row:last-child {
+  border-bottom: none;
+}
+.cc-move {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  line-height: 0;
+}
+.cc-move-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 14px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 13px;
+}
+.cc-move-btn:hover:not(:disabled) {
+  color: var(--text-primary);
+}
+.cc-move-btn:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+.cc-vis {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+.cc-vis input {
+  margin: 0;
+  cursor: pointer;
+}
+.cc-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cc-row .cc-rename {
+  flex: 1 1 auto;
+}
+.cc-kind {
+  flex: 0 0 auto;
+  max-width: 40%;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-family: monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cc-add-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.cc-add-grid .cc-add-label {
+  grid-column: 1 / -1;
+}
+.cc-add-grid .cc-add-btn {
+  grid-column: 1 / -1;
+  justify-content: center;
+}
+.cc-empty {
+  margin-top: 0.5rem;
 }
 
 /* — Modal "Nuevo Topic": formulario de creación de topic BCF.

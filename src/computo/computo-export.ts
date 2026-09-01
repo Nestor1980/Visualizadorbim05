@@ -4,8 +4,53 @@ import autoTable from "jspdf-autotable";
 import type { ComputoTool, ComputoItem } from "../tools/computo-tool";
 import { formatMoney } from "./computo-manager";
 import { compareItemDesignacion } from "./iapv-order";
+import { visibleComputoColumns, psetValueKey } from "./computo-columns";
 
-const HEADERS = ["Item", "SubItem", "Rubro", "Descripción", "Unidad", "Cantidad", "Precio Unit.", "Importe"];
+/** Cabeceras de las columnas visibles, en orden — mismas columnas que muestra
+ *  la tabla (ver computo-columns.ts, editable desde el botón "Columnas"). */
+function headerLabels(): string[] {
+  return visibleComputoColumns().map((c) => c.label);
+}
+
+/** Celdas de datos de un ítem, una por columna visible. Con `format` en true
+ *  (PDF) las columnas numéricas salen ya formateadas como texto; en false
+ *  (Excel) salen como número crudo para que la planilla las trate como tal. */
+function itemCells(item: ComputoItem, format: boolean): (string | number)[] {
+  const importe = item.cantidad * item.precioUnitario;
+  return visibleComputoColumns().map((c) => {
+    if (c.kind === "pset") {
+      return item.psetValues[psetValueKey(c.pset ?? "", c.prop ?? "")] ?? "";
+    }
+    switch (c.id) {
+      case "iapvItem":       return item.iapvItem;
+      case "iapvSubItem":    return item.iapvSubItem;
+      case "rubro":          return item.rubro;
+      case "descripcion":    return item.descripcion;
+      case "unidad":         return item.unidad;
+      case "cantidad":       return format ? formatMoney(item.cantidad) : item.cantidad;
+      case "precioUnitario": return format ? formatMoney(item.precioUnitario) : item.precioUnitario;
+      case "importe":        return format ? formatMoney(importe) : importe;
+      default:               return "";
+    }
+  });
+}
+
+/** Fila de un grupo (categoría / rubro): el nombre en la 1ra celda, el resto
+ *  vacías. */
+function groupRow(nombre: string): string[] {
+  const cells = headerLabels().map(() => "");
+  cells[0] = nombre;
+  return cells;
+}
+
+/** Fila TOTAL: "TOTAL" en la 1ra celda, el monto en la última ("Importe",
+ *  siempre visible). */
+function totalRow(total: number, format: boolean): (string | number)[] {
+  const cells: (string | number)[] = headerLabels().map(() => "");
+  cells[0] = "TOTAL";
+  cells[cells.length - 1] = format ? formatMoney(total) : total;
+  return cells;
+}
 
 interface ComputoGroup {
   nombre: string;
@@ -71,24 +116,17 @@ export function exportComputoToExcel(computoTool: ComputoTool): void {
   const groups = groupItems(computoTool);
   const total = [...computoTool.list.values()].reduce((sum, i) => sum + i.cantidad * i.precioUnitario, 0);
 
-  const rows: (string | number)[][] = [HEADERS];
+  const rows: (string | number)[][] = [headerLabels()];
   for (const group of groups) {
     if (group.items.length === 0) continue;
-    rows.push([group.nombre, "", "", "", "", "", "", ""]);
-    for (const item of group.items) {
-      rows.push([
-        item.iapvItem, item.iapvSubItem, item.rubro, item.descripcion, item.unidad,
-        item.cantidad, item.precioUnitario, item.cantidad * item.precioUnitario,
-      ]);
-    }
+    rows.push(groupRow(group.nombre));
+    for (const item of group.items) rows.push(itemCells(item, false));
   }
   rows.push([]);
-  rows.push(["TOTAL", "", "", "", "", "", "", total]);
+  rows.push(totalRow(total, false));
 
   const worksheet = utils.aoa_to_sheet(rows);
-  worksheet["!cols"] = [
-    { wch: 26 }, { wch: 30 }, { wch: 18 }, { wch: 36 }, { wch: 10 }, { wch: 12 }, { wch: 14 }, { wch: 14 },
-  ];
+  worksheet["!cols"] = visibleComputoColumns().map((c) => ({ wch: c.excelWidth }));
 
   const workbook = utils.book_new();
   utils.book_append_sheet(workbook, worksheet, "Cómputo");
@@ -103,29 +141,19 @@ export function exportComputoToPdf(computoTool: ComputoTool): void {
   doc.setFontSize(14);
   doc.text("Cómputo y Presupuesto", 14, 14);
 
+  const colCount = headerLabels().length;
   const body: Array<Array<string | number | { content: string; colSpan: number; styles: Record<string, unknown> }>> = [];
   for (const group of groups) {
     if (group.items.length === 0) continue;
-    body.push([{ content: group.nombre, colSpan: 8, styles: { fontStyle: "bold", fillColor: [235, 235, 235] } }]);
-    for (const item of group.items) {
-      body.push([
-        item.iapvItem,
-        item.iapvSubItem,
-        item.rubro,
-        item.descripcion,
-        item.unidad,
-        formatMoney(item.cantidad),
-        formatMoney(item.precioUnitario),
-        formatMoney(item.cantidad * item.precioUnitario),
-      ]);
-    }
+    body.push([{ content: group.nombre, colSpan: colCount, styles: { fontStyle: "bold", fillColor: [235, 235, 235] } }]);
+    for (const item of group.items) body.push(itemCells(item, true));
   }
 
   autoTable(doc, {
     startY: 20,
-    head: [HEADERS],
+    head: [headerLabels()],
     body: body as unknown as (string | number)[][],
-    foot: [["TOTAL", "", "", "", "", "", "", formatMoney(total)]],
+    foot: [totalRow(total, true)],
     styles: { fontSize: 8 },
     headStyles: { fillColor: [60, 60, 60] },
     footStyles: { fillColor: [235, 235, 235], textColor: [0, 0, 0], fontStyle: "bold" },
