@@ -3,6 +3,7 @@ import * as OBF from "@thatopen/components-front";
 import type { DataLayersController } from "./data-layers-tree";
 import { createModelTreeView, ModelTreeView, TreeViewMode } from "./tree-panel";
 import { syncPickableWithVisibility } from "../../selection/visibility-sync";
+import type { ViewModesController } from "../../core/view-modes";
 
 interface Collection {
   id: string;
@@ -47,6 +48,7 @@ export function createModelsTree(
   fragments: OBC.FragmentsManager,
   components: OBC.Components,
   highlighter: OBF.Highlighter,
+  viewModes: ViewModesController,
 ): ModelsTree {
   const collections: Collection[] = [];
   const modelCollection = new Map<string, string | null>();
@@ -218,6 +220,18 @@ export function createModelsTree(
       },
     );
 
+    const opacity = viewModes.getModelOpacity(modelId);
+    const opacityBtn = makeIconButton(
+      opacity < 1 ? "mdi:circle-opacity" : "mdi:circle-outline",
+      opacity < 1
+        ? `Opacidad ${Math.round(opacity * 100)}% — click para cambiar`
+        : "Aplicar transparencia (click para cambiar)",
+      async () => {
+        await viewModes.cycleModelOpacity(modelId);
+        render();
+      },
+    );
+
     const hidden = isModelHidden(modelId);
     const eyeBtn = makeIconButton(hidden ? "mdi:eye-off" : "mdi:eye", hidden ? "Mostrar" : "Ocultar", async () => {
       await setModelVisible(modelId, isModelHidden(modelId));
@@ -235,7 +249,7 @@ export function createModelsTree(
       render();
     });
 
-    actions.append(viewToggleBtn, eyeBtn, deleteBtn);
+    actions.append(viewToggleBtn, opacityBtn, eyeBtn, deleteBtn);
     row.append(arrow, icon, label, actions);
 
     const group = document.createElement("div");
@@ -329,6 +343,17 @@ export function createModelsTree(
       },
     );
 
+    const anyTranslucent = memberIds.some((id) => viewModes.getModelOpacity(id) < 1);
+    const opacityBtn = makeIconButton(
+      anyTranslucent ? "mdi:circle-opacity" : "mdi:circle-outline",
+      anyTranslucent ? "Quitar transparencia de la colección" : "Aplicar transparencia a la colección",
+      async () => {
+        const target = anyTranslucent ? 1 : 0.25;
+        for (const id of memberIds) await viewModes.setModelOpacity(id, target);
+        render();
+      },
+    );
+
     const deleteBtn = makeIconButton("mdi:folder-remove-outline", "Eliminar colección (los modelos y capas de datos quedan sin agrupar)", () => {
       for (const id of memberIds) modelCollection.set(id, null);
       dataLayersController?.onCollectionRemoved(col.id);
@@ -337,7 +362,7 @@ export function createModelsTree(
       render();
     });
 
-    actions.append(eyeBtn, deleteBtn);
+    actions.append(opacityBtn, eyeBtn, deleteBtn);
     row.append(arrow, folderIcon, nameEl, actions);
     wrapper.append(row);
 

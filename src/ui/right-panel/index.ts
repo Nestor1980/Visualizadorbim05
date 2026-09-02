@@ -5,6 +5,7 @@ import { createRenderizadoPanel } from "./renderizado-panel";
 import { createPropertiesPanel } from "./properties-panel";
 import { createDynamicTabsPanel, type DynamicPanelTab } from "./dynamic-tabs-panel";
 import type { SelectionManager } from "../../selection/selection-manager";
+import type { ViewModesController } from "../../core/view-modes";
 
 const INFO_TAB_ID = "informacion";
 
@@ -35,6 +36,7 @@ export function createRightPanel(
   components: OBC.Components,
   fragments: OBC.FragmentsManager,
   selectionManager: SelectionManager,
+  viewModes: ViewModesController,
 ): RightPanel {
   const dynamicPanel = createDynamicTabsPanel();
 
@@ -52,7 +54,7 @@ export function createRightPanel(
     fixed: true,
   });
 
-  const renderizadoPanel = createRenderizadoPanel(world, postproduction, sunLight, threeRenderer);
+  const renderizadoPanel = createRenderizadoPanel(world, postproduction, sunLight, threeRenderer, viewModes);
   dynamicPanel.addTab({
     id: "renderizado",
     label: "Renderizado",

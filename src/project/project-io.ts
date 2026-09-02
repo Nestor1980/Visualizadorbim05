@@ -1,6 +1,7 @@
 import JSZip from "jszip";
 import * as OBC from "@thatopen/components";
 import type { LeftPanel } from "../ui/left-panel/index";
+import type { ViewModesController } from "../core/view-modes";
 
 const SCHEMA_VERSION = 1;
 
@@ -20,6 +21,8 @@ export interface ProjectIoDeps {
     LeftPanel,
     "getModelBytes" | "loadIfcBytes" | "serializeCollections" | "restoreCollections" | "serializeDataLayers" | "restoreDataLayers"
   >;
+  /** Modo de visualización global + opacidades por modelo. */
+  viewModes: Pick<ViewModesController, "serialize" | "restore">;
   /** Historial de undo/redo (opcional): la carga / "nuevo proyecto" reconstruye
    *  toda la escena, así que se suspende la grabación y se limpia la pila. */
   history?: {
@@ -55,6 +58,7 @@ export async function buildProjectZip(deps: ProjectIoDeps): Promise<Blob> {
   const projectState = {
     collections: deps.leftPanel.serializeCollections(),
     dataLayers: deps.leftPanel.serializeDataLayers(),
+    viewModes: deps.viewModes.serialize(),
   };
   zip.file("project.json", JSON.stringify(projectState));
 
@@ -122,6 +126,7 @@ async function clearScene(deps: ProjectIoDeps): Promise<void> {
   deps.leftPanel.restoreDataLayers({
     layers: [], sections: [], topics: [], labels: [], drawings: [], cotas: [], computo: [], computoCategorias: [],
   });
+  await deps.viewModes.restore(undefined);
 }
 
 /** Vacía la escena para empezar un proyecto nuevo desde cero. */
@@ -168,6 +173,7 @@ export async function loadProjectZip(file: File | Blob, deps: ProjectIoDeps): Pr
     const projectState = JSON.parse(await projectFile.async("string"));
     deps.leftPanel.restoreCollections(projectState.collections);
     deps.leftPanel.restoreDataLayers(projectState.dataLayers);
+    await deps.viewModes.restore(projectState.viewModes);
   });
 }
 

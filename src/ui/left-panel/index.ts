@@ -7,6 +7,7 @@ import type { WorldLabelTool } from "../../tools/world-label-tool";
 import type { DrawTool } from "../../tools/draw-tool";
 import type { CotaTool } from "../../tools/cota-tool";
 import type { ComputoTool } from "../../tools/computo-tool";
+import type { ViewModesController } from "../../core/view-modes";
 import { saveRecentFile } from "../../ifc/recent-files";
 import { ensureExplicitThemeClass } from "../theme";
 import { toast } from "../toast";
@@ -50,8 +51,9 @@ export function createLeftPanel(
   cotas: CotaTool,
   computos: ComputoTool,
   world: OBC.World,
+  viewModes: ViewModesController,
 ): LeftPanel {
-  const modelsTree = createModelsTree(fragments, components, highlighter);
+  const modelsTree = createModelsTree(fragments, components, highlighter, viewModes);
   let onTopicSelectCb: ((topicGuid: string) => void) | null = null;
   let onOpenTopicsTableCb: (() => void) | null = null;
   const dataLayersController = createDataLayersTree(

@@ -2,6 +2,7 @@ import * as THREE from "three";
 import * as OBC from "@thatopen/components";
 import * as OBF from "@thatopen/components-front";
 import * as BUI from "@thatopen/ui";
+import type { GlobalViewMode, ViewModesController } from "../../core/view-modes";
 
 export interface RenderizadoPanel {
   section: BUI.PanelSection;
@@ -12,10 +13,20 @@ export function createRenderizadoPanel(
   postproduction: OBF.Postproduction,
   sunLight: THREE.DirectionalLight,
   threeRenderer: THREE.WebGLRenderer,
+  viewModes: ViewModesController,
 ): RenderizadoPanel {
+  const mode = viewModes.getGlobalMode();
   const section = BUI.Component.create<BUI.PanelSection>(() => {
     return BUI.html`
       <bim-panel-section label="Renderizado" icon="material-symbols:photo-camera">
+        <bim-dropdown label="Modo de visualización" required
+          @change="${({ target }: { target: BUI.Dropdown }) => {
+            void viewModes.setGlobalMode(target.value[0] as GlobalViewMode);
+          }}">
+          <bim-option ?checked="${mode === "normal"}"    label="Normal"    value="normal"></bim-option>
+          <bim-option ?checked="${mode === "wireframe"}"  label="Alámbrico" value="wireframe"></bim-option>
+          <bim-option ?checked="${mode === "xray"}"       label="Rayos X"   value="xray"></bim-option>
+        </bim-dropdown>
         <bim-dropdown label="Vista" required
           @change="${({ target }: { target: BUI.Dropdown }) => {
             world.camera.projection.set(target.value[0] as OBC.CameraProjection);

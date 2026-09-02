@@ -19,6 +19,7 @@ import { createComputoTool }      from "./tools/computo-tool";
 import { ToolManager }            from "./tools/tool-manager";
 import { setupIfcLoader }                  from "./ifc/loader";
 import { setupModelProcessor, processModel } from "./ifc/model-processor";
+import { createViewModesController } from "./core/view-modes";
 import { createRightPanel, attachRightPanelResize } from "./ui/right-panel/index";
 import { createLeftPanel }    from "./ui/left-panel/index";
 import { createToolOptionsPanel } from "./ui/tool-options-panel";
@@ -145,6 +146,7 @@ async function startApp(): Promise<{
   // — IFC —
   const ifcLoader = await setupIfcLoader(components);
   setupModelProcessor(fragments, world);
+  const viewModes = createViewModesController(fragments);
 
   // — UI (requires CUI.Manager.init first) —
   CUI.Manager.init();
@@ -158,6 +160,7 @@ async function startApp(): Promise<{
 
   const onModelLoaded = async (model: any, name: string) => {
     await processModel(model, fragments, sectionTool, adjustGridToModel);
+    await viewModes.applyToModel(model);
     try {
       await fitViewToModels(world, fragments);
       const dataUrl = await captureNextFrame(world, threeRenderer);
@@ -169,12 +172,12 @@ async function startApp(): Promise<{
 
   const leftPanel = createLeftPanel(
     components, fragments, ifcLoader, highlighter, onModelLoaded,
-    sectionTool.clipper, topics, worldLabelTool, drawTool, cotaTool, computoTool, world,
+    sectionTool.clipper, topics, worldLabelTool, drawTool, cotaTool, computoTool, world, viewModes,
   );
 
   // Panel dinámico de abajo: Renderizado.
   const rightPanel = createRightPanel(
-    world, postproduction, sunLight, threeRenderer, components, fragments, selectionManager,
+    world, postproduction, sunLight, threeRenderer, components, fragments, selectionManager, viewModes,
   );
 
   // Seleccionar un elemento (árbol o click 3D) muestra su información en la
@@ -226,7 +229,7 @@ async function startApp(): Promise<{
   });
 
   const projectIoDeps: ProjectIoDeps = {
-    fragments, topics, viewpoints, world, leftPanel,
+    fragments, topics, viewpoints, world, leftPanel, viewModes,
     history: { suspendWhile: projectHistory.suspendWhile, reset: projectHistory.reset },
   };
   const projectToolbar  = createProjectToolbar(
