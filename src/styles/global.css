@@ -1227,6 +1227,26 @@ bim-toolbar {
   background: var(--accent);
 }
 
+/* Overlay del gesto de selección por región (caja / cuerda): un <svg> a tamaño
+ * completo del viewport donde se dibuja el rectángulo o el contorno mientras se
+ * arrastra. No intercepta el puntero (el arrastre lo maneja tool-manager). */
+.region-select-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 95;
+  pointer-events: none;
+  overflow: visible;
+}
+.region-select-shape {
+  fill: color-mix(in srgb, var(--accent) 14%, transparent);
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 3;
+  vector-effect: non-scaling-stroke;
+}
+
 bim-view-cube {
   cursor: grab;
 }

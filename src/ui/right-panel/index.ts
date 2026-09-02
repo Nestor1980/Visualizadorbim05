@@ -38,18 +38,9 @@ export function createRightPanel(
 ): RightPanel {
   const dynamicPanel = createDynamicTabsPanel();
 
-  const renderizadoPanel = createRenderizadoPanel(world, postproduction, sunLight, threeRenderer);
-  dynamicPanel.addTab({
-    id: "renderizado",
-    label: "Renderizado",
-    icon: "material-symbols:photo-camera",
-    content: renderizadoPanel.section,
-    fixed: true,
-  });
-
   // — Información: propiedades del elemento seleccionado (antes vivía en el
   // panel flotante de opciones de herramienta). Dockeada acá, la sección va
-  // siempre expandida y sin header colapsable propio. —
+  // siempre expandida y sin header colapsable propio. Va primera en el riel. —
   const propertiesPanel = createPropertiesPanel(components, fragments);
   propertiesPanel.section.collapsed = false;
   propertiesPanel.section.fixed     = true;
@@ -60,8 +51,17 @@ export function createRightPanel(
     content: propertiesPanel.section,
     fixed: true,
   });
-  // Renderizado arranca como la solapa visible.
-  dynamicPanel.activateTab("renderizado");
+
+  const renderizadoPanel = createRenderizadoPanel(world, postproduction, sunLight, threeRenderer);
+  dynamicPanel.addTab({
+    id: "renderizado",
+    label: "Renderizado",
+    icon: "material-symbols:photo-camera",
+    content: renderizadoPanel.section,
+    fixed: true,
+  });
+  // Información arranca como la solapa visible.
+  dynamicPanel.activateTab(INFO_TAB_ID);
 
   const activateInfoTab = (): void => dynamicPanel.activateTab(INFO_TAB_ID);
 

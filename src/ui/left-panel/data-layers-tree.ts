@@ -77,6 +77,11 @@ export interface DataLayersController {
    *  por los guardados. Los BCF topics deben estar cargados (`topics.load`)
    *  ANTES de llamar a esto, para que la reasignación por guid encuentre el topic. */
   restore: (data: SerializedDataLayers) => void;
+  /** Notifica cualquier mutación del árbol de capas (crear/renombrar/borrar
+   *  capa, mover un ítem a otra capa, togglear visibilidad, drag & drop…) — no
+   *  distingue del re-render por expandir/colapsar, así que el consumidor debe
+   *  filtrar por diff. Usado por el historial de undo/redo. */
+  onMutated: (cb: () => void) => void;
 }
 
 export function createDataLayersTree(
@@ -92,6 +97,15 @@ export function createDataLayersTree(
   onTopicSelect: (topicGuid: string) => void,
   onOpenTopicsTable: () => void,
 ): DataLayersController {
+  // `requestRender` es el único choke-point que se llama tras cualquier cambio
+  // del árbol; se envuelve para avisarle también al historial de undo/redo.
+  const baseRequestRender = requestRender;
+  let notifyMutated: (() => void) | null = null;
+  requestRender = () => {
+    baseRequestRender();
+    notifyMutated?.();
+  };
+
   const dataLayers: DataLayer[] = [];
   let dataLayerCounter = 0;
   /** Id de la capa de datos activa: las cotas/cortes/topics/etiquetas/
@@ -1090,5 +1104,6 @@ export function createDataLayersTree(
   return {
     renderForCollection, createDataLayer, moveDataLayerTo, onCollectionRemoved, isDraggingDataLayer,
     serialize, restore,
+    onMutated: (cb) => { notifyMutated = cb; },
   };
 }

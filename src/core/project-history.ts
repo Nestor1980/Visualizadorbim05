@@ -2,18 +2,20 @@ import * as OBC from "@thatopen/components";
 import { HistoryManager } from "./history";
 import { toast } from "../ui/toast";
 import type { LeftPanel } from "../ui/left-panel/index";
+import type { SerializedDataLayers } from "../ui/left-panel/data-layers-tree";
 import type { CotaTool } from "../tools/cota-tool";
 import type { DrawTool } from "../tools/draw-tool";
 import type { WorldLabelTool } from "../tools/world-label-tool";
 import type { ComputoTool } from "../tools/computo-tool";
 
 /**
- * Ventana (ms) durante la que se agrupan los eventos de herramienta en un
- * único paso deshacible. Un gesto de usuario suele disparar varios eventos
- * seguidos (ej. agregar un ítem de cómputo: `onItemAdded` + `onItemChanged`
- * tras sembrar campos y recalcular cantidad), y también sirve para fusionar
- * ediciones inline consecutivas en la tabla. Es un valor conservador: dos
- * gestos realmente distintos separados por más de esto quedan como dos pasos.
+ * Ventana (ms) durante la que se agrupan los cambios en un único paso
+ * deshacible. Un gesto de usuario suele disparar varios eventos seguidos (ej.
+ * agregar un ítem de cómputo: `onItemAdded` + `onItemChanged` tras sembrar
+ * campos y recalcular cantidad; o crear una cota: evento de la tool + varios
+ * re-render del árbol), y también sirve para fusionar ediciones inline
+ * consecutivas. Valor conservador: dos gestos separados por más de esto quedan
+ * como dos pasos.
  */
 const COMMIT_DELAY_MS = 250;
 
@@ -42,20 +44,26 @@ export interface ProjectHistory {
 /**
  * Undo / redo a nivel proyecto (Ctrl+Z / Ctrl+Shift+Z).
  *
- * Enfoque: cada paso deshacible guarda un snapshot serializado completo del
- * estado editable (capas de datos + todo lo que anidan: cotas, cortes,
- * etiquetas, trazos, ítems de cómputo y categorías) mediante el
- * `serializeDataLayers` / `restoreDataLayers` que ya existe para guardar el
- * proyecto. Deshacer = restaurar el snapshot anterior.
+ * Enfoque: cada paso deshacible guarda un snapshot serializado del estado
+ * editable (capas de datos + todo lo que anidan: cotas, cortes, etiquetas,
+ * trazos, ítems y categorías de cómputo, y la asignación de cada uno a su
+ * capa) usando el `serializeDataLayers` / `restoreDataLayers` que ya existe
+ * para guardar el proyecto. Deshacer = restaurar el snapshot anterior.
  *
- * La detección de "hubo un cambio" es por escucha de los eventos de cada
- * herramienta (`onItemAdded` / `onItemChanged` / `onItemDeleted`, etc.),
- * agrupados con un pequeño debounce. Quedan fuera del historial, por ahora,
- * las mutaciones que no emiten evento: renombrar una cota/corte/etiqueta,
- * togglear su visibilidad y mover un plano de corte con el gizmo.
+ * La detección de "hubo un cambio" combina los eventos de cada herramienta
+ * (`onItemAdded` / `onItemChanged` / `onItemDeleted`) con un aviso genérico de
+ * mutación del árbol de capas (`onDataLayersMutated`: cubre drag & drop entre
+ * capas, crear/renombrar/borrar capa, togglear visibilidad…), todo agrupado
+ * con un debounce y contrastado contra el último snapshot: un re-render sin
+ * cambios reales (expandir/colapsar un nodo) no genera ningún paso.
+ *
+ * BCF topics: quedan **fuera** del historial. El store nativo de @thatopen no
+ * se puede reconstruir desde el snapshot (a diferencia de cotas/cortes/etc.),
+ * así que un undo/redo nunca los crea, borra ni reasigna — se preserva siempre
+ * el estado vivo de los topics y las capas que los alojan.
  */
 export function setupProjectHistory(deps: {
-  leftPanel: Pick<LeftPanel, "serializeDataLayers" | "restoreDataLayers">;
+  leftPanel: Pick<LeftPanel, "serializeDataLayers" | "restoreDataLayers" | "onDataLayersMutated">;
   cotas: CotaTool;
   drawings: DrawTool;
   labels: WorldLabelTool;
@@ -64,19 +72,61 @@ export function setupProjectHistory(deps: {
 }): ProjectHistory {
   const history = new HistoryManager();
 
-  const snap = (): string => JSON.stringify(deps.leftPanel.serializeDataLayers());
+  const capture = (): SerializedDataLayers => deps.leftPanel.serializeDataLayers();
 
-  /** Snapshot del último estado ya registrado en el historial. */
-  let committed = "";
+  /**
+   * Clave de comparación de dos snapshots: ignora lo que NO debe generar un
+   * paso de undo — los BCF topics (no participan del historial) y el estado de
+   * vista del árbol (flags `expanded`, capa activa).
+   */
+  const cmpKey = (s: SerializedDataLayers): string => {
+    const layers = s.layers.map((l) => ({
+      id: l.id, name: l.name, collectionId: l.collectionId, hidden: l.hidden,
+    }));
+    return JSON.stringify({
+      layers,
+      sections: s.sections,
+      labels: s.labels,
+      drawings: s.drawings,
+      cotas: s.cotas,
+      computo: s.computo,
+      computoCategorias: s.computoCategorias ?? [],
+    });
+  };
+
+  /**
+   * Restaura `target`, pero re-inyectando el estado VIVO de los BCF topics y
+   * garantizando que las capas que los alojan sobrevivan aunque el snapshot no
+   * las tenga (así un undo nunca "pierde" un topic del árbol).
+   */
+  function apply(target: SerializedDataLayers): void {
+    const snap: SerializedDataLayers = JSON.parse(JSON.stringify(target));
+    const live = capture();
+
+    const layerIds = new Set(snap.layers.map((l) => l.id));
+    for (const t of live.topics) {
+      if (!layerIds.has(t.layerId)) {
+        const host = live.layers.find((l) => l.id === t.layerId);
+        if (host) {
+          snap.layers.push(host);
+          layerIds.add(host.id);
+        }
+      }
+    }
+    snap.topics = live.topics;
+
+    deps.leftPanel.restoreDataLayers(snap);
+    committed = capture();
+    committedKey = cmpKey(committed);
+  }
+
+  /** Último estado ya registrado en el historial. */
+  let committed: SerializedDataLayers | null = null;
+  let committedKey = "";
   let started = false;
 
   let pendingLabel: string | null = null;
   let timer: number | null = null;
-
-  function applyJson(json: string): void {
-    deps.leftPanel.restoreDataLayers(JSON.parse(json));
-    committed = json;
-  }
 
   function clearTimer(): void {
     if (timer !== null) {
@@ -85,7 +135,7 @@ export function setupProjectHistory(deps: {
     }
   }
 
-  /** Cierra la ventana de agrupamiento: si el estado cambió, apila el paso. */
+  /** Cierra la ventana de agrupamiento: si el estado cambió de verdad, apila el paso. */
   function flush(): void {
     clearTimer();
     if (!started || history.isApplying) {
@@ -95,15 +145,23 @@ export function setupProjectHistory(deps: {
     const label = pendingLabel ?? "Cambio";
     pendingLabel = null;
 
-    const after = snap();
-    if (after === committed) return;
+    const after = capture();
+    const afterKey = cmpKey(after);
+    if (!committed) {
+      committed = after;
+      committedKey = afterKey;
+      return;
+    }
+    if (afterKey === committedKey) return;
+
     const before = committed;
     committed = after;
+    committedKey = afterKey;
 
     history.push({
       label,
-      undo: () => applyJson(before),
-      redo: () => applyJson(after),
+      undo: () => apply(before),
+      redo: () => apply(after),
     });
   }
 
@@ -114,7 +172,7 @@ export function setupProjectHistory(deps: {
     timer = window.setTimeout(flush, COMMIT_DELAY_MS);
   }
 
-  // — Suscripciones a los eventos de cada herramienta —
+  // — Eventos de cada herramienta: dan una etiqueta específica al paso —
   deps.cotas.onItemAdded.add(() => markChange("Agregar cota"));
   deps.cotas.onItemDeleted.add(() => markChange("Eliminar cota"));
 
@@ -133,6 +191,11 @@ export function setupProjectHistory(deps: {
   deps.computos.onCategoriaAdded.add(() => markChange("Agregar categoría"));
   deps.computos.onCategoriaChanged.add(() => markChange("Ordenar / editar categorías"));
   deps.computos.onCategoriaDeleted.add(() => markChange("Eliminar categoría"));
+
+  // — Aviso genérico del árbol: cubre lo que no emite evento de tool (drag &
+  //   drop entre capas, crear/renombrar/borrar capa, visibilidad…). El diff de
+  //   `flush` descarta los re-render sin cambio real. —
+  deps.leftPanel.onDataLayersMutated(() => markChange("Editar capas de datos"));
 
   const doUndo = (): void => {
     flush();
@@ -164,19 +227,21 @@ export function setupProjectHistory(deps: {
     onChange: (cb) => history.onChange.add(cb),
   };
 
+  const syncBaseline = (): void => {
+    clearTimer();
+    pendingLabel = null;
+    committed = capture();
+    committedKey = cmpKey(committed);
+    started = true;
+  };
+
   return {
     history,
     controls,
-    begin: () => {
-      committed = snap();
-      started = true;
-    },
+    begin: syncBaseline,
     reset: () => {
-      clearTimer();
-      pendingLabel = null;
       history.clear();
-      committed = snap();
-      started = true;
+      syncBaseline();
     },
     suspendWhile: (fn) => history.suspendWhile(fn),
   };

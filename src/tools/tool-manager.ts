@@ -9,6 +9,7 @@ import type { ComputoTool } from "./computo-tool";
 import type * as BUI from "@thatopen/ui";
 import type { ToolOptionsView } from "../ui/tool-options-panel";
 import type { SelectionManager } from "../selection/selection-manager";
+import { RegionSelect, selectItemsInRegion } from "../selection/region-select";
 
 // "Navegar" absorbió a "Propiedades": seleccionar un elemento en este modo
 // muestra su información en la solapa "Información" del panel dinámico.
@@ -294,6 +295,74 @@ export class ToolManager {
       if (this.activeMode !== "draw" || !isDrawingStroke) return;
       this.drawTool.extendStroke(event.clientX, event.clientY);
     });
+
+    // Modo "navigate" con selección por región (caja / cuerda): arrastrar con
+    // el botón izquierdo dibuja el rectángulo/contorno y, al soltar, selecciona
+    // todos los elementos visibles que caen dentro. Shift o Ctrl durante el
+    // gesto suman a la selección actual en vez de reemplazarla.
+    //
+    // Igual que el modo dibujo, el listener va en fase de CAPTURA para
+    // adelantarse a camera-controls y congelar la cámara a tiempo. Hoverer y
+    // highlighter quedan apagados durante TODO el gesto —incluido el mouseup
+    // del canvas que el Highlighter escucha para su pick simple— y se
+    // rehabilitan recién después de calcular la región, así el final del
+    // arrastre no selecciona además lo que haya bajo el cursor.
+    const regionSelect = new RegionSelect(viewport);
+    viewport.addEventListener("pointerdown", (event: PointerEvent) => {
+      if (event.button !== 0 || this.activeMode !== "navigate") return;
+      if (selectionManager.selectionMode === "click") return;
+      if (event.target !== canvas) return;
+
+      this.camera?.setUserInput(false);
+      this.hoverer.enabled = false;
+      this.highlighter.enabled = false;
+      regionSelect.begin(selectionManager.selectionMode, event.clientX, event.clientY);
+
+      const restoreInteractions = () => {
+        this.camera?.setUserInput(true);
+        this.hoverer.enabled = true;
+        this.highlighter.enabled = true;
+      };
+      const onMove = (moveEvent: PointerEvent) => {
+        regionSelect.update(moveEvent.clientX, moveEvent.clientY);
+      };
+      const teardown = () => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        window.removeEventListener("pointercancel", onCancel);
+      };
+      const onCancel = () => {
+        teardown();
+        regionSelect.cancel();
+        restoreInteractions();
+      };
+      const onUp = async (upEvent: PointerEvent) => {
+        teardown();
+        this.camera?.setUserInput(true);
+        const region = regionSelect.end();
+        const additive = upEvent.shiftKey || upEvent.ctrlKey;
+        try {
+          const modelIdMap = region
+            ? await selectItemsInRegion(region, world, fragments, canvas)
+            : {};
+          // Recién ahora: el mouseup/click del canvas ya pasó con el
+          // Highlighter deshabilitado, así que no hubo pick espurio.
+          this.hoverer.enabled = true;
+          this.highlighter.enabled = true;
+          if (Object.keys(modelIdMap).length > 0) {
+            await this.highlighter.highlightByID("select", modelIdMap, !additive);
+          } else if (!additive) {
+            await this.highlighter.clear("select");
+          }
+        } catch (error) {
+          restoreInteractions();
+          console.error("Error al calcular la selección por región:", error);
+        }
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", onCancel);
+    }, { capture: true });
 
     // Botón derecho: con una tool activa (distinta de "navigate"), un click
     // derecho simple la cierra y vuelve a modo selección/navegación. Un

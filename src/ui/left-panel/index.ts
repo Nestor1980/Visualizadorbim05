@@ -32,6 +32,9 @@ export interface LeftPanel {
   restoreCollections: (data: SerializedCollections) => void;
   serializeDataLayers: () => SerializedDataLayers;
   restoreDataLayers: (data: SerializedDataLayers) => void;
+  /** Se dispara ante cualquier mutación del árbol de capas de datos (incluye
+   *  re-renders por expandir/colapsar — filtrar por diff). Para el historial. */
+  onDataLayersMutated: (cb: () => void) => void;
 }
 
 export function createLeftPanel(
@@ -200,5 +203,6 @@ export function createLeftPanel(
     restoreCollections: modelsTree.restore,
     serializeDataLayers: dataLayersController.serialize,
     restoreDataLayers: dataLayersController.restore,
+    onDataLayersMutated: dataLayersController.onMutated,
   };
 }

@@ -7,8 +7,8 @@ export interface SelectionPanel {
 
 const MODE_HINT: Record<SelectionMode, string> = {
   click: "Click simple sobre un elemento para seleccionarlo.",
-  box:   "Arrastrá para dibujar un rectángulo y seleccionar todo lo que encierre.",
-  lasso: "Arrastrá para trazar un contorno a mano alzada y seleccionar lo que quede dentro.",
+  box:   "Arrastrá para dibujar un rectángulo y seleccionar lo que toque. Shift o Ctrl para sumar.",
+  lasso: "Arrastrá para trazar un contorno a mano alzada y seleccionar lo que quede dentro. Shift o Ctrl para sumar.",
 };
 
 function makeModeBtn(icon: string, label: string): HTMLButtonElement {
