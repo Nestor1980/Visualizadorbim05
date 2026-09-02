@@ -20,6 +20,9 @@ export interface DrawTool {
   list: Map<string, DrawStroke>;
   onItemAdded: OBC.Event<DrawStroke>;
   onItemDeleted: OBC.Event<string>;
+  /** Se dispara al editar un trazo ya creado (color o grosor del seleccionado)
+   *  desde el panel — para que el historial de undo/redo lo registre. */
+  onItemChanged: OBC.Event<DrawStroke>;
   onSelectionChange: OBC.Event<DrawStroke | null>;
   readonly active: boolean;
   /** Marca el modo dibujo como activo. Llamar al entrar al modo "draw". */
@@ -94,6 +97,7 @@ export function createDrawTool(world: OBC.World, canvas: HTMLCanvasElement): Dra
   const list = new Map<string, DrawStroke>();
   const onItemAdded       = new OBC.Event<DrawStroke>();
   const onItemDeleted     = new OBC.Event<string>();
+  const onItemChanged     = new OBC.Event<DrawStroke>();
   const onSelectionChange = new OBC.Event<DrawStroke | null>();
 
   let strokeCounter = 0;
@@ -228,9 +232,10 @@ export function createDrawTool(world: OBC.World, canvas: HTMLCanvasElement): Dra
     activeColor = color;
     if (!selectedId) return;
     const stroke = list.get(selectedId);
-    if (!stroke) return;
+    if (!stroke || stroke.color === color) return;
     stroke.color = color;
     (stroke.line.material as LineMaterial).color.set(color);
+    onItemChanged.trigger(stroke);
   }
 
   function getActiveColor(): string {
@@ -241,9 +246,10 @@ export function createDrawTool(world: OBC.World, canvas: HTMLCanvasElement): Dra
     activeWidth = width;
     if (!selectedId) return;
     const stroke = list.get(selectedId);
-    if (!stroke) return;
+    if (!stroke || stroke.width === width) return;
     stroke.width = width;
     (stroke.line.material as LineMaterial).linewidth = width;
+    onItemChanged.trigger(stroke);
   }
 
   function getActiveWidth(): number {
@@ -376,7 +382,7 @@ export function createDrawTool(world: OBC.World, canvas: HTMLCanvasElement): Dra
   }
 
   return {
-    list, onItemAdded, onItemDeleted, onSelectionChange,
+    list, onItemAdded, onItemDeleted, onItemChanged, onSelectionChange,
     get active() { return active; },
     activate, deactivate,
     setActiveColor, getActiveColor,

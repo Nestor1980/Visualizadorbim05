@@ -5,7 +5,7 @@ import { makeModalDraggable, resetModalPosition, closeOnBackdropClick } from "..
 import type { RightPanel } from "../ui/right-panel/index";
 import { shareTopicByEmail, shareTopicToDiscord } from "./share";
 
-const BCF_TOPIC_TAB_ID = "bcf-topic";
+export const BCF_TOPIC_TAB_ID = "bcf-topic";
 
 type TopicsTable = ReturnType<typeof CUI.tables.topicsList>[0];
 

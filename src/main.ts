@@ -29,7 +29,7 @@ import { createSettingsModal }    from "./ui/settings-modal";
 import { setupLayout }            from "./ui/layout";
 import { createPanelSplit }       from "./ui/panel-split";
 import { createMainTabs }         from "./ui/main-tabs";
-import { setupBCFSection }        from "./bcf/bcf-manager";
+import { setupBCFSection, BCF_TOPIC_TAB_ID } from "./bcf/bcf-manager";
 import { setupComputoSection }    from "./computo/computo-manager";
 import { SelectionManager }       from "./selection/selection-manager";
 import { guardHovererVisibility } from "./selection/visibility-sync";
@@ -211,14 +211,18 @@ async function startApp(): Promise<{
 
   // Undo / redo a nivel proyecto (Ctrl+Z / Ctrl+Shift+Z): snapshot serializado
   // de las capas de datos por cada gesto (cotas, cortes, etiquetas, trazos,
-  // ítems y categorías de cómputo). Ver src/core/project-history.ts.
+  // ítems y categorías de cómputo) + el `.bcf` de los topics. Ver src/core/project-history.ts.
   const projectHistory = setupProjectHistory({
     leftPanel,
-    cotas:     cotaTool,
-    drawings:  drawTool,
-    labels:    worldLabelTool,
-    clipper:   sectionTool.clipper,
-    computos:  computoTool,
+    cotas:       cotaTool,
+    drawings:    drawTool,
+    labels:      worldLabelTool,
+    sectionTool: sectionTool,
+    computos:    computoTool,
+    topics,
+    viewpoints,
+    world,
+    onTopicsRestored: () => rightPanel.removeTab(BCF_TOPIC_TAB_ID),
   });
 
   const projectIoDeps: ProjectIoDeps = {
@@ -284,7 +288,7 @@ async function startApp(): Promise<{
   syncViewportSize();
 
   // Escena base ya armada: a partir de acá cada gesto cuenta como paso deshacible.
-  projectHistory.begin();
+  await projectHistory.begin();
 
   return { triggerLoadIfc: leftPanel.triggerLoadIfc, loadIfcBytes: leftPanel.loadIfcBytes };
 }

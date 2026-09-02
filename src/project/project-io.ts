@@ -24,7 +24,7 @@ export interface ProjectIoDeps {
    *  toda la escena, así que se suspende la grabación y se limpia la pila. */
   history?: {
     suspendWhile: <T>(fn: () => Promise<T> | T) => Promise<T>;
-    reset: () => void;
+    reset: () => void | Promise<void>;
   };
 }
 
@@ -33,7 +33,7 @@ export interface ProjectIoDeps {
 async function withHistorySuspended(deps: ProjectIoDeps, fn: () => Promise<void>): Promise<void> {
   if (!deps.history) return fn();
   await deps.history.suspendWhile(fn);
-  deps.history.reset();
+  await deps.history.reset();
 }
 
 /** Arma el paquete de proyecto (.vbim, un zip renombrado) con los IFC cargados,

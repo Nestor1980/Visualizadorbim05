@@ -16,6 +16,10 @@ export interface WorldLabelTool {
   list: Map<string, WorldLabel>;
   onItemAdded: OBC.Event<WorldLabel>;
   onItemDeleted: OBC.Event<string>;
+  /** Se dispara al editar una etiqueta ya creada (título, comentario o color)
+   *  desde la tarjeta 3D o el panel — para que el historial de undo/redo lo
+   *  registre igual que un alta/baja. */
+  onItemChanged: OBC.Event<WorldLabel>;
   /** Se dispara con la etiqueta recién seleccionada, o `null` al deseleccionar. */
   onSelectionChange: OBC.Event<WorldLabel | null>;
   createAt: (point: THREE.Vector3) => WorldLabel;
@@ -63,6 +67,7 @@ export function createWorldLabelTool(world: OBC.World, viewport: HTMLElement): W
   const list = new Map<string, WorldLabel>();
   const onItemAdded       = new OBC.Event<WorldLabel>();
   const onItemDeleted     = new OBC.Event<string>();
+  const onItemChanged     = new OBC.Event<WorldLabel>();
   const onSelectionChange = new OBC.Event<WorldLabel | null>();
 
   let labelCounter = 0;
@@ -242,8 +247,10 @@ export function createWorldLabelTool(world: OBC.World, viewport: HTMLElement): W
   function setColor(id: string, color: string): void {
     const label = list.get(id);
     if (!label) return;
+    if (label.color === color) return;
     label.color = color;
     applyColor(label);
+    onItemChanged.trigger(label);
   }
 
   function setActiveColor(color: string): void {
@@ -358,8 +365,12 @@ export function createWorldLabelTool(world: OBC.World, viewport: HTMLElement): W
       // Ya se hizo commit/cancel (blur en cascada de ambos campos); evita duplicarlo.
       if (!titleInput.isConnected) return;
       if (save) {
-        label.title   = titleInput.value.trim() || `Etiqueta ${labelCounter}`;
-        label.comment = commentInput.value.trim();
+        const nextTitle   = titleInput.value.trim() || `Etiqueta ${labelCounter}`;
+        const nextComment = commentInput.value.trim();
+        const changed = nextTitle !== label.title || nextComment !== label.comment;
+        label.title   = nextTitle;
+        label.comment = nextComment;
+        if (changed) onItemChanged.trigger(label);
       }
 
       const newTitleEl = document.createElement("div");
@@ -523,9 +534,12 @@ export function createWorldLabelTool(world: OBC.World, viewport: HTMLElement): W
   function rename(id: string, title: string): void {
     const label = list.get(id);
     if (!label) return;
-    label.title = title.trim() || label.title;
+    const next = title.trim() || label.title;
+    if (next === label.title) return;
+    label.title = next;
     const titleEl = label.element.querySelector(".world-label-title");
     if (titleEl) titleEl.textContent = label.title;
+    onItemChanged.trigger(label);
   }
 
   function edit(id: string): void {
@@ -581,7 +595,7 @@ export function createWorldLabelTool(world: OBC.World, viewport: HTMLElement): W
   }
 
   return {
-    list, onItemAdded, onItemDeleted, onSelectionChange,
+    list, onItemAdded, onItemDeleted, onItemChanged, onSelectionChange,
     createAt, createFromData, deleteLabel, select, getSelected, rename, edit, setColor, setActiveColor, getActiveColor,
     updateLOD, previewAt,
   };

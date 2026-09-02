@@ -961,7 +961,13 @@ export function createDataLayersTree(
       .map(([id, layerId]) => {
         const plane = clipper.list.get(id);
         if (!plane) return null;
-        return { layerId, title: plane.title, origin: v3(plane.origin), normal: v3(plane.normal), enabled: plane.enabled };
+        // `plane.origin` / `plane.normal` quedan congelados en el valor de
+        // creación: al arrastrar el plano con el gizmo solo se actualiza
+        // `plane.three` (ver SimplePlane.update). Se serializa desde ahí para
+        // que un plano movido guarde —y deshaga— su posición real.
+        const three = plane.three;
+        const origin = three.normal.clone().multiplyScalar(-three.constant);
+        return { layerId, title: plane.title, origin: v3(origin), normal: v3(three.normal), enabled: plane.enabled };
       })
       .filter((s): s is NonNullable<typeof s> => s !== null);
 
