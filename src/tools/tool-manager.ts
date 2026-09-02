@@ -10,7 +10,9 @@ import type * as BUI from "@thatopen/ui";
 import type { ToolOptionsView } from "../ui/tool-options-panel";
 import type { SelectionManager } from "../selection/selection-manager";
 
-export type ToolMode = "navigate" | "cota" | "section" | "label" | "draw" | "properties" | "computo";
+// "Navegar" absorbió a "Propiedades": seleccionar un elemento en este modo
+// muestra su información en la solapa "Información" del panel dinámico.
+export type ToolMode = "navigate" | "cota" | "section" | "label" | "draw" | "computo";
 
 interface ToolOptionsPanelLike {
   setView: (view: ToolOptionsView) => void;
@@ -31,7 +33,6 @@ export class ToolManager {
   sectionBtnEl: BUI.Button | null = null;
   labelBtnEl: BUI.Button | null = null;
   drawBtnEl: BUI.Button | null = null;
-  propertiesBtnEl: BUI.Button | null = null;
   computoBtnEl: BUI.Button | null = null;
 
   private highlighter: OBF.Highlighter;
@@ -80,7 +81,7 @@ export class ToolManager {
     this.sectionTool.sectionFillGroup.visible  = false;
     if (mode !== "section") this.sectionTool.hidePreview();
 
-    if (mode === "navigate" || mode === "properties" || mode === "computo") {
+    if (mode === "navigate" || mode === "computo") {
       this.highlighter.enabled = true;
       this.hoverer.enabled     = true;
     } else if (mode === "section") {
@@ -104,7 +105,6 @@ export class ToolManager {
       section:    this.sectionBtnEl,
       label:      this.labelBtnEl,
       draw:       this.drawBtnEl,
-      properties: this.propertiesBtnEl,
       computo:    this.computoBtnEl,
     };
     for (const [btnMode, btn] of Object.entries(modeButtons)) {
@@ -112,11 +112,11 @@ export class ToolManager {
     }
 
     const view: ToolOptionsView =
-      mode === "cota"       ? "cota" :
-      mode === "section"    ? "section" :
-      mode === "draw"       ? "draw" :
-      mode === "properties" ? "properties" :
-      mode === "computo"    ? "computo" :
+      mode === "cota"     ? "cota" :
+      mode === "section"  ? "section" :
+      mode === "draw"     ? "draw" :
+      mode === "navigate" ? "selection" :
+      mode === "computo"  ? "computo" :
       null;
     this.toolOptionsPanel?.setView(view);
   }

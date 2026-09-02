@@ -20,6 +20,20 @@ export interface ProjectIoDeps {
     LeftPanel,
     "getModelBytes" | "loadIfcBytes" | "serializeCollections" | "restoreCollections" | "serializeDataLayers" | "restoreDataLayers"
   >;
+  /** Historial de undo/redo (opcional): la carga / "nuevo proyecto" reconstruye
+   *  toda la escena, así que se suspende la grabación y se limpia la pila. */
+  history?: {
+    suspendWhile: <T>(fn: () => Promise<T> | T) => Promise<T>;
+    reset: () => void;
+  };
+}
+
+/** Corre `fn` con el historial suspendido y después vacía la pila y re-sincroniza
+ *  el snapshot base — para que una carga masiva no quede como un paso gigante. */
+async function withHistorySuspended(deps: ProjectIoDeps, fn: () => Promise<void>): Promise<void> {
+  if (!deps.history) return fn();
+  await deps.history.suspendWhile(fn);
+  deps.history.reset();
 }
 
 /** Arma el paquete de proyecto (.vbim, un zip renombrado) con los IFC cargados,
@@ -112,7 +126,7 @@ async function clearScene(deps: ProjectIoDeps): Promise<void> {
 
 /** Vacía la escena para empezar un proyecto nuevo desde cero. */
 export async function newProject(deps: ProjectIoDeps): Promise<void> {
-  await clearScene(deps);
+  await withHistorySuspended(deps, () => clearScene(deps));
 }
 
 /** Reemplaza la escena actual por la contenida en un paquete de proyecto
@@ -127,32 +141,34 @@ export async function loadProjectZip(file: File | Blob, deps: ProjectIoDeps): Pr
   }
   const manifest: ProjectManifest = JSON.parse(await manifestFile.async("string"));
 
-  await clearScene(deps);
+  await withHistorySuspended(deps, async () => {
+    await clearScene(deps);
 
-  // 1. Modelos IFC, cargados con su nombre original para que `fragments.list`
-  //    les asigne el mismo modelId referenciado por las colecciones guardadas.
-  for (const { name } of manifest.models) {
-    const entry = zip.file(`models/${name}`);
-    if (!entry) continue;
-    const bytes = new Uint8Array(await entry.async("arraybuffer"));
-    await deps.leftPanel.loadIfcBytes(bytes, name);
-  }
-
-  // 2. BCF topics antes que las capas de datos: éstas reasignan por guid de
-  //    topic, así que el topic ya tiene que existir.
-  const topicsFile = zip.file("topics.bcf");
-  if (topicsFile) {
-    const bcfBytes = new Uint8Array(await topicsFile.async("arraybuffer"));
-    await deps.topics.load(bcfBytes);
-    for (const vp of deps.viewpoints.list.values()) {
-      if (!vp.world) vp.world = deps.world;
+    // 1. Modelos IFC, cargados con su nombre original para que `fragments.list`
+    //    les asigne el mismo modelId referenciado por las colecciones guardadas.
+    for (const { name } of manifest.models) {
+      const entry = zip.file(`models/${name}`);
+      if (!entry) continue;
+      const bytes = new Uint8Array(await entry.async("arraybuffer"));
+      await deps.leftPanel.loadIfcBytes(bytes, name);
     }
-  }
 
-  // 3. Colecciones y capas de datos (mediciones, cortes, etiquetas, trazos).
-  const projectState = JSON.parse(await projectFile.async("string"));
-  deps.leftPanel.restoreCollections(projectState.collections);
-  deps.leftPanel.restoreDataLayers(projectState.dataLayers);
+    // 2. BCF topics antes que las capas de datos: éstas reasignan por guid de
+    //    topic, así que el topic ya tiene que existir.
+    const topicsFile = zip.file("topics.bcf");
+    if (topicsFile) {
+      const bcfBytes = new Uint8Array(await topicsFile.async("arraybuffer"));
+      await deps.topics.load(bcfBytes);
+      for (const vp of deps.viewpoints.list.values()) {
+        if (!vp.world) vp.world = deps.world;
+      }
+    }
+
+    // 3. Colecciones y capas de datos (mediciones, cortes, etiquetas, trazos).
+    const projectState = JSON.parse(await projectFile.async("string"));
+    deps.leftPanel.restoreCollections(projectState.collections);
+    deps.leftPanel.restoreDataLayers(projectState.dataLayers);
+  });
 }
 
 /** Abre el selector de archivos del sistema y carga el .vbim elegido. */

@@ -191,18 +191,19 @@ function categoriaHeaderHtml(section: ComputoSection, total: number): string {
         <div class="computo-categoria-header">
           ${nameHtml}
           <span class="computo-categoria-qtys">${qtysHtml}</span>
-          ${deleteBtnHtml}
         </div>
       </td>
       <td class="computo-num">${formatMoney(subtotal)}</td>
       <td class="computo-num">${incidencia.toFixed(2)}%</td>
+      <td class="computo-actions">${deleteBtnHtml}</td>
     </tr>`;
 }
 
 /**
  * Solapa "Cómputo": tabla agrupada por Rubro (o, si algún ítem trae PSet
  * `IAPV_Item`, por la numeración del Presupuesto Oficial de IAPV — ver
- * `iapv-order.ts`) con subtotal/% de incidencia por grupo y TOTAL general,
+ * `iapv-order.ts`) con subtotal/% de incidencia por grupo (sin fila de TOTAL
+ * general — la exportación sí lo incluye, ver computo-export.ts),
  * alimentada por `ComputoTool` (ver src/tools/computo-tool.ts) — los ítems se
  * crean/editan clickeando elementos en el viewport con esa herramienta
  * activa; acá solo se muestran y se pueden editar inline (Item/SubItem del
@@ -217,6 +218,12 @@ function categoriaHeaderHtml(section: ComputoSection, total: number): string {
  * (con un bucket "Sin categoría" para lo que no se arrastró todavía) y cada
  * sección muestra la suma de sus cantidades — separada por unidad cuando el
  * grupo mezcla magnitudes distintas, ej. área y cantidad de piezas.
+ *
+ * Cada sección creada a mano trae un botón de borrar (a la derecha, en la
+ * columna de acciones): al eliminarla sus ítems caen a "Sin categoría". Una
+ * sección que queda sin ítems (porque se arrastró/borró el último) se elimina
+ * sola. El botón "Ordenar categorías" del header las reordena por nombre en
+ * orden natural.
  */
 export function setupComputoSection(
   computoTool: ComputoTool,
@@ -235,6 +242,17 @@ export function setupComputoSection(
   addCategoriaBtn.innerHTML = `
     <iconify-icon icon="material-symbols:add"></iconify-icon>
     <span>Agregar categoría</span>`;
+
+  // Reordena las categorías por su nombre en orden natural (ver
+  // `sortCategorias` en computo-tool.ts) — útil cuando se nombran con un
+  // prefijo numérico ("1 Movimiento de suelos", "2 Estructura", …).
+  const sortCategoriasBtn = document.createElement("button");
+  sortCategoriasBtn.type = "button";
+  sortCategoriasBtn.className = "computo-add-categoria-btn";
+  sortCategoriasBtn.innerHTML = `
+    <iconify-icon icon="material-symbols:sort"></iconify-icon>
+    <span>Ordenar categorías</span>`;
+  sortCategoriasBtn.addEventListener("click", () => computoTool.sortCategorias());
 
   // Botón "Columnas" (header de la solapa): abre el modal donde se elige qué
   // columnas ver, en qué orden, y se agregan columnas traídas de un Property
@@ -334,6 +352,7 @@ export function setupComputoSection(
             <td colspan="${groupLabelColspan()}">${key}</td>
             <td class="computo-num">${formatMoney(subtotal)}</td>
             <td class="computo-num">${incidencia.toFixed(2)}%</td>
+            <td></td>
           </tr>`;
         const groupItems = hasIapv ? sortByIapvOrder(group) : group;
         for (const item of groupItems) bodyHtml += itemRowHtml(item);
@@ -359,24 +378,14 @@ export function setupComputoSection(
       }
     }
 
-    // Detalle de cantidades físicas por unidad (m², m³, ml, un...), aparte
-    // del TOTAL monetario — ej. "m2: 245,30" + "un: 42" cuando el cómputo
-    // mezcla superficies (paredes con área) y elementos contados por pieza.
-    // TOTAL: la etiqueta cubre todas las columnas de datos salvo la última
-    // ("Importe", siempre visible), donde va el monto; la celda final vacía es
-    // la columna de acciones.
-    const totalColspan = Math.max(1, visibleComputoColumns().length - 1);
+    // Detalle de cantidades físicas por unidad (m², m³, ml, un...) — ej.
+    // "m2: 245,30" + "un: 42" cuando el cómputo mezcla superficies (paredes
+    // con área) y elementos contados por pieza. No se muestra un TOTAL
+    // monetario general de la tabla (sí los subtotales por grupo / sección).
     tableContainer.innerHTML = `
       <table class="computo-table">
         ${tableHeadHtml()}
         ${bodyHtml}
-        <tfoot>
-          <tr class="computo-total-row">
-            <td colspan="${totalColspan}">TOTAL</td>
-            <td class="computo-num">${formatMoney(total)}</td>
-            <td></td>
-          </tr>
-        </tfoot>
       </table>
       <div class="computo-summary">
         <span class="computo-summary-label">Detalle de cantidades</span>
@@ -522,9 +531,12 @@ export function setupComputoSection(
       <div class="panel-frame-header">
         <bim-icon icon="material-symbols:calculate-outline"></bim-icon>
         <span>Cómputo y Presupuesto</span>
-        ${addCategoriaBtn}
-        ${columnsBtn}
-        ${exportWrap}
+        <div class="computo-header-actions">
+          ${addCategoriaBtn}
+          ${sortCategoriasBtn}
+          ${columnsBtn}
+          ${exportWrap}
+        </div>
       </div>
       <div class="computo-body">${tableContainer}</div>
     </div>

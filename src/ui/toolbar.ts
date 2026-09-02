@@ -25,7 +25,7 @@ export function createToolbar(
             @click=${() => toolManager.setMode("navigate")}>
             <bim-tooltip>
               <div style="font-weight:600;">Navegar</div>
-              <div style="opacity:0.75;">Orbitar la cámara y seleccionar elementos</div>
+              <div style="opacity:0.75;">Orbitar la cámara y seleccionar elementos. Las propiedades del elemento seleccionado se ven en la solapa "Información" del panel dinámico.</div>
             </bim-tooltip>
           </bim-button>
         </bim-toolbar-section>
@@ -37,21 +37,6 @@ export function createToolbar(
             <bim-tooltip>
               <div style="font-weight:600;">Ajustar vista</div>
               <div style="opacity:0.75;">Ajustar vista al modelo</div>
-            </bim-tooltip>
-          </bim-button>
-        </bim-toolbar-section>
-
-        <bim-toolbar-section label="Información">
-          <bim-button
-            icon="material-symbols:info"
-            ${BUI.ref((el: Element | undefined) => { toolManager.propertiesBtnEl = el as BUI.Button ?? null; })}
-            @click=${() => {
-              if (toolManager.activeMode === "properties") toolManager.setMode("navigate");
-              else toolManager.setMode("properties");
-            }}>
-            <bim-tooltip>
-              <div style="font-weight:600;">Propiedades</div>
-              <div style="opacity:0.75;">Ver propiedades del elemento seleccionado</div>
             </bim-tooltip>
           </bim-button>
         </bim-toolbar-section>

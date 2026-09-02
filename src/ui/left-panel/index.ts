@@ -9,6 +9,7 @@ import type { CotaTool } from "../../tools/cota-tool";
 import type { ComputoTool } from "../../tools/computo-tool";
 import { saveRecentFile } from "../../ifc/recent-files";
 import { ensureExplicitThemeClass } from "../theme";
+import { toast } from "../toast";
 
 export interface LeftPanel {
   /** Frame "Escena": bim-panel propio con su header, para el split superior del panel derecho.
@@ -77,21 +78,34 @@ export function createLeftPanel(
     if (loadIfcBtn.loading) return;
     loadIfcBtn.loading         = true;
     loadTooltipDesc.textContent = "Cargando… 0%";
+    const notice = toast.loading("Preparando el modelo…", {
+      title: name,
+      progress: 0,
+    });
     try {
       const model = await ifcLoader.load(bytes, true, name, {
         processData: {
           progressCallback: (p) => {
             loadTooltipDesc.textContent = `Cargando… ${Math.round(p * 100)}%`;
+            notice.update({ message: "Procesando geometría…", progress: p });
           },
         },
       });
+      notice.update({ message: "Generando vista y miniatura…", progress: "indeterminate" });
       modelBytes.set(name, bytes);
       await onModelLoaded(model, name);
       saveRecentFile(name, bytes).catch((error) => console.error("No se pudo guardar en recientes:", error));
       loadTooltipDesc.textContent = "Cargar un archivo .ifc";
+      notice.resolve({ variant: "success", title: name, message: "Modelo cargado", duration: 3000 });
     } catch (error) {
       console.error("Error al cargar IFC:", error);
       loadTooltipDesc.textContent = "Error al cargar — reintentar";
+      notice.resolve({
+        variant: "error",
+        title: name,
+        message: "No se pudo cargar el modelo IFC",
+        dismissible: true,
+      });
     } finally {
       loadIfcBtn.loading = false;
     }

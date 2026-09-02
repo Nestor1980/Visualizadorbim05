@@ -4,6 +4,7 @@ import { getPropertySets, getItemData, getElementTypeName, getPredefinedType } f
 import { getQuantityForSelection, isCountedCategory, defaultUnidadForMethod } from "../computo/quantity-extractor";
 import { getQuantityMethod } from "../computo/ifc-quantity-rules";
 import { getCategoriaNombre } from "../computo/ifc-categoria-rules";
+import { compareItemDesignacion } from "../computo/iapv-order";
 import { psetValueKey } from "../computo/computo-columns";
 import { registerSeen } from "../ifc/pset-visibility";
 
@@ -92,8 +93,14 @@ export interface ComputoTool {
   /** Borra la sección; los ítems que tenía quedan sin sección (`categoriaId: null`),
    *  no se borran. */
   deleteCategoria: (id: string) => void;
+  /** Reordena las secciones por su nombre, en orden natural ("2" antes que
+   *  "10" — ver `compareItemDesignacion`). Usado por el botón "Ordenar
+   *  categorías" del panel. */
+  sortCategorias: () => void;
   /** Mueve un ítem a una sección (o a `null` para sacarlo de todas) — usado
-   *  por el drag & drop de filas entre secciones en computo-manager.ts. */
+   *  por el drag & drop de filas entre secciones en computo-manager.ts. Si al
+   *  moverlo la sección de origen queda sin ningún ítem, esa sección se
+   *  elimina automáticamente (ver `pruneCategoriaIfEmpty`). */
   moveItemToCategoria: (itemId: string, categoriaId: string | null) => void;
   /** Recrea una sección ya armada (sin pasar por `addCategoria`) — usado al
    *  restaurar un proyecto guardado. */
@@ -430,9 +437,11 @@ export function createComputoTool(
 
     item.elementos.splice(idx, 1);
     if (item.elementos.length === 0) {
+      const categoriaId = item.categoriaId;
       list.delete(item.id);
       if (currentItemId === item.id) currentItemId = null;
       onItemDeleted.trigger(item.id);
+      pruneCategoriaIfEmpty(categoriaId);
     } else {
       await recomputeCantidad(item);
       onItemChanged.trigger(item);
@@ -476,10 +485,13 @@ export function createComputoTool(
   }
 
   function deleteItem(id: string): void {
-    if (!list.has(id)) return;
+    const item = list.get(id);
+    if (!item) return;
+    const categoriaId = item.categoriaId;
     list.delete(id);
     if (currentItemId === id) currentItemId = null;
     onItemDeleted.trigger(id);
+    pruneCategoriaIfEmpty(categoriaId);
     repaintHighlight();
   }
 
@@ -538,13 +550,40 @@ export function createComputoTool(
     onCategoriaDeleted.trigger(id);
   }
 
+  /** Elimina la sección `id` si ya no le queda ningún ítem — se llama cada vez
+   *  que un ítem abandona una sección (drag & drop a otra, borrado del ítem, o
+   *  pérdida de su último elemento). No toca la sección "Sin categoría"
+   *  (`null`), ni las secciones recién creadas que todavía nadie pobló (a esas
+   *  nunca las "abandona" un ítem, así que no pasan por acá). */
+  function pruneCategoriaIfEmpty(id: string | null): void {
+    if (!id || !categorias.has(id)) return;
+    for (const item of list.values()) {
+      if (item.categoriaId === id) return;
+    }
+    categorias.delete(id);
+    onCategoriaDeleted.trigger(id);
+  }
+
+  function sortCategorias(): void {
+    if (categorias.size < 2) return;
+    const ordenadas = [...categorias.values()].sort((a, b) =>
+      compareItemDesignacion(a.nombre, b.nombre));
+    categorias.clear();
+    for (const categoria of ordenadas) categorias.set(categoria.id, categoria);
+    // El nuevo orden vive en el orden de inserción del Map; se avisa con
+    // `onCategoriaChanged` (los suscriptores re-renderizan sin mirar el arg).
+    onCategoriaChanged.trigger(ordenadas[0]);
+  }
+
   function moveItemToCategoria(itemId: string, categoriaId: string | null): void {
     const item = list.get(itemId);
     if (!item) return;
     if (categoriaId !== null && !categorias.has(categoriaId)) return;
     if (item.categoriaId === categoriaId) return;
+    const previa = item.categoriaId;
     item.categoriaId = categoriaId;
     onItemChanged.trigger(item);
+    pruneCategoriaIfEmpty(previa);
   }
 
   function restoreCategoria(data: ComputoCategoria): void {
@@ -573,6 +612,7 @@ export function createComputoTool(
     addCategoria,
     renameCategoria,
     deleteCategoria,
+    sortCategorias,
     moveItemToCategoria,
     restoreCategoria,
     registerClick,

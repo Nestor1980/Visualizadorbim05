@@ -76,14 +76,21 @@ function renderPropertiesTable(properties: Record<string, string>): string {
   return `<table style="width:100%;border-collapse:collapse;"><tbody>${rows}</tbody></table>`;
 }
 
-function createCollapsible(label: string, expanded: boolean): { wrapper: HTMLElement; body: HTMLElement } {
+function createCollapsible(
+  label: string,
+  expanded: boolean,
+  onToggle?: (open: boolean) => void,
+): { wrapper: HTMLElement; body: HTMLElement } {
   const wrapper = document.createElement("div");
   wrapper.className = `sel-collapsible${expanded ? " is-open" : ""}`;
 
   const header = document.createElement("button");
   header.className = "sel-collapsible-header";
   header.innerHTML = `<span class="sel-collapsible-chevron">&#9656;</span><span>${label}</span>`;
-  header.addEventListener("click", () => wrapper.classList.toggle("is-open"));
+  header.addEventListener("click", () => {
+    wrapper.classList.toggle("is-open");
+    onToggle?.(wrapper.classList.contains("is-open"));
+  });
 
   const body = document.createElement("div");
   body.className = "sel-collapsible-body";
@@ -104,17 +111,28 @@ export function createPropertiesPanel(
   (itemsDataTable as HTMLElement).style.maxHeight = "none";
   (itemsDataTable as HTMLElement).style.overflowY = "visible";
   (itemsDataTable as HTMLElement).style.fontSize  = "11px";
+  // El nodo raíz de esta tabla trae el ID de la instancia en su label
+  // (`Basic Wall:MUR-LHC-200-EXT:1663929`), así que cambia con cada elemento
+  // y no hay clave estable para recordar qué expandió el usuario. En lugar de
+  // eso la abrimos siempre hasta el primer nivel: el nodo raíz muestra sus
+  // hijos (Attributes, cada Pset…) pero esos arrancan colapsados. `expandedLevels`
+  // es una prop del propio <bim-table> y sobrevive a los reloads de updateItemsData.
+  itemsDataTable.expandedLevels = 1;
 
   let renderGen = 0;
 
+  // Nombres de Property Sets que el usuario dejó expandidos: se conserva entre
+  // selecciones para no tener que volver a abrir las mismas categorías cada vez
+  // que se pasa de un elemento a otro.
+  const expandedPsets = new Set<string>();
+
   // — Section —
   const section = document.createElement("bim-panel-section") as BUI.PanelSection;
-  section.label     = "Selection Information";
+  section.label     = "Información";
   section.icon      = "material-symbols:info";
   section.collapsed = true;
-  // Fuera de un <bim-panel>, bim-panel-section se autodetecta como "fixed"
-  // (sin botón de colapso); lo forzamos a false para que el header siga
-  // siendo clickeable cuando este panel flota en el viewport.
+  // La solapa "Información" del panel dinámico (right-panel/index.ts) sobreescribe
+  // collapsed/fixed para dejar la sección siempre abierta y sin colapsable propio.
   section.fixed     = false;
 
   // — Contenedor vertical de secciones colapsables —
@@ -160,7 +178,10 @@ export function createPropertiesPanel(
     );
     if (Object.keys(visibleProperties).length === 0) return false;
 
-    const { wrapper, body } = createCollapsible(set.name, false);
+    const { wrapper, body } = createCollapsible(set.name, expandedPsets.has(set.name), (open) => {
+      if (open) expandedPsets.add(set.name);
+      else expandedPsets.delete(set.name);
+    });
     body.innerHTML = renderPropertiesTable(visibleProperties);
     sectionsContainer.append(wrapper);
     return true;

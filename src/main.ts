@@ -34,6 +34,8 @@ import { setupComputoSection }    from "./computo/computo-manager";
 import { SelectionManager }       from "./selection/selection-manager";
 import { guardHovererVisibility } from "./selection/visibility-sync";
 import { showWelcomeScreen }      from "./ui/welcome-screen";
+import { mountToasts }             from "./ui/toast";
+import { setupProjectHistory }     from "./core/project-history";
 import { saveThumbnail }          from "./ifc/recent-files";
 
 /** Resuelve en cuanto el renderer dibuja el próximo frame (justo tras postproduction.update()). */
@@ -59,6 +61,10 @@ async function startApp(): Promise<{
   if (!container) throw new Error("No se encontró el elemento #container");
 
   const viewport = document.createElement("bim-viewport");
+
+  // Los toasts se anclan abajo a la derecha del visualizador 3D (el viewport
+  // se reubica entre solapas pero es siempre el mismo nodo).
+  mountToasts(viewport);
 
   // — Core scene —
   const { components, world, fragments, worldGrid, sunLight, threeRenderer, adjustGridToModel, axisMaterials } =
@@ -144,23 +150,11 @@ async function startApp(): Promise<{
   CUI.Manager.init();
   createNavWidget(viewport, world, fragments, vcRef);
 
-  const toolOptionsPanel = createToolOptionsPanel(components, fragments, sectionTool, worldLabelTool, drawTool, cotaTool, computoTool);
+  const toolOptionsPanel = createToolOptionsPanel(selectionManager, sectionTool, worldLabelTool, drawTool, cotaTool, computoTool);
   viewport.append(toolOptionsPanel.element);
 
   toolManager.setToolOptionsPanel(toolOptionsPanel);
   toolManager.setMode("navigate");
-
-  // Sync selectionManager with toolOptionsPanel selection handlers
-  const origApply     = toolOptionsPanel.applySelection.bind(toolOptionsPanel);
-  const origApplyType = toolOptionsPanel.applyTypeSelection.bind(toolOptionsPanel);
-  toolOptionsPanel.applySelection = async (map) => {
-    selectionManager.lastModelIdMap = map;
-    return origApply(map);
-  };
-  toolOptionsPanel.applyTypeSelection = async (map, label, count) => {
-    selectionManager.lastModelIdMap = map;
-    return origApplyType(map, label, count);
-  };
 
   const onModelLoaded = async (model: any, name: string) => {
     await processModel(model, fragments, sectionTool, adjustGridToModel);
@@ -179,23 +173,20 @@ async function startApp(): Promise<{
   );
 
   // Panel dinámico de abajo: Renderizado.
-  const rightPanel = createRightPanel(world, postproduction, sunLight, threeRenderer);
+  const rightPanel = createRightPanel(
+    world, postproduction, sunLight, threeRenderer, components, fragments, selectionManager,
+  );
 
-  // Selecting an element (tree or 3D click) switches the right panel to the
-  // Propiedades view, mirroring an explicit click on the toolbar button.
-  const showProperties = () => {
-    if (toolManager.activeMode !== "properties") toolManager.setMode("properties");
-  };
-
+  // Seleccionar un elemento (árbol o click 3D) muestra su información en la
+  // solapa "Información" del panel dinámico (ver right-panel/index.ts: tanto
+  // applySelection como applyTypeSelection activan esa solapa).
   leftPanel.onElementClick((modelId, localId) => {
     leftPanel.clearTypesSelection();
-    showProperties();
-    toolOptionsPanel.applySelection({ [modelId]: new Set([localId]) }).catch(console.error);
+    rightPanel.applySelection({ [modelId]: new Set([localId]) }).catch(console.error);
   });
 
   leftPanel.onTypeGroupClick((modelIdMap, typeLabel, count) => {
-    showProperties();
-    toolOptionsPanel.applyTypeSelection(modelIdMap, typeLabel, count).catch(console.error);
+    rightPanel.applyTypeSelection(modelIdMap, typeLabel, count).catch(console.error);
   });
 
   highlighter.events["select"].onHighlight.add((modelIdMap) => {
@@ -206,8 +197,7 @@ async function startApp(): Promise<{
       return;
     }
     leftPanel.clearTypesSelection();
-    showProperties();
-    toolOptionsPanel.applySelection(modelIdMap).catch(console.error);
+    rightPanel.applySelection(modelIdMap).catch(console.error);
   });
 
   const { openModal, selectTopic, topicsFrame } = setupBCFSection(components, world, rightPanel);
@@ -218,8 +208,26 @@ async function startApp(): Promise<{
   leftPanel.onOpenTopicsTable(() => mainTabs.activateTab("bcf-topic"));
   const toolbar        = createToolbar(world, fragments, toolManager, selectionManager, openModal, highlighter);
   const settingsModal   = createSettingsModal(fragments);
-  const projectIoDeps: ProjectIoDeps = { fragments, topics, viewpoints, world, leftPanel };
-  const projectToolbar  = createProjectToolbar(projectIoDeps, settingsModal.openModal, leftPanel.triggerLoadIfc);
+
+  // Undo / redo a nivel proyecto (Ctrl+Z / Ctrl+Shift+Z): snapshot serializado
+  // de las capas de datos por cada gesto (cotas, cortes, etiquetas, trazos,
+  // ítems y categorías de cómputo). Ver src/core/project-history.ts.
+  const projectHistory = setupProjectHistory({
+    leftPanel,
+    cotas:     cotaTool,
+    drawings:  drawTool,
+    labels:    worldLabelTool,
+    clipper:   sectionTool.clipper,
+    computos:  computoTool,
+  });
+
+  const projectIoDeps: ProjectIoDeps = {
+    fragments, topics, viewpoints, world, leftPanel,
+    history: { suspendWhile: projectHistory.suspendWhile, reset: projectHistory.reset },
+  };
+  const projectToolbar  = createProjectToolbar(
+    projectIoDeps, settingsModal.openModal, leftPanel.triggerLoadIfc, projectHistory.controls,
+  );
 
   // Los botones de la toolbar se registran en el ToolManager al crearla, después
   // del setMode inicial: re-aplicar el modo para que "Navegar" arranque activo.
@@ -274,6 +282,9 @@ async function startApp(): Promise<{
     syncViewportSize();
   });
   syncViewportSize();
+
+  // Escena base ya armada: a partir de acá cada gesto cuenta como paso deshacible.
+  projectHistory.begin();
 
   return { triggerLoadIfc: leftPanel.triggerLoadIfc, loadIfcBytes: leftPanel.loadIfcBytes };
 }

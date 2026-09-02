@@ -28,6 +28,10 @@ type Vec3Tuple = [number, number, number];
  *  recrearlos reciben uno nuevo y se reasignan a `layerId` justo después. */
 export interface SerializedDataLayers {
   layers: DataLayer[];
+  /** Id de la capa de datos activa (donde caen las cotas/cortes/etiquetas
+   *  nuevas). Opcional: los proyectos guardados antes de este campo caen a la
+   *  primera capa al restaurar, igual que antes. */
+  activeDataLayerId?: string | null;
   sections: {
     layerId: string; title: string; origin: Vec3Tuple; normal: Vec3Tuple; enabled: boolean;
   }[];
@@ -997,6 +1001,7 @@ export function createDataLayersTree(
 
     return {
       layers: dataLayers.map((l) => ({ ...l })),
+      activeDataLayerId,
       sections, topics: topicsOut, labels: labelsOut, drawings: drawingsOut, cotas: cotasOut,
       computo: computoOut, computoCategorias: computoCategoriasOut,
     };
@@ -1025,6 +1030,11 @@ export function createDataLayersTree(
     activeDataLayerId = null;
 
     for (const l of data.layers) dataLayers.push({ ...l });
+
+    activeDataLayerId =
+      data.activeDataLayerId && dataLayers.some((l) => l.id === data.activeDataLayerId)
+        ? data.activeDataLayerId
+        : dataLayers[0]?.id ?? null;
 
     for (const s of data.sections) {
       const id = clipper.createFromNormalAndCoplanarPoint(world, toVec3(s.normal), toVec3(s.origin));

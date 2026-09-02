@@ -1,5 +1,4 @@
-import * as OBC from "@thatopen/components";
-import { createPropertiesPanel } from "./right-panel/properties-panel";
+import { createSelectionPanel } from "./right-panel/selection-panel";
 import { createSectionPanel } from "./right-panel/section-panel";
 import { createLabelPanel } from "./right-panel/label-panel";
 import { createDrawPanel } from "./right-panel/draw-panel";
@@ -10,14 +9,13 @@ import type { WorldLabelTool } from "../tools/world-label-tool";
 import type { DrawTool } from "../tools/draw-tool";
 import type { CotaTool } from "../tools/cota-tool";
 import type { ComputoTool } from "../tools/computo-tool";
+import type { SelectionManager } from "../selection/selection-manager";
 
-export type ToolOptionsView = "cota" | "section" | "properties" | "label" | "draw" | "computo" | null;
+export type ToolOptionsView = "cota" | "section" | "selection" | "label" | "draw" | "computo" | null;
 
 export interface ToolOptionsPanel {
   element: HTMLElement;
   setView: (view: ToolOptionsView) => void;
-  applySelection: (modelIdMap: OBC.ModelIdMap) => Promise<void>;
-  applyTypeSelection: (modelIdMap: OBC.ModelIdMap, typeLabel: string, count: number) => Promise<void>;
 }
 
 /**
@@ -25,37 +23,37 @@ export interface ToolOptionsPanel {
  * opciones de herramienta de Blender): muestra los ajustes de la herramienta
  * activa y se oculta por completo cuando no hay ninguna seleccionada. Cada
  * bim-panel-section trae su propio header colapsable.
+ *
+ * La información del elemento seleccionado ya no vive acá: se muestra en la
+ * solapa "Información" del panel dinámico de abajo (ver right-panel/index.ts).
  */
 export function createToolOptionsPanel(
-  components: OBC.Components,
-  fragments: OBC.FragmentsManager,
+  selectionManager: SelectionManager,
   sectionTool: SectionTool,
   worldLabelTool: WorldLabelTool,
   drawTool: DrawTool,
   cotaTool: CotaTool,
   computoTool: ComputoTool,
 ): ToolOptionsPanel {
-  const propertiesPanel = createPropertiesPanel(components, fragments);
+  const selectionPanel = createSelectionPanel(selectionManager);
   const sectionPanel    = createSectionPanel(sectionTool);
   const labelPanel      = createLabelPanel(worldLabelTool);
   const drawPanel       = createDrawPanel(drawTool);
   const cotaPanel       = createCotaPanel(cotaTool);
   const computoPanel    = createComputoPanel(computoTool);
 
-  propertiesPanel.section.collapsed = false;
-
   const views: Record<Exclude<ToolOptionsView, null>, HTMLElement> = {
-    cota:       cotaPanel.element,
-    section:    sectionPanel.section,
-    properties: propertiesPanel.section,
-    label:      labelPanel.element,
-    draw:       drawPanel.element,
-    computo:    computoPanel.element,
+    cota:      cotaPanel.element,
+    section:   sectionPanel.section,
+    selection: selectionPanel.element,
+    label:     labelPanel.element,
+    draw:      drawPanel.element,
+    computo:   computoPanel.element,
   };
 
   const content = document.createElement("div");
   content.className = "tool-options-panel-content";
-  content.append(views.cota, views.section, views.properties, views.label, views.draw, views.computo);
+  content.append(views.cota, views.section, views.selection, views.label, views.draw, views.computo);
 
   const resizeHandle = document.createElement("div");
   resizeHandle.className = "tool-options-panel-resize-handle";
@@ -131,21 +129,5 @@ export function createToolOptionsPanel(
 
   setView(null);
 
-  const applySelection = async (modelIdMap: OBC.ModelIdMap): Promise<void> => {
-    propertiesPanel.updateItemsData({ modelIdMap, emptySelectionWarning: false });
-    await propertiesPanel.renderForSelection(modelIdMap);
-    propertiesPanel.resetScrollTop();
-  };
-
-  const applyTypeSelection = async (
-    modelIdMap: OBC.ModelIdMap,
-    typeLabel: string,
-    count: number,
-  ): Promise<void> => {
-    propertiesPanel.updateItemsData({ modelIdMap, emptySelectionWarning: false });
-    await propertiesPanel.renderForTypeGroup(modelIdMap, typeLabel, count);
-    propertiesPanel.resetScrollTop();
-  };
-
-  return { element, setView, applySelection, applyTypeSelection };
+  return { element, setView };
 }

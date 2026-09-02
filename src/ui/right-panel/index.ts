@@ -2,18 +2,29 @@ import * as THREE from "three";
 import * as OBC from "@thatopen/components";
 import * as OBF from "@thatopen/components-front";
 import { createRenderizadoPanel } from "./renderizado-panel";
+import { createPropertiesPanel } from "./properties-panel";
 import { createDynamicTabsPanel, type DynamicPanelTab } from "./dynamic-tabs-panel";
+import type { SelectionManager } from "../../selection/selection-manager";
+
+const INFO_TAB_ID = "informacion";
 
 export interface RightPanel {
   element: HTMLElement;
   addTab: (tab: DynamicPanelTab) => void;
   removeTab: (id: string) => void;
+  /** Renderiza las propiedades del elemento seleccionado en la solapa
+   *  "Información" y la trae a primer plano. */
+  applySelection: (modelIdMap: OBC.ModelIdMap) => Promise<void>;
+  /** Ídem para una selección por tipo (grupo del árbol de escena). */
+  applyTypeSelection: (modelIdMap: OBC.ModelIdMap, typeLabel: string, count: number) => Promise<void>;
+  /** Activa la solapa "Información" sin tocar la selección. */
+  activateInfoTab: () => void;
 }
 
 /**
  * Panel derecho "dinámico": un riel de solapas verticales (ver
- * dynamic-tabs-panel.ts) donde Renderizado es la única solapa fija — el
- * resto (ej. detalle de un topic BCF) se agrega/quita en caliente vía
+ * dynamic-tabs-panel.ts). Renderizado e Información son las solapas fijas
+ * — el resto (ej. detalle de un topic BCF) se agrega/quita en caliente vía
  * addTab/removeTab según lo que esté ocurriendo en la escena.
  */
 export function createRightPanel(
@@ -21,6 +32,9 @@ export function createRightPanel(
   postproduction: OBF.Postproduction,
   sunLight: THREE.DirectionalLight,
   threeRenderer: THREE.WebGLRenderer,
+  components: OBC.Components,
+  fragments: OBC.FragmentsManager,
+  selectionManager: SelectionManager,
 ): RightPanel {
   const dynamicPanel = createDynamicTabsPanel();
 
@@ -33,7 +47,52 @@ export function createRightPanel(
     fixed: true,
   });
 
-  return { element: dynamicPanel.element, addTab: dynamicPanel.addTab, removeTab: dynamicPanel.removeTab };
+  // — Información: propiedades del elemento seleccionado (antes vivía en el
+  // panel flotante de opciones de herramienta). Dockeada acá, la sección va
+  // siempre expandida y sin header colapsable propio. —
+  const propertiesPanel = createPropertiesPanel(components, fragments);
+  propertiesPanel.section.collapsed = false;
+  propertiesPanel.section.fixed     = true;
+  dynamicPanel.addTab({
+    id: INFO_TAB_ID,
+    label: "Información",
+    icon: "material-symbols:info",
+    content: propertiesPanel.section,
+    fixed: true,
+  });
+  // Renderizado arranca como la solapa visible.
+  dynamicPanel.activateTab("renderizado");
+
+  const activateInfoTab = (): void => dynamicPanel.activateTab(INFO_TAB_ID);
+
+  const applySelection = async (modelIdMap: OBC.ModelIdMap): Promise<void> => {
+    selectionManager.lastModelIdMap = modelIdMap;
+    activateInfoTab();
+    propertiesPanel.updateItemsData({ modelIdMap, emptySelectionWarning: false });
+    await propertiesPanel.renderForSelection(modelIdMap);
+    propertiesPanel.resetScrollTop();
+  };
+
+  const applyTypeSelection = async (
+    modelIdMap: OBC.ModelIdMap,
+    typeLabel: string,
+    count: number,
+  ): Promise<void> => {
+    selectionManager.lastModelIdMap = modelIdMap;
+    activateInfoTab();
+    propertiesPanel.updateItemsData({ modelIdMap, emptySelectionWarning: false });
+    await propertiesPanel.renderForTypeGroup(modelIdMap, typeLabel, count);
+    propertiesPanel.resetScrollTop();
+  };
+
+  return {
+    element: dynamicPanel.element,
+    addTab: dynamicPanel.addTab,
+    removeTab: dynamicPanel.removeTab,
+    applySelection,
+    applyTypeSelection,
+    activateInfoTab,
+  };
 }
 
 export const PANEL_MIN_WIDTH = 280;
