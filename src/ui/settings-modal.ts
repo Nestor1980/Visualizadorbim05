@@ -22,18 +22,30 @@ function escapeHtml(value: string): string {
   return div.innerHTML;
 }
 
+/** Lee el texto del filtro rápido de tipo IFC que acompaña a `container`
+ *  (input `.settings-quick-filter-input` hermano dentro de la misma
+ *  `.settings-section`). Devuelve el término en mayúsculas y sin espacios,
+ *  o "" si no hay filtro. */
+function readQuickFilter(container: HTMLElement): string {
+  const input = container.parentElement?.querySelector<HTMLInputElement>(".settings-quick-filter-input");
+  return (input?.value ?? "").trim().toUpperCase();
+}
+
 /** Tabla editable de reglas de cuantificación por tipo IFC (ver
  *  ifc-quantity-rules.ts) — se re-renderiza entera en cada cambio, mismo
  *  patrón que la tabla de Cómputo en computo-manager.ts. */
 function renderQuantityRules(container: HTMLElement): void {
-  const rules = listQuantityRules();
+  const filter = readQuickFilter(container);
+  const rules = listQuantityRules().filter((rule) => !filter || rule.tipo.toUpperCase().includes(filter));
   const methodOptions = (Object.keys(QUANTITY_METHOD_LABELS) as QuantityMethod[])
     .map((method) => `<option value="${method}">${QUANTITY_METHOD_LABELS[method]}</option>`)
     .join("");
 
   container.innerHTML = `
     <div class="quantity-rules-list">
-      ${rules.map((rule) => `
+      ${rules.length === 0
+        ? `<div class="quantity-rules-empty">${filter ? "Ningún tipo IFC coincide con el filtro." : "No hay reglas."}</div>`
+        : rules.map((rule) => `
         <div class="quantity-rule-row">
           <span class="quantity-rule-tipo">${escapeHtml(rule.tipo)}</span>
           <select class="quantity-rule-select" data-tipo="${escapeHtml(rule.tipo)}">${methodOptions}</select>
@@ -103,9 +115,13 @@ function renderQuantityRules(container: HTMLElement): void {
  *  columna de acciones de cada fila — el modal es angosto y esa columna
  *  extra le come ancho al input de nombre. */
 function renderCategoriaRules(container: HTMLElement): void {
-  const rules = listCategoriaRules();
+  const filter = readQuickFilter(container);
+  const rules = listCategoriaRules().filter((rule) => !filter || rule.tipo.toUpperCase().includes(filter));
 
   container.innerHTML = `
+    ${rules.length === 0
+      ? `<div class="quantity-rules-empty">${filter ? "Ningún tipo IFC coincide con el filtro." : "No hay reglas."}</div>`
+      : ""}
     <div class="categoria-rules-grid">
       ${rules.map((rule) => `
         <span class="quantity-rule-tipo">${escapeHtml(rule.tipo)}</span>
@@ -245,9 +261,22 @@ export function createSettingsModal(fragments: OBC.FragmentsManager): SettingsMo
               <iconify-icon icon="mdi:share-variant-outline"></iconify-icon>
               <span>Compartir</span>
             </div>
-            <div class="settings-sidebar-item" data-section="computo">
-              <iconify-icon icon="material-symbols:calculate-outline"></iconify-icon>
-              <span>Cómputo</span>
+            <div class="settings-sidebar-group settings-sidebar-group--open">
+              <div class="settings-sidebar-item settings-sidebar-item--parent" data-group-toggle="computo">
+                <iconify-icon icon="material-symbols:calculate-outline"></iconify-icon>
+                <span>Cómputo</span>
+                <iconify-icon class="settings-sidebar-caret" icon="material-symbols:chevron-right"></iconify-icon>
+              </div>
+              <div class="settings-sidebar-children">
+                <div class="settings-sidebar-item settings-sidebar-item--child" data-section="computo-reglas">
+                  <iconify-icon icon="material-symbols:rule"></iconify-icon>
+                  <span>Reglas</span>
+                </div>
+                <div class="settings-sidebar-item settings-sidebar-item--child" data-section="computo-categorias">
+                  <iconify-icon icon="material-symbols:category-outline"></iconify-icon>
+                  <span>Categorías</span>
+                </div>
+              </div>
             </div>
             <div class="settings-sidebar-item" data-section="propiedades">
               <iconify-icon icon="material-symbols:list-alt-outline"></iconify-icon>
@@ -281,7 +310,7 @@ export function createSettingsModal(fragments: OBC.FragmentsManager): SettingsMo
                 </bim-text-input>
               </div>
             </div>
-            <div class="settings-section" data-section="computo" hidden>
+            <div class="settings-section" data-section="computo-reglas" hidden>
               <div class="settings-row">
                 <div class="settings-row-text">
                   <span class="settings-row-title">Reglas de cuantificación por tipo IFC</span>
@@ -292,8 +321,15 @@ export function createSettingsModal(fragments: OBC.FragmentsManager): SettingsMo
                   </span>
                 </div>
               </div>
+              <div class="settings-quick-filter">
+                <iconify-icon icon="material-symbols:search"></iconify-icon>
+                <input type="text" class="settings-quick-filter-input" data-filter="reglas"
+                  placeholder="Filtrar por tipo IFC, ej. IFCWALL">
+              </div>
               <div class="quantity-rules-container"></div>
-              <div class="settings-row settings-row--divider">
+            </div>
+            <div class="settings-section" data-section="computo-categorias" hidden>
+              <div class="settings-row">
                 <div class="settings-row-text">
                   <span class="settings-row-title">Categorías automáticas por tipo IFC</span>
                   <span class="settings-row-desc">
@@ -304,6 +340,11 @@ export function createSettingsModal(fragments: OBC.FragmentsManager): SettingsMo
                     navegador.
                   </span>
                 </div>
+              </div>
+              <div class="settings-quick-filter">
+                <iconify-icon icon="material-symbols:search"></iconify-icon>
+                <input type="text" class="settings-quick-filter-input" data-filter="categorias"
+                  placeholder="Filtrar por tipo IFC, ej. IFCWALL">
               </div>
               <div class="categoria-rules-container"></div>
             </div>
@@ -339,6 +380,14 @@ export function createSettingsModal(fragments: OBC.FragmentsManager): SettingsMo
   const categoriaRulesContainer = modal.querySelector<HTMLElement>(".categoria-rules-container")!;
   renderCategoriaRules(categoriaRulesContainer);
 
+  // Filtro rápido por tipo IFC — el input vive fuera del contenedor que se
+  // re-renderiza, así no pierde el foco en cada tecla; sólo dispara un
+  // re-render que vuelve a leer su valor vía readQuickFilter().
+  modal.querySelector<HTMLInputElement>('.settings-quick-filter-input[data-filter="reglas"]')!
+    .addEventListener("input", () => renderQuantityRules(quantityRulesContainer));
+  modal.querySelector<HTMLInputElement>('.settings-quick-filter-input[data-filter="categorias"]')!
+    .addEventListener("input", () => renderCategoriaRules(categoriaRulesContainer));
+
   const psetVisibilityContainer = modal.querySelector<HTMLElement>(".pset-visibility-container")!;
   renderPsetVisibility(psetVisibilityContainer);
 
@@ -371,7 +420,13 @@ export function createSettingsModal(fragments: OBC.FragmentsManager): SettingsMo
   const sections     = [...modal.querySelectorAll<HTMLElement>(".settings-section")];
   for (const item of sidebarItems) {
     item.addEventListener("click", () => {
+      // Ítem padre del árbol (ej. "Cómputo"): sólo despliega/pliega sus hijos.
+      if (item.dataset.groupToggle) {
+        item.closest(".settings-sidebar-group")?.classList.toggle("settings-sidebar-group--open");
+        return;
+      }
       const target = item.dataset.section;
+      if (!target) return;
       for (const other of sidebarItems) other.classList.toggle("settings-sidebar-item--active", other === item);
       for (const section of sections) section.hidden = section.dataset.section !== target;
     });

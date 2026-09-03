@@ -1724,6 +1724,62 @@ bim-view-cube:active {
   font-weight: 600;
 }
 
+/* Árbol del sidebar: un ítem padre (ej. "Cómputo") con hijos plegables. */
+.settings-sidebar-item--parent .settings-sidebar-caret {
+  margin-left: auto;
+  font-size: 0.95rem;
+  transition: transform 0.15s ease;
+}
+.settings-sidebar-group--open .settings-sidebar-item--parent .settings-sidebar-caret {
+  transform: rotate(90deg);
+}
+.settings-sidebar-children {
+  display: none;
+  flex-direction: column;
+  gap: 0.1rem;
+  margin: 0.15rem 0 0.25rem 0.75rem;
+  padding-left: 0.5rem;
+  border-left: 1px solid var(--border-subtle);
+}
+.settings-sidebar-group--open .settings-sidebar-children {
+  display: flex;
+}
+.settings-sidebar-item--child {
+  font-size: 0.8rem;
+  padding: 0.4rem 0.6rem;
+}
+
+/* Filtro rápido de tipo IFC arriba de cada tabla de reglas. */
+.settings-quick-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--bg-surface);
+  color: var(--text-muted);
+}
+.settings-quick-filter iconify-icon {
+  font-size: 1rem;
+  flex: 0 0 auto;
+}
+.settings-quick-filter-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  outline: none;
+}
+.quantity-rules-empty {
+  padding: 0.6rem 0.2rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
 .settings-content {
   flex: 1 1 auto;
   padding: 1.25rem;

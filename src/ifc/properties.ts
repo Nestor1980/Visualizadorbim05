@@ -4,17 +4,15 @@ export async function getItemData(model: any, id: number, deep = true): Promise<
   if (!Number.isFinite(id)) return null;
   if (typeof model.getItemsData === "function") {
     try {
-      // `relationsDefault: { relations: true }` no trae `IsTypedBy` pese a lo
-      // que sugiere el ejemplo de "full graph" en los docs de
-      // @thatopen/fragments — se pide acá por nombre, mismo patrón que usa
-      // @thatopen/components internamente (ver su `getTypePsets`). Con este
-      // modelo puntual (Modulo Ahora Tu Hogar.ifc) igual sigue sin resolver
-      // — `itemData.IsTypedBy` queda `undefined` incluso pidiéndolo así, lo
-      // que apunta a que la relación no quedó indexada al convertir este IFC
-      // a Fragments (no algo arreglable solo desde acá) — ver
-      // PLAN_IAPV_PSET_COMPUTO.md, limitación conocida. Se deja este pedido
-      // explícito de todos modos: no rompe nada y es el patrón correcto
-      // según la librería, por si el problema es específico de este modelo.
+      // Ojo: el `IfcImporter` de @thatopen/fragments 3.4 mapea
+      // `IFCRELDEFINESBYTYPE` con `{ forRelated: "IsDefinedBy" }` — es decir,
+      // el vínculo instancia↔tipo NO llega como `IsTypedBy` sino como un
+      // `IfcRelDefinesByType` más dentro de `IsDefinedBy` (junto a los
+      // `IfcRelDefinesByProperties`). Por eso `itemData.IsTypedBy` queda
+      // `undefined` aunque se pida por nombre. Se sigue pidiendo `IsTypedBy`
+      // por compatibilidad con modelos convertidos por otras herramientas,
+      // pero la resolución de Psets de tipo se hace vía `IsDefinedBy` →
+      // `RelatingType` (ver `collectTypeObjects`).
       const cfg = deep
         ? {
             attributesDefault: true,
@@ -42,6 +40,68 @@ export function getExpressId(obj: any): number | null {
   if (typeof obj._localId?.value === "number") return obj._localId.value;
   if (typeof obj.expressID === "number")       return obj.expressID;
   return null;
+}
+
+/** Resuelve una referencia de @thatopen/fragments (`number`, `{value:number}`
+ *  o el objeto ya inlineado) al item completo. Devuelve `null` si no resuelve. */
+async function resolveRef(model: any, ref: any, deep: boolean): Promise<any> {
+  if (ref === null || ref === undefined) return null;
+  if (typeof ref === "number") return getItemData(model, ref, deep);
+  if (typeof ref === "object" && typeof ref.value === "number") return getItemData(model, ref.value, deep);
+  if (typeof ref === "object") return ref;
+  return null;
+}
+
+function readName(raw: any): string | null {
+  return typeof raw === "string" ? raw
+    : raw?.value !== undefined ? String(raw.value)
+    : null;
+}
+
+/** Objetos de Tipo IFC (`IfcElementType`) vinculados a la instancia.
+ *
+ *  El `IfcImporter` de @thatopen/fragments 3.4 no expone `IsTypedBy`: el
+ *  vínculo instancia↔tipo llega como un `IfcRelDefinesByType` más dentro de
+ *  `IsDefinedBy` (con su `RelatingType`). Se contemplan las dos formas para
+ *  no depender de con qué herramienta se convirtió el IFC. */
+async function collectTypeObjects(model: any, itemData: any): Promise<any[]> {
+  const types: any[] = [];
+  const seen = new Set<number>();
+
+  const addType = async (typeRef: any): Promise<void> => {
+    const typeObj = await resolveRef(model, typeRef, true);
+    if (!typeObj || typeof typeObj !== "object") return;
+    const id = getExpressId(typeObj);
+    if (id !== null) {
+      if (seen.has(id)) return;
+      seen.add(id);
+    }
+    types.push(typeObj);
+  };
+
+  // Forma A: `IsTypedBy` → `IfcRelDefinesByType` (o el tipo ya inlineado).
+  if (Array.isArray(itemData.IsTypedBy)) {
+    for (const relRef of itemData.IsTypedBy) {
+      const relObj = await resolveRef(model, relRef, false);
+      if (!relObj || typeof relObj !== "object") continue;
+      if (relObj.RelatingType) await addType(relObj.RelatingType);
+      else if (Array.isArray(relObj.HasPropertySets)) await addType(relObj); // ya es el tipo
+    }
+  }
+
+  // Forma B: `IsDefinedBy` con un `IfcRelDefinesByType` (caso fragments 3.4).
+  if (Array.isArray(itemData.IsDefinedBy)) {
+    for (const relRef of itemData.IsDefinedBy) {
+      const relObj = await resolveRef(model, relRef, false);
+      if (!relObj || typeof relObj !== "object") continue;
+      const category = relObj._category?.value ?? relObj._category;
+      if (relObj.RelatingType || category === "IFCRELDEFINESBYTYPE") {
+        await addType(relObj.RelatingType ?? relObj);
+      }
+    }
+  }
+
+  return types;
 }
 
 export function extractPropValue(prop: any): string {
@@ -112,10 +172,20 @@ export async function processPset(
 
   if (Object.keys(propertyMap).length === 0) return;
 
+  // Si el mismo Pset (por nombre) ya se vio en otra relación del elemento,
+  // se hace unión de propiedades en vez de quedarse solo con la versión "más
+  // grande" — así no se pierde una propiedad que exista únicamente en una de
+  // las apariciones. Ante colisión, no se deja que un "—" pise un valor real.
   const existing = out.get(name);
-  if (!existing || Object.keys(propertyMap).length > Object.keys(existing.properties).length) {
+  if (!existing) {
     out.set(name, { name, properties: propertyMap });
+    return;
   }
+  const merged = { ...existing.properties };
+  for (const [key, value] of Object.entries(propertyMap)) {
+    if (merged[key] === undefined || merged[key] === "—") merged[key] = value;
+  }
+  out.set(name, { name, properties: merged });
 }
 
 export async function getTypePsets(
@@ -123,35 +193,10 @@ export async function getTypePsets(
   itemData: any,
 ): Promise<{ name: string; properties: Record<string, string> }[]> {
   const out = new Map<string, { name: string; properties: Record<string, string> }>();
-  const isTypedBy = itemData.IsTypedBy;
-  if (!Array.isArray(isTypedBy) || isTypedBy.length === 0) return [];
+  const typeObjects = await collectTypeObjects(model, itemData);
+  if (typeObjects.length === 0) return [];
 
-  for (const relRef of isTypedBy) {
-    if (relRef === null || relRef === undefined) continue;
-
-    let relObj: any;
-    if (typeof relRef === "number") {
-      relObj = await getItemData(model, relRef, false);
-    } else if (typeof relRef === "object" && typeof relRef.value === "number") {
-      relObj = await getItemData(model, relRef.value, false);
-    } else {
-      relObj = relRef;
-    }
-    if (!relObj || typeof relObj !== "object") continue;
-
-    const relatingTypeRef = relObj.RelatingType;
-    if (!relatingTypeRef) continue;
-
-    let typeObj: any;
-    if (typeof relatingTypeRef === "number") {
-      typeObj = await getItemData(model, relatingTypeRef, true);
-    } else if (typeof relatingTypeRef === "object" && typeof relatingTypeRef.value === "number") {
-      typeObj = await getItemData(model, relatingTypeRef.value, true);
-    } else {
-      typeObj = relatingTypeRef;
-    }
-    if (!typeObj || typeof typeObj !== "object") continue;
-
+  for (const typeObj of typeObjects) {
     const typePsetSources = [
       ...(Array.isArray(typeObj.IsDefinedBy)     ? typeObj.IsDefinedBy     : []),
       ...(Array.isArray(typeObj.HasPropertySets) ? typeObj.HasPropertySets : []),
@@ -199,51 +244,19 @@ export async function getTypePsets(
 /**
  * Nombre del tipo/familia de un elemento (ej. "MUR_LHC200") — a diferencia
  * de `getTypePsets` (que trae los Psets del tipo), esto solo resuelve el
- * `Name` del `IfcElementType` relacionado (vía `IsTypedBy` → `RelatingType`),
- * con `ObjectType` de la instancia como respaldo. Se usa para separar
- * elementos que comparten clase IFC (ej. todos "IFCWALL") pero son de tipos
- * distintos (paredes de espesores/materiales distintos), algo que la sola
- * categoría IFC no distingue.
+ * `Name` del `IfcElementType` relacionado (vía `collectTypeObjects`), con
+ * `ObjectType` de la instancia como respaldo. Se usa para separar elementos
+ * que comparten clase IFC (ej. todos "IFCWALL") pero son de tipos distintos
+ * (paredes de espesores/materiales distintos), algo que la sola categoría
+ * IFC no distingue.
  */
 export async function getElementTypeName(model: any, localId: number): Promise<string | null> {
   const itemData = await getItemData(model, localId, true);
   if (!itemData) return null;
 
-  const isTypedBy = itemData.IsTypedBy;
-  if (Array.isArray(isTypedBy)) {
-    for (const relRef of isTypedBy) {
-      if (relRef === null || relRef === undefined) continue;
-
-      let relObj: any;
-      if (typeof relRef === "number") {
-        relObj = await getItemData(model, relRef, false);
-      } else if (typeof relRef === "object" && typeof relRef.value === "number") {
-        relObj = await getItemData(model, relRef.value, false);
-      } else {
-        relObj = relRef;
-      }
-      if (!relObj || typeof relObj !== "object") continue;
-
-      const relatingTypeRef = relObj.RelatingType;
-      if (!relatingTypeRef) continue;
-
-      let typeObj: any;
-      if (typeof relatingTypeRef === "number") {
-        typeObj = await getItemData(model, relatingTypeRef, false);
-      } else if (typeof relatingTypeRef === "object" && typeof relatingTypeRef.value === "number") {
-        typeObj = await getItemData(model, relatingTypeRef.value, false);
-      } else {
-        typeObj = relatingTypeRef;
-      }
-      if (!typeObj || typeof typeObj !== "object") continue;
-
-      const rawName = typeObj.Name;
-      const name =
-        typeof rawName === "string" ? rawName
-        : rawName?.value !== undefined ? String(rawName.value)
-        : null;
-      if (name) return name;
-    }
+  for (const typeObj of await collectTypeObjects(model, itemData)) {
+    const name = readName(typeObj.Name);
+    if (name) return name;
   }
 
   const rawObjectType = itemData.ObjectType;

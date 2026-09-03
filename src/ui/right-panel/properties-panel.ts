@@ -34,6 +34,24 @@ function injectCollapsibleStyles(): void {
     }
     .sel-collapsible-body { display:none; padding:4px 2px; }
     .sel-collapsible.is-open > .sel-collapsible-body { display:block; }
+    .info-quick-filter {
+      display:flex; align-items:center; gap:6px;
+      margin:6px 6px 4px; padding:5px 8px;
+      border:1px solid var(--bim-ui_bg-contrast-20); border-radius:6px;
+      background:var(--bim-ui_bg-contrast-10); color:var(--bim-ui_bg-contrast-60);
+    }
+    .info-quick-filter iconify-icon { font-size:13px; flex-shrink:0; }
+    .info-quick-filter input {
+      flex:1 1 auto; min-width:0; border:none; outline:none;
+      background:transparent; color:var(--bim-ui_bg-contrast-100);
+      font-family:inherit; font-size:11px;
+    }
+    .info-quick-filter input::placeholder { color:var(--bim-ui_bg-contrast-40); }
+    .info-quick-filter-clear {
+      border:none; background:transparent; cursor:pointer; padding:0;
+      display:none; align-items:center; color:var(--bim-ui_bg-contrast-60);
+    }
+    .info-quick-filter.has-value .info-quick-filter-clear { display:inline-flex; }
   `;
   document.head.append(s);
 }
@@ -118,8 +136,22 @@ export function createPropertiesPanel(
   // hijos (Attributes, cada Pset…) pero esos arrancan colapsados. `expandedLevels`
   // es una prop del propio <bim-table> y sobrevive a los reloads de updateItemsData.
   itemsDataTable.expandedLevels = 1;
+  // Al filtrar, mantené visibles los nodos padre (Attributes, cada Pset…) de
+  // las filas que matchean, no sólo las filas sueltas.
+  itemsDataTable.preserveStructureOnFilter = true;
 
   let renderGen = 0;
+
+  // Término del filtro rápido del panel. Es una variable de la clausura (no se
+  // reinicia en cada render) así que se conserva al pasar de un elemento a
+  // otro e incluso al cambiar de modelo — el panel se crea una sola vez.
+  let filterTerm = "";
+  const matchesFilter = (text: string): boolean =>
+    !filterTerm || text.toLowerCase().includes(filterTerm.toLowerCase());
+
+  // Vuelve a dibujar la selección actual con el filtro aplicado (lo setea
+  // renderForSelection / renderForTypeGroup al final de cada corrida).
+  let reRenderCurrent: (() => void) | null = null;
 
   // Nombres de Property Sets que el usuario dejó expandidos: se conserva entre
   // selecciones para no tener que volver a abrir las mismas categorías cada vez
@@ -135,6 +167,33 @@ export function createPropertiesPanel(
   // collapsed/fixed para dejar la sección siempre abierta y sin colapsable propio.
   section.fixed     = false;
 
+  // — Filtro rápido: filtra las propiedades (y los Property Sets) por nombre
+  //   o valor. Vive fuera de sectionsContainer para no perder el foco cuando
+  //   se re-renderiza el contenido, y su valor se conserva entre selecciones. —
+  const filterBar = document.createElement("div");
+  filterBar.className = "info-quick-filter";
+  filterBar.innerHTML = `
+    <iconify-icon icon="material-symbols:search"></iconify-icon>
+    <input type="text" class="info-quick-filter-input" placeholder="Filtrar propiedades…" spellcheck="false">
+    <button type="button" class="info-quick-filter-clear" aria-label="Limpiar filtro">
+      <iconify-icon icon="material-symbols:close" style="font-size:13px;"></iconify-icon>
+    </button>`;
+  const filterInput = filterBar.querySelector<HTMLInputElement>(".info-quick-filter-input")!;
+  const filterClear = filterBar.querySelector<HTMLButtonElement>(".info-quick-filter-clear")!;
+
+  const applyFilter = (): void => {
+    filterTerm = filterInput.value.trim();
+    filterBar.classList.toggle("has-value", filterTerm !== "");
+    itemsDataTable.queryString = filterTerm || null;
+    reRenderCurrent?.();
+  };
+  filterInput.addEventListener("input", applyFilter);
+  filterClear.addEventListener("click", () => {
+    filterInput.value = "";
+    applyFilter();
+    filterInput.focus();
+  });
+
   // — Contenedor vertical de secciones colapsables —
   const sectionsContainer = document.createElement("div");
   sectionsContainer.style.cssText = "overflow-y:auto;max-height:60vh;";
@@ -144,7 +203,7 @@ export function createPropertiesPanel(
   generalCollapsible.body.append(itemsDataTable);
 
   sectionsContainer.append(generalCollapsible.wrapper);
-  section.append(sectionsContainer);
+  section.append(filterBar, sectionsContainer);
 
   const collapseIntoSection = () => {
     section.collapsed = false;
@@ -173,12 +232,24 @@ export function createPropertiesPanel(
     registerSeen(set.name, Object.keys(set.properties));
     if (!isPsetVisible(set.name)) return false;
 
-    const visibleProperties = Object.fromEntries(
+    let visibleProperties = Object.fromEntries(
       Object.entries(set.properties).filter(([key]) => isPropertyVisible(set.name, key)),
     );
     if (Object.keys(visibleProperties).length === 0) return false;
 
-    const { wrapper, body } = createCollapsible(set.name, expandedPsets.has(set.name), (open) => {
+    // Filtro rápido: si el nombre del Pset matchea se muestra entero; si no,
+    // sólo las propiedades cuyo nombre o valor contengan el término.
+    if (filterTerm && !matchesFilter(set.name)) {
+      visibleProperties = Object.fromEntries(
+        Object.entries(visibleProperties).filter(
+          ([key, value]) => matchesFilter(key) || matchesFilter(String(value)),
+        ),
+      );
+      if (Object.keys(visibleProperties).length === 0) return false;
+    }
+
+    const expanded = filterTerm ? true : expandedPsets.has(set.name);
+    const { wrapper, body } = createCollapsible(set.name, expanded, (open) => {
       if (open) expandedPsets.add(set.name);
       else expandedPsets.delete(set.name);
     });
@@ -190,6 +261,7 @@ export function createPropertiesPanel(
   // — Public methods —
   const renderForSelection = async (modelIdMap: OBC.ModelIdMap): Promise<void> => {
     const myGen = ++renderGen;
+    reRenderCurrent = () => { void renderForSelection(modelIdMap); };
 
     clearPsetSections();
     generalCollapsible.wrapper.style.display = "";
@@ -209,9 +281,11 @@ export function createPropertiesPanel(
       const { wrapper, body } = createCollapsible("Sin Psets", false);
       renderPlaceholder(
         body,
-        propertySets.length > 0
-          ? "Los Property Sets de este elemento están ocultos (ver Configuración > Propiedades)."
-          : "Este elemento no tiene Property Sets definidos.",
+        filterTerm
+          ? `Ninguna propiedad coincide con «${filterTerm}».`
+          : propertySets.length > 0
+            ? "Los Property Sets de este elemento están ocultos (ver Configuración > Propiedades)."
+            : "Este elemento no tiene Property Sets definidos.",
       );
       sectionsContainer.append(wrapper);
     }
@@ -223,6 +297,7 @@ export function createPropertiesPanel(
     count: number,
   ): Promise<void> => {
     const myGen = ++renderGen;
+    reRenderCurrent = () => { void renderForTypeGroup(modelIdMap, typeLabel, count); };
 
     clearPsetSections();
     generalCollapsible.wrapper.style.display = "none";
@@ -250,7 +325,12 @@ export function createPropertiesPanel(
     const appendedAny = sharedPsets.map(appendPsetSection).some(Boolean);
     if (!appendedAny && sharedPsets.length > 0) {
       const { wrapper, body } = createCollapsible("Sin Psets", false);
-      renderPlaceholder(body, "Los Property Sets compartidos están ocultos (ver Configuración > Propiedades).");
+      renderPlaceholder(
+        body,
+        filterTerm
+          ? `Ninguna propiedad compartida coincide con «${filterTerm}».`
+          : "Los Property Sets compartidos están ocultos (ver Configuración > Propiedades).",
+      );
       sectionsContainer.append(wrapper);
     }
   };
@@ -259,9 +339,16 @@ export function createPropertiesPanel(
     sectionsContainer.scrollTop = 0;
   };
 
+  // Recarga la tabla "General" y vuelve a aplicar el filtro rápido — CUI
+  // reconstruye la data en cada selección y hay que re-setear queryString.
+  const updateItemsDataWithFilter: typeof updateItemsData = (opts) => {
+    updateItemsData(opts);
+    itemsDataTable.queryString = filterTerm || null;
+  };
+
   return {
     section,
-    updateItemsData,
+    updateItemsData: updateItemsDataWithFilter,
     renderForSelection,
     renderForTypeGroup,
     resetScrollTop,

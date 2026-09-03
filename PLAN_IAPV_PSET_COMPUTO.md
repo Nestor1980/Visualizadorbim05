@@ -56,13 +56,13 @@ Estado: propuesta, sin implementar. Contexto y motivación en [IAPV_PSET_COMPUTO
 
 ---
 
-## Limitación conocida — propiedades definidas solo a nivel de Tipo IFC
+## Limitación conocida — propiedades definidas solo a nivel de Tipo IFC [Resuelto]
 
-Investigando un caso concreto (`'URL del Pliego'` no aparecía pese a existir en el modelo), se confirmó que **cualquier propiedad cargada solo en el Tipo IFC** (ej. `IFCWALLTYPE`, no en cada instancia de pared) **no llega a la app** — `getPropertySets()` en `src/ifc/properties.ts` intenta traer los PSets del tipo vía `getTypePsets()`, que depende de que `itemData.IsTypedBy` resuelva la relación tipo↔instancia. En este modelo (`Modulo Ahora Tu Hogar.ifc`) esa relación no se resuelve — confirmado con logs de depuración — incluso pidiéndola explícitamente por nombre (`relations: { IsTypedBy: {...} }`, el mismo patrón que usa `@thatopen/components` internamente, ya aplicado en `getItemData()`). Todo apunta a que la relación no quedó indexada al convertir este IFC a Fragments, no a un bug de nuestro código — no hay más margen para arreglarlo solo desde la app sin bajar a inspeccionar el binario Fragments o la herramienta de conversión usada.
+Investigando un caso concreto (`'URL del Pliego'` no aparecía pese a existir en el modelo), se confirmó que **cualquier propiedad cargada solo en el Tipo IFC** (ej. `IFCWALLTYPE`, no en cada instancia de pared) **no llegaba a la app** — `getPropertySets()` en `src/ifc/properties.ts` traía los PSets del tipo vía `getTypePsets()`, que dependía de `itemData.IsTypedBy`.
 
-**Impacto real:** `IAPV_Item`/`IAPV_Suitem` (Tarea 1) no se ven afectados porque en este modelo están duplicados también a nivel de instancia (probablemente sin querer, en el PSet "Wall Schedule"). `'URL del Pliego'` sí está afectado porque solo existe en el Tipo.
+**Causa raíz (encontrada después):** el `IfcImporter` de `@thatopen/fragments` 3.4 mapea `IFCRELDEFINESBYTYPE` con `{ forRelating: "ObjectTypeOf", forRelated: "IsDefinedBy" }` — es decir, el vínculo instancia↔tipo **no** llega como `IsTypedBy` sino como un `IfcRelDefinesByType` más dentro de `IsDefinedBy` (junto a los `IfcRelDefinesByProperties`). El bucle de `IsDefinedBy` solo miraba `RelatingPropertyDefinition` y descartaba esas entradas.
 
-**Workaround práctico (a nivel de modelo, no de código):** si IAPV quiere que una propiedad esté disponible de forma confiable en el visualizador, cargarla también a nivel de instancia al modelar (como ya pasa, aparentemente sin buscarlo, con `IAPV_Item`), no solo en el Tipo.
+**Fix aplicado:** nuevo helper `collectTypeObjects()` que junta los objetos de Tipo desde ambas formas (`IsTypedBy` clásico y `IsDefinedBy` → `IfcRelDefinesByType` → `RelatingType`). Lo usan `getTypePsets()` y `getElementTypeName()`. Verificado contra `AMANCO 20.ifc` / `Modulo Ahora Tu Casa 20.ifc`, donde `Pset_ManufacturerTypeInformation` y `Pset_PipeFittingOccurrence` existen solo en el Tipo.
 
 ---
 

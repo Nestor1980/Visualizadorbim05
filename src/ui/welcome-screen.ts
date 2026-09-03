@@ -15,16 +15,22 @@ interface Project {
    *  miniatura se genera y cachea en IndexedDB recién la primera vez que
    *  alguien la carga, ver `saveThumbnail` en main.ts), un "Proyecto" debe
    *  mostrar una vista previa desde el primer arranque, sin depender de que
-   *  el usuario ya lo haya abierto antes en ese navegador. */
-  preview: string;
+   *  el usuario ya lo haya abierto antes en ese navegador. Si no hay una
+   *  miniatura empaquetada, se cae a la caché de IndexedDB (vacía hasta la
+   *  primera carga). */
+  preview?: string;
 }
 
 const PROJECTS: Project[] = [
   {
-    name: "Modulo Ahora Tu Hogar.ifc",
-    label: "Ahora Tu Hogar",
-    url: "/model_ifc/Modulo%20Ahora%20Tu%20Hogar.ifc",
-    preview: "/img/preview_ahora_tu_hogar.jpg",
+    name: "Modulo Ahora Tu Casa 20.ifc",
+    label: "Ahora Tu Casa",
+    url: "/model_ifc/Modulo%20Ahora%20Tu%20Casa%2020.ifc",
+  },
+  {
+    name: "AMANCO 20.ifc",
+    label: "AMANCO",
+    url: "/model_ifc/AMANCO%2020.ifc",
   },
 ];
 
