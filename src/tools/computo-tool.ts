@@ -106,6 +106,12 @@ export interface ComputoTool {
    *  restaurar un proyecto guardado. */
   restoreCategoria: (data: ComputoCategoria) => void;
   registerClick: (modelId: string, localId: number) => void;
+  /** Agrega (o quita, según el modo Agregar/Quitar activo) de una sola vez
+   *  todos los elementos de un `ModelIdMap` — para aplicar el Cómputo a una
+   *  selección hecha desde el Panel de Tipos (un tipo entero, o varias filas
+   *  sumadas con Ctrl). Mismo agrupado por identidad IFC que `registerClick`
+   *  (ver `handleAdd`), iterado sobre el mapa. */
+  registerSelection: (modelIdMap: OBC.ModelIdMap) => void;
   /** Agrega todos los elementos visibles de todos los modelos cargados al
    *  cómputo, de una sola vez (botón "Seleccionar todo" del panel) — mismo
    *  agrupado por identidad que un click individual en modo Agregar
@@ -458,6 +464,15 @@ export function createComputoTool(
     task.then(repaintHighlight).catch(console.error);
   }
 
+  async function registerSelection(modelIdMap: OBC.ModelIdMap): Promise<void> {
+    for (const [modelId, ids] of Object.entries(modelIdMap)) {
+      for (const localId of ids) {
+        await (addMode === "add" ? handleAdd(modelId, localId) : handleRemove(modelId, localId));
+      }
+    }
+    repaintHighlight();
+  }
+
   async function addAllElements(): Promise<void> {
     for (const [modelId, model] of fragments.list) {
       const visibleIds = await model.getItemsByVisibility(true);
@@ -616,6 +631,7 @@ export function createComputoTool(
     moveItemToCategoria,
     restoreCategoria,
     registerClick,
+    registerSelection: (modelIdMap) => { void registerSelection(modelIdMap); },
     addAllElements,
     removeElementFromItem,
     updateItem,

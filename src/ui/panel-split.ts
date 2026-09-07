@@ -27,8 +27,33 @@ export function createPanelSplit(topFrame: HTMLElement, bottomFrame: HTMLElement
 
   split.append(topPane, handle, bottomPane);
   attachPanelSplitResize(split, handle);
+  keepSceneHeightInBounds(split);
 
   return split;
+}
+
+/** Vuelve a acotar `--scene-h` cada vez que cambia el alto del split (resize
+ *  de ventana, aparición de otra barra, cambio de layout). Sin esto, un
+ *  `--scene-h` fijado con el panel alto se mantiene en px aunque después el
+ *  contenedor se achique: el frame "Escena" (`flex: 0 0 var(--scene-h)`) se
+ *  queda con más alto del que hay y el frame de abajo ("Información") se
+ *  monta por encima. */
+function keepSceneHeightInBounds(split: HTMLElement): void {
+  const clamp = () => {
+    const raw = getComputedStyle(split).getPropertyValue("--scene-h");
+    const current = parseFloat(raw);
+    if (!Number.isFinite(current)) return; // usa el default del CSS, ya acotado
+    const splitHeight = split.getBoundingClientRect().height;
+    if (splitHeight === 0) return;
+    const maxHeight = Math.max(SCENE_FRAME_MIN_HEIGHT, splitHeight - SCENE_FRAME_MIN_HEIGHT);
+    const clamped = Math.min(maxHeight, Math.max(SCENE_FRAME_MIN_HEIGHT, current));
+    if (Math.abs(clamped - current) > 0.5) split.style.setProperty("--scene-h", `${clamped}px`);
+  };
+  if (typeof ResizeObserver !== "undefined") {
+    new ResizeObserver(clamp).observe(split);
+  } else {
+    window.addEventListener("resize", clamp);
+  }
 }
 
 function attachPanelSplitResize(split: HTMLElement, handle: HTMLElement): void {

@@ -52,11 +52,18 @@ verificar Cómputo / Pliego mientras el export de Revit se corrige.
   the properties"* / ícono de warning para algunos elementos, mientras las
   secciones de Psets propias sí renderizan. Revisar `updateItemsData` /
   `itemsDataTable` en [properties-panel.ts:126](../src/ui/right-panel/properties-panel.ts#L126).
-- ⚠️ **Bug observado (relevante a 5.1 / 5.5):** la vista **"Tipos"** del panel
-  izquierdo quedó vacía ("Cargue un modelo IFC para ver los tipos") con el
-  modelo ya cargado. `buildTypesTree()` se alimenta del `loadFunction` del árbol
-  espacial ([tree-panel.ts:362](../src/ui/left-panel/tree-panel.ts#L362)) —
-  puede necesitar que el árbol espacial se expanda una vez primero. A confirmar.
+- ⚠️ **Árbol espacial / vista "Tipos" vacíos en headless:** el `bim-table` del
+  árbol espacial (`CUI.tables.spatialTree`) reportó *"No models available to
+  display the spatial structure!"* y **0 filas tras 85 s**, aunque el modelo
+  renderiza en 3D y el click 3D selecciona elementos con sus Psets. Como
+  `buildTypesTree()` se alimenta del `loadFunction` de ese árbol
+  ([tree-panel.ts](../src/ui/left-panel/tree-panel.ts)), la vista "Tipos" nunca
+  populó. **Probablemente artefacto del entorno headless / GL por software**
+  (el usuario usa la vista "Tipos" normalmente — describió su orden). Por eso
+  **los fixes 5.1/5.2/5.3/5.5 quedan a verificar visualmente por el usuario**.
+  Riesgo de fondo a tener en cuenta: `tbl.loadData(true)` corre una sola vez al
+  montar y no reintenta si el modelo no estaba listo — si un usuario expande el
+  árbol muy rápido tras cargar, podría quedar vacío hasta recargar.
 - ⚠️ **Menor:** la generación de miniatura ("Generando vista y miniatura…") no
   termina en headless con GL por software (swiftshader) — probablemente
   específico del entorno de test, pero conviene un timeout/guard.
@@ -281,9 +288,10 @@ completo del tipo, pero el puente hacia Cómputo (`main.ts:199`) hace
 `rightPanel.applyTypeSelection(...)` sin mirar `toolManager.activeMode`, así que
 ni siquiera enruta a Cómputo.
 
-- [ ] Agregar a `computo-tool.ts` un `registerSelection(modelIdMap)` que dé de alta **todos** los elementos del mapa (reusa `getQuantityForSelection`, que ya suma sobre un `ModelIdMap` completo).
-- [ ] En `main.ts`, cuando `toolManager.activeMode === "computo"`: en `onTypeGroupClick` (y/o en el `onHighlight`), llamar `registerSelection(modelIdMap)` con el mapa entero en vez de `registerClick` con un id.
-- [ ] Decidir si en modo Cómputo el click de tipo además abre el panel Información (`applyTypeSelection`) o solo alimenta el cómputo.
+- [x] **Implementado.** `computoTool.registerSelection(modelIdMap)` en [computo-tool.ts](../src/tools/computo-tool.ts) — itera el mapa llamando `handleAdd`/`handleRemove` (respeta el modo Agregar/Quitar) y hace un solo `repaintHighlight`. El agrupado por identidad IFC de `handleAdd` colapsa los N elementos del tipo en un ítem con N `elementos`, y `recomputeCantidad` suma vía `getQuantityForSelection`.
+- [x] **Implementado.** [main.ts](../src/main.ts#L186): `onElementClick` y `onTypeGroupClick` chequean `toolManager.activeMode === "computo"` y enrutan a `registerSelection` en vez de al panel Información.
+- [x] Decidido: en modo Cómputo el click de tipo **solo** alimenta el cómputo (no abre Información) — consistente con el click 3D en modo Cómputo.
+- [ ] **Verificación visual pendiente** (la vista "Tipos" no populó en el entorno headless de esta sesión — ver Hallazgos).
 
 ### 5.2 — Aplicar Cómputo a una selección hecha desde el Panel de Tipos
 
@@ -291,13 +299,16 @@ ni siquiera enruta a Cómputo.
 > selección simple (resalta todo el grupo). Debería poder tomarse **esa misma
 > selección** y aplicarle el Cómputo.
 
-Misma raíz que 5.1: el estado de "selección actual" del `highlighter` (estilo
-`select`) no se usa como entrada de Cómputo — Cómputo solo escucha clicks nuevos
-y de a uno.
+Misma raíz que 5.1.
 
-- [ ] Opción A: botón "Agregar selección actual al Cómputo" en el panel de Cómputo, que lea `highlighter.selection["select"]` (o el `ModelIdMap` que expone `selectionManager`) y llame `registerSelection()`.
-- [ ] Opción B: mientras Cómputo está activo, cualquier cambio de la selección `select` (incluido el disparado desde el Panel de Tipos) se refleja en el cómputo. Menos explícito — puede sorprender al usuario.
-- [ ] Confirmar qué API de "selección actual" conviene leer (`highlighter`, `selectionManager`, o `selection-panel.ts`).
+- [x] **Cubierto por 5.1 + 5.3.** Con Cómputo activo, cualquier selección hecha
+  desde el Panel de Tipos (tipo entero, fila suelta, o varias sumadas con Ctrl)
+  entra al cómputo vía `registerSelection` — la "selección actual" del Panel de
+  Tipos *es* la entrada. No hizo falta un botón aparte ni leer
+  `highlighter.selection`.
+- [ ] **Opcional a futuro:** botón "Agregar selección actual al Cómputo" que
+  también tome selecciones hechas por **click 3D** o **caja/lazo** (hoy el click
+  3D en modo Cómputo ya suma de a uno; caja/lazo no). Baja prioridad.
 
 ### 5.3 — Ctrl+click no suma selección desde el Panel de Tipos
 
@@ -309,22 +320,27 @@ y de a uno.
 `true` = *removePrevious*, siempre borra lo anterior. No se mira `e.ctrlKey` /
 `e.metaKey` en ningún handler del Panel de Tipos.
 
-- [ ] En los handlers de `catRow` (`tree-panel.ts:276`) e `instRow` (`:300`): si `e.ctrlKey || e.metaKey`, pasar `removePrevious = false` y **fusionar** el `ModelIdMap` nuevo con el existente antes de `onTypeGroupClickCb` / `onElementClickCb`.
-- [ ] Con Shift: opcional, selección de rango en la lista de instancias.
-- [ ] `selectTypesRow()` marca visualmente una sola fila — extender para marcar varias cuando se acumula.
-- [ ] Verificar que el panel Información (`renderForSelection` / `renderForTypeGroup`) maneja bien el mapa acumulado (ya soporta multi-selección, confirmar).
+- [x] **Implementado.** Nuevo helper `applyTypesSelection(clickMap, rows, additive, label)` en [tree-panel.ts](../src/ui/left-panel/tree-panel.ts) — con `additive` (Ctrl/Cmd) hace unión (o resta, si ya estaba: toggle) sobre `accumTypesMap`; sin él, reemplaza. Siempre pasa el conjunto completo al `highlighter`. Si queda 1 elemento enruta como selección simple, si son varios como grupo (`onTypeGroupClickCb` → Psets compartidos).
+- [x] `setSelectedTypesRows()` marca **varias** filas con `.is-selected`. Se limpia en cada `renderTypesTree` (las filas se recrean) y en `clearSelection()` / click del árbol espacial.
+- [ ] Shift = selección de rango: **no implementado** (opcional, baja prioridad).
+- [ ] **Verificación visual pendiente** (vista "Tipos" vacía en headless).
 
 ### 5.4 — El Panel de Información invade el Panel de Escena al moverlo
 
 > Al mover el divisor del panel derecho, el Panel de Información (pane inferior)
 > a veces "invade" el Panel de Escena (pane superior).
 
-**Diagnóstico probable.** El split usa `.panel-split-pane--top { flex: 0 0 var(--scene-h, 320px) }` y el handle arrastra `--scene-h`. Si el drag no clampa `--scene-h` a un rango `[min, alto_contenedor − min_inferior]`, o si el pane inferior no tiene `min-height: 0` efectivo, el contenido de abajo se solapa. Ver `attachRightPanelResize()` ([right-panel/index.ts:109](../src/ui/right-panel/index.ts#L109)) y `.panel-split*` ([global.css:652](../src/styles/global.css#L652)).
+**Diagnóstico.** El split es `src/ui/panel-split.ts` (no `attachRightPanelResize`,
+que es el ancho). El `pointermove` del handle **ya clampa** `--scene-h` a
+`[160, splitHeight−160]` correctamente. Lo que **falta** es re-acotar cuando el
+alto del contenedor cambia sin arrastrar el handle: al achicarse la ventana (o
+aparecer otra barra), `--scene-h` queda fijo en px, el frame "Escena"
+(`flex: 0 0 var(--scene-h)`) se queda más alto que el espacio disponible y el
+frame "Información" se monta encima. Ambos panes ya tienen `min-height: 0` +
+`overflow: hidden`.
 
-- [ ] Reproducir: arrastrar el divisor hasta los extremos y ver a partir de qué punto se solapa.
-- [ ] Clampar `--scene-h` en el `pointermove` del handle (min ~120px, max = alto del `.panel-split` − min del pane inferior).
-- [ ] Confirmar `min-height: 0` + `overflow: hidden` en ambos panes y que ningún hijo (bim-panel-section) fuerce un alto mínimo mayor.
-- [ ] Revisar si el bug aparece solo tras cambiar el ancho del panel (`--panel-w`) o de solapa activa — puede ser un recálculo que no se dispara.
+- [x] **Implementado.** `keepSceneHeightInBounds()` en [panel-split.ts](../src/ui/panel-split.ts) — un `ResizeObserver` sobre `.panel-split` re-clampa `--scene-h` al mismo rango cada vez que cambia el alto del contenedor.
+- [ ] **Verificación pendiente:** confirmar que era esta la causa (achicar la ventana con el divisor arriba) y no un solapamiento de contenido con z-index / popover. Si persiste, capturar el paso exacto.
 
 ### 5.5 — El Panel de Tipos no ordena los nombres (aparece 4.4 antes que 4.1)
 
@@ -337,9 +353,9 @@ orden en que `buildTypesTree()` las metió en el bucket (`tree-panel.ts:290`,
 `for (const inst of instances)`) — sin `.sort()`. Y aunque se ordenara, un
 `localeCompare` plano pone "4.10" antes que "4.2".
 
-- [ ] Ordenar `instances` antes del `for` con orden **natural/numérico**: `localeCompare(b, { numeric: true })` o, mejor, reusar `compareItemDesignacion()` de [src/computo/iapv-order.ts](../src/computo/iapv-order.ts) para que coincida con el orden del Pliego que ya usa el Cómputo.
-- [ ] Aplicar el mismo criterio si los nombres de instancia son designaciones `IAPV_Item` ("4.1 De ladrillos…").
-- [ ] Verificar que el orden de categorías también use numérico si alguna etiqueta empieza con número.
+- [x] **Implementado.** En `renderTypesTree()` las instancias se ordenan con `compareItemDesignacion()` de [iapv-order.ts](../src/computo/iapv-order.ts) (orden natural real: `4.1` < `4.4` < `4.10` < `10.1`; cae a alfabético sin prefijo numérico) — mismo criterio que el orden del Pliego en el Cómputo.
+- [ ] Categorías IFC: siguen con `localeCompare` plano (sus etiquetas son "Muros", "Ventanas"… — sin número, no hace falta). Revisar solo si aparece alguna categoría con prefijo numérico.
+- [ ] **Verificación visual pendiente** (vista "Tipos" vacía en headless).
 
 ### 5.6 — El Cómputo sigue tomando mal la superficie de los Muros
 
@@ -362,12 +378,22 @@ bucle en `getQuantityFromPsets`). Si igual sale mal, revisar en este orden:
 
 ---
 
-## Orden sugerido
+## Orden sugerido y estado
 
-1. **Tarea 1** (verificación, sin código) — rápida, y confirma que la base de Psets funciona.
-2. **Tarea 2** (verificación, sin código) — audita el motor de cómputo antes de construir encima.
-3. **Tarea 5.6** (bug de superficie de muros) — bloquea la confianza en todo el Cómputo; empezar por confirmar si el IFC trae `Qto_WallBaseQuantities`.
-4. **Tareas 5.5 / 5.4** (bugs chicos y aislados de UI — orden y layout del panel).
-5. **Tareas 5.1 / 5.2 / 5.3** (integración Panel de Tipos ↔ selección ↔ Cómputo — comparten el `registerSelection()` nuevo).
-6. **Tarea 3** (implementación chica) — unifica `IAPV_Item` + URL del Pliego en la selección.
-7. **Tarea 4** (feature nueva) — integración Gemini, sobre lo que dejó la tarea 3.
+1. **Tarea 1** — ✅ mecanismo verificado corriendo la app; falta que el IFC traiga los parámetros.
+2. **Tarea 2** — ✅ auditoría de código completa.
+3. **Tarea 5.6** — ✅ causa raíz confirmada (falta `Qto_WallBaseQuantities` en el export). Fix de fondo pendiente de decisión.
+4. **Tareas 5.5 / 5.4** — ✅ implementadas (orden natural en Tipos · re-clamp del split). Falta verificación visual.
+5. **Tareas 5.1 / 5.2 / 5.3** — ✅ implementadas (`registerSelection` + wiring + Ctrl/Cmd+click). Falta verificación visual (vista "Tipos" no populó en headless).
+6. **Tarea 3** — ⏳ siguiente: unificar `IAPV_Item` + URL del Pliego en la selección.
+7. **Tarea 4** — ⏳ feature nueva Gemini, sobre lo que deje la tarea 3.
+
+### Para verificar en la app real (el usuario)
+
+- [ ] Cargar `Ahora Tu Hogar`, activar **Cómputo**, y en el Panel de Tipos:
+  - click en una categoría (ej. "Muros") → deben entrar **todos** sus elementos al cómputo, agrupados por `IAPV_Item`.
+  - Ctrl/Cmd+click en varias filas de instancia → se acumulan (varias filas `.is-selected`); volver a Ctrl+click sobre una la saca.
+  - los nombres de instancia salen ordenados `4.1` → `4.4` → `4.10` (no `4.10` antes que `4.2`).
+- [ ] Sin Cómputo activo: el Panel de Tipos sigue mostrando propiedades / Psets compartidos como antes.
+- [ ] Achicar la ventana con el divisor Escena/Información arriba → el panel Información no debe montarse sobre Escena.
+- [ ] Verificar la superficie de un muro en el Cómputo contra su `NetSideArea` (Panel de Información → `Qto_WallBaseQuantities`).

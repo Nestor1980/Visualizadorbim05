@@ -4,6 +4,7 @@ import * as OBF from "@thatopen/components-front";
 import * as FRAGS from "@thatopen/fragments";
 import { IFC_LABEL, IFC_ICON } from "../../config/constants";
 import { syncPickableWithVisibility } from "../../selection/visibility-sync";
+import { compareItemDesignacion } from "../../computo/iapv-order";
 
 export type TreeViewMode = "spatial" | "types";
 
@@ -114,14 +115,47 @@ export function createModelTreeView(
 
   // — Types tree state —
   const typesData  = new Map<string, { localId: number; modelId: string; name: string }[]>();
-  let selectedTypesRow: HTMLElement | null = null;
 
-  const selectTypesRow = (row: HTMLElement | null) => {
-    if (selectedTypesRow && selectedTypesRow !== row) {
-      selectedTypesRow.classList.remove("is-selected");
+  // Filas del panel de Tipos marcadas como seleccionadas. Es un Set (no una
+  // sola fila) para soportar la suma de selección con Ctrl/Cmd — ver
+  // `applyTypesSelection`. Las referencias se pierden cuando `renderTypesTree`
+  // reconstruye el árbol (innerHTML = ""), por eso también se limpia el mapa
+  // acumulado ahí.
+  const selectedTypesRows = new Set<HTMLElement>();
+
+  const setSelectedTypesRows = (rows: HTMLElement[]) => {
+    for (const r of selectedTypesRows) r.classList.remove("is-selected");
+    selectedTypesRows.clear();
+    for (const r of rows) { r.classList.add("is-selected"); selectedTypesRows.add(r); }
+  };
+
+  // Selección acumulada del panel de Tipos (para Ctrl/Cmd+click). Se pasa
+  // entera al highlighter en cada click, así que `highlightByID` siempre
+  // recibe el conjunto completo deseado con removePrevious=true.
+  let accumTypesMap: OBC.ModelIdMap = {};
+
+  const cloneMap = (m: OBC.ModelIdMap): OBC.ModelIdMap =>
+    Object.fromEntries(Object.entries(m).map(([k, v]) => [k, new Set(v)]));
+  const unionInto = (target: OBC.ModelIdMap, src: OBC.ModelIdMap) => {
+    for (const [mId, ids] of Object.entries(src)) {
+      target[mId] ??= new Set();
+      for (const id of ids) target[mId].add(id);
     }
-    selectedTypesRow = row;
-    row?.classList.add("is-selected");
+  };
+  const subtractFrom = (target: OBC.ModelIdMap, src: OBC.ModelIdMap) => {
+    for (const [mId, ids] of Object.entries(src)) {
+      if (!target[mId]) continue;
+      for (const id of ids) target[mId].delete(id);
+      if (target[mId].size === 0) delete target[mId];
+    }
+  };
+  const mapContains = (target: OBC.ModelIdMap, src: OBC.ModelIdMap): boolean =>
+    Object.entries(src).every(([mId, ids]) =>
+      target[mId] && [...ids].every((id) => target[mId].has(id)));
+
+  const resetTypesSelection = () => {
+    accumTypesMap = {};
+    setSelectedTypesRows([]);
   };
 
   // — Callbacks set by consumers —
@@ -212,8 +246,50 @@ export function createModelTreeView(
   const typesContainer = document.createElement("div");
   typesContainer.style.cssText = "max-height:40vh;overflow-y:auto;display:none;";
 
+  /** Aplica una selección del panel de Tipos al highlighter y al panel de
+   *  Información. Con `additive` (Ctrl/Cmd+click) suma/saca `clickMap` de la
+   *  selección acumulada; sin él, la reemplaza. Siempre se pasa el conjunto
+   *  completo al highlighter. Si queda un único elemento se enruta como
+   *  selección simple (`onElementClickCb`); si son varios, como grupo
+   *  (`onTypeGroupClickCb`, que muestra los Psets compartidos). */
+  const applyTypesSelection = (
+    clickMap: OBC.ModelIdMap,
+    rows: HTMLElement[],
+    additive: boolean,
+    label: string,
+  ): void => {
+    if (countIds(filterToVisible(clickMap)) === 0) return;
+
+    if (additive && mapContains(accumTypesMap, clickMap)) {
+      subtractFrom(accumTypesMap, clickMap);
+      for (const r of rows) { r.classList.remove("is-selected"); selectedTypesRows.delete(r); }
+    } else if (additive) {
+      unionInto(accumTypesMap, clickMap);
+      for (const r of rows) { r.classList.add("is-selected"); selectedTypesRows.add(r); }
+    } else {
+      accumTypesMap = cloneMap(clickMap);
+      setSelectedTypesRows(rows);
+    }
+
+    const visibleMap = filterToVisible(accumTypesMap);
+    const count = countIds(visibleMap);
+    if (count === 0) { resetTypesSelection(); highlighter.clear("select").catch(console.error); return; }
+
+    highlighter.highlightByID("select", visibleMap, true, false).catch(console.error);
+
+    if (count === 1) {
+      const [mId, ids] = Object.entries(visibleMap)[0];
+      onElementClickCb?.(mId, [...ids][0]);
+    } else {
+      onTypeGroupClickCb?.(visibleMap, label, count);
+    }
+  };
+
   const renderTypesTree = (): void => {
     typesContainer.innerHTML = "";
+    // Las filas se recrean acá — cualquier selección acumulada por referencia
+    // de nodo deja de ser válida.
+    resetTypesSelection();
 
     if (typesData.size === 0) {
       typesContainer.innerHTML =
@@ -273,36 +349,38 @@ export function createModelTreeView(
         instsContainer.style.display = expanded ? "" : "none";
       });
 
+      // Orden natural por la designación (ej. "4.1" antes que "4.10", "4.4"
+      // antes que "10.1") — reusa el comparador del Cómputo/Pliego. Los
+      // nombres sin prefijo numérico caen a orden alfabético.
+      const sortedInstances = [...instances].sort((x, y) =>
+        compareItemDesignacion(x.name, y.name));
+
+      const instRowsByKey = new Map<string, HTMLElement>();
+
       catRow.addEventListener("click", (e: MouseEvent) => {
         if (arrow.contains(e.target as Node)) return;
         const modelIdMap: OBC.ModelIdMap = {};
-        for (const inst of instances) {
-          if (!modelIdMap[inst.modelId]) modelIdMap[inst.modelId] = new Set();
-          modelIdMap[inst.modelId].add(inst.localId);
+        for (const inst of sortedInstances) {
+          (modelIdMap[inst.modelId] ??= new Set()).add(inst.localId);
         }
-        const visibleMap = filterToVisible(modelIdMap);
-        if (countIds(visibleMap) === 0) return;
-        selectTypesRow(catRow);
-        highlighter.highlightByID("select", modelIdMap, true, false).catch(console.error);
-        onTypeGroupClickCb?.(visibleMap, label, countIds(visibleMap));
+        const rows = [catRow, ...instRowsByKey.values()];
+        applyTypesSelection(modelIdMap, rows, e.ctrlKey || e.metaKey, label);
       });
 
-      for (const inst of instances) {
+      for (const inst of sortedInstances) {
         const instRow = document.createElement("div");
         instRow.className = "types-row types-row--inst";
         makeRowAccessible(instRow);
+        instRowsByKey.set(`${inst.modelId}:${inst.localId}`, instRow);
 
         const instLbl = document.createElement("span");
         instLbl.className = "types-inst-label";
         instLbl.textContent = inst.name;
         instRow.append(instLbl);
 
-        instRow.addEventListener("click", () => {
+        instRow.addEventListener("click", (e: MouseEvent) => {
           const map: OBC.ModelIdMap = { [inst.modelId]: new Set([inst.localId]) };
-          if (countIds(filterToVisible(map)) === 0) return;
-          selectTypesRow(instRow);
-          highlighter.highlightByID("select", map, true, false).catch(console.error);
-          onElementClickCb?.(inst.modelId, inst.localId);
+          applyTypesSelection(map, [instRow], e.ctrlKey || e.metaKey, label);
         });
 
         instsContainer.append(instRow);
@@ -387,7 +465,7 @@ export function createModelTreeView(
     const localId = row.data.localId as number;
     if (!modelId || localId === undefined) return;
     if (countIds(filterToVisible({ [modelId]: new Set([localId]) })) === 0) return;
-    selectTypesRow(null);
+    resetTypesSelection();
     onElementClickCb?.(modelId, localId);
   });
 
@@ -411,11 +489,11 @@ export function createModelTreeView(
     getView: () => currentView,
     onElementClick: (cb) => { onElementClickCb = cb; },
     onTypeGroupClick: (cb) => { onTypeGroupClickCb = cb; },
-    clearSelection: () => selectTypesRow(null),
+    clearSelection: () => resetTypesSelection(),
     dispose: () => {
       spatialUtils.dispose();
       typesData.clear();
-      selectedTypesRow = null;
+      resetTypesSelection();
       onElementClickCb = null;
       onTypeGroupClickCb = null;
     },
