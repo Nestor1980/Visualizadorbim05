@@ -14,6 +14,107 @@ Relacionado: [IAPV_PSET_COMPUTO.md](../IAPV_PSET_COMPUTO.md),
 
 ---
 
+## Hallazgos de la sesión (2026-09-07)
+
+### El modelo de exportación no trae los datos IAPV
+
+Revisados los IFC de `public/model_ifc/`:
+
+| Archivo | En `PROJECTS` | `Qto_*BaseQuantities` / `NetSideArea` | Pset `Especificaciones` (`IAPV_Item`, `IAPV_Suitem`, `URL del Pliego`) | Psets `IAPV` / `IAPV_Inspector` / `IAPV_Local` |
+|---|---|---|---|---|
+| `Modulo Ahora Tu Casa 21.ifc` (6-sep, Revit 2027) | sí | **no** (solo `Width` de tipos) | **no** | **no** |
+| `AMANCO 22.ifc` (6-sep) | sí | no | no | no |
+| **`Modulo Ahora Tu Hogar.ifc`** (abr-2026, Revit 2025) | sí (agregado esta sesión) | **sí** (`Qto_WallBaseQuantities` ×20, `NetSideArea`) | **sí** (14 elementos, pset `Especificaciones`) | **sí** |
+| `prototipo_iapv.ifc` | no | sí (`NetSideArea` ×28) | no | no |
+
+**Acción tomada:** se agregó `Modulo Ahora Tu Hogar.ifc` a `PROJECTS`
+([welcome-screen.ts](../src/ui/welcome-screen.ts)) como modelo de referencia para
+verificar Cómputo / Pliego mientras el export de Revit se corrige.
+
+**Acción pendiente del lado del BIM (bloquea 1, 2, 3, 5.6 contra los modelos
+"oficiales"):** re-exportar desde Revit con
+1. **"Export IFC base quantities"** activado (sin esto el Cómputo nunca lee `NetSideArea` y cae al cálculo geométrico — causa raíz de 5.6).
+2. Los parámetros compartidos `IAPV_*` incluidos como *property set* (schedule dedicado o config de "user-defined property sets"). El pset se llama **`Especificaciones`** en el modelo de abril.
+
+### Verificado corriendo la app (`Ahora Tu Hogar`, dev server + Playwright/headless)
+
+- ✅ La app compila, el modelo carga y renderiza.
+- ✅ Al seleccionar un elemento, el **Panel de Información** muestra **todos** sus
+  Psets, incluidos los **quantity sets** (`Qto_PlateBaseQuantities` → `Width`,
+  `NetArea`, `NetVolume` observado en pantalla). `extractPropValue`
+  ([properties.ts:107](../src/ifc/properties.ts#L107)) lee bien el `AreaValue` /
+  `LengthValue` de los `IfcQuantity*`. → **el mecanismo de la tarea 1 funciona**;
+  lo que falta es que el IFC traiga los parámetros.
+- ✅ Todo visible por defecto (`pset-visibility.ts` solo guarda lo que se oculta)
+  — no hay falso negativo por Pset oculto de fábrica.
+- ⚠️ **Bug observado (nuevo, no estaba en la lista):** la sección **"General"**
+  del panel (tabla `CUI.tables.itemsData`) muestra *"Something went wrong with
+  the properties"* / ícono de warning para algunos elementos, mientras las
+  secciones de Psets propias sí renderizan. Revisar `updateItemsData` /
+  `itemsDataTable` en [properties-panel.ts:126](../src/ui/right-panel/properties-panel.ts#L126).
+- ⚠️ **Bug observado (relevante a 5.1 / 5.5):** la vista **"Tipos"** del panel
+  izquierdo quedó vacía ("Cargue un modelo IFC para ver los tipos") con el
+  modelo ya cargado. `buildTypesTree()` se alimenta del `loadFunction` del árbol
+  espacial ([tree-panel.ts:362](../src/ui/left-panel/tree-panel.ts#L362)) —
+  puede necesitar que el árbol espacial se expanda una vez primero. A confirmar.
+- ⚠️ **Menor:** la generación de miniatura ("Generando vista y miniatura…") no
+  termina en headless con GL por software (swiftshader) — probablemente
+  específico del entorno de test, pero conviene un timeout/guard.
+
+### Auditoría de código del motor de Cómputo (tarea 2)
+
+- **Unidad / método por clase IFC:** `ifc-quantity-rules.ts` — `IFCWALL→area`,
+  `IFCSLAB→area`, `IFCCOLUMN/BEAM/FOOTING→volumen`, `IFCWINDOW/DOOR→cantidad`,
+  `IFCROOF→area_bruta`, con override por `CLASE:PREDEFINEDTYPE`
+  (`IFCSLAB:BASESLAB→volumen`). Overrides del usuario en `localStorage`. ✅ coherente.
+- **Origen de la cantidad:** `getElementQuantity`
+  ([quantity-extractor.ts:138](../src/computo/quantity-extractor.ts#L138)) —
+  **1º** quantity set IFC (`Qto_*`/`*BaseQuantities`) con las claves del método
+  (`NetSideArea` antes que `GrossSideArea` antes que `Area`), **2º** (solo para
+  métodos de área o "auto") respaldo geométrico `getDominantFaceArea` (área de
+  **una** cara, sin descontar vanos). ✅ el orden es correcto; ⚠️ el respaldo
+  geométrico sobreestima (ver 5.6).
+- **Redondeo:** `round2` (`Math.round(n*100)/100`) al calcular
+  ([computo-tool.ts:317](../src/tools/computo-tool.ts#L317)) y al editar a mano
+  ([computo-manager.ts:411](../src/computo/computo-manager.ts#L411)); display con
+  `.toFixed(2)`. La suma por elemento se hace **antes** de redondear
+  (`found.reduce((s,q)=>s+q.cantidad,0)` en `getQuantityForSelection`) → no
+  pierde precisión intermedia. ✅
+- **Agrupamiento:** `hasIapv ? por IAPV_Item : (categorias.length===0 ? por rubro
+  : por categoría)` — con `IAPV_Item` prioriza sobre categorías (mismo criterio
+  en `computo-manager.ts` `renderTable` y `computo-export.ts` `groupItems`, cada
+  uno con su copia). ✅ consistente; los ítems sin `IAPV_Item` van a "Sin
+  clasificar" al final.
+- **Orden:** `compareItemDesignacion` ([iapv-order.ts](../src/computo/iapv-order.ts))
+  hace orden natural real (`[4,1]` vs `[4,10]`), cae a `localeCompare` si falta
+  el prefijo numérico. ✅
+- **Importe:** `cantidad * precioUnitario` en todos lados (tabla, subtotales,
+  export). ✅
+- **Doble conteo:** `handleAdd` deduplica por identidad IFC
+  ([computo-tool.ts:417](../src/tools/computo-tool.ts#L417)) y reabre el ítem del
+  mismo tipo en vez de duplicar. ✅
+- **Persistencia:** columnas visibles = preferencia `localStorage`, no viajan con
+  el proyecto ni con el undo (ver memoria `undo-redo-system`). Comportamiento
+  intencional.
+- **Pendiente de probar en vivo:** valores reales de cantidad de una pared de
+  `Ahora Tu Hogar` (esperado: `NetSideArea` ≈ 8–18 m² según el elemento) y que
+  el grupo se rotule con la designación `IAPV_Item` ("5.1 De ladrillos huecos
+  cerámicos…") en vez de "Paredes".
+
+### 5.6 — causa raíz confirmada a nivel de datos
+
+`Modulo Ahora Tu Casa 21.ifc` **no trae `Qto_WallBaseQuantities`** (solo
+`Width`). Con ese modelo, para un muro (`método "area"`) `getQuantityFromPsets`
+devuelve `null` y se usa `getDominantFaceArea`, que suma **una** cara del muro
+**sin descontar puertas/ventanas** → sobreestima respecto de `NetSideArea`. Con
+`Modulo Ahora Tu Hogar.ifc` (que sí trae `Qto_WallBaseQuantities` con
+`NetSideArea`) el extractor **ya prioriza `NetSideArea`** y debería dar el valor
+correcto — falta la verificación visual. Fix de fondo: (a) exigir base
+quantities en el export, y/o (b) que `getDominantFaceArea` reste el área de los
+`IfcOpeningElement` del muro.
+
+---
+
 ## 1. Parámetros personalizados vía *schedules* en el Panel de Información
 
 > Verificar que los parámetros personalizados exportados a través de *schedules*

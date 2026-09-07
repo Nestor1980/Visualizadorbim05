@@ -23,14 +23,25 @@ interface Project {
 
 const PROJECTS: Project[] = [
   {
-    name: "Modulo Ahora Tu Casa 20.ifc",
+    name: "Modulo Ahora Tu Casa 21.ifc",
     label: "Ahora Tu Casa",
-    url: "/model_ifc/Modulo%20Ahora%20Tu%20Casa%2020.ifc",
+    url: "/model_ifc/Modulo%20Ahora%20Tu%20Casa%2021.ifc",
   },
   {
-    name: "AMANCO 20.ifc",
+    name: "AMANCO 22.ifc",
     label: "AMANCO",
-    url: "/model_ifc/AMANCO%2020.ifc",
+    url: "/model_ifc/AMANCO%2022.ifc",
+  },
+  // Export IAPV de referencia: es el único modelo que trae los Psets
+  // `Especificaciones` (IAPV_Item / IAPV_Suitem / URL del Pliego) y los
+  // `Qto_*BaseQuantities` (NetSideArea, etc.). Los exports "21"/"22" todavía
+  // salen de Revit sin base quantities ni los parámetros IAPV — hasta que
+  // eso se corrija, las verificaciones de Cómputo/Pliego se hacen contra
+  // este archivo. Ver docs/task.md.
+  {
+    name: "Modulo Ahora Tu Hogar.ifc",
+    label: "Ahora Tu Hogar (IAPV: Pliego + Cómputo)",
+    url: "/model_ifc/Modulo%20Ahora%20Tu%20Hogar.ifc",
   },
 ];
 
