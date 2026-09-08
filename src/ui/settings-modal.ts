@@ -4,7 +4,7 @@ import { createThemeToggleButton } from "./theme";
 import { makeModalDraggable, resetModalPosition, closeOnBackdropClick } from "./draggable-modal";
 import { getDiscordWebhookUrl, setDiscordWebhookUrl } from "../bcf/share";
 import {
-  listQuantityRules, setQuantityRule, resetQuantityRule, QUANTITY_METHOD_LABELS,
+  listQuantityRules, setQuantityRule, setQuantitySource, resetQuantityRule, QUANTITY_METHOD_LABELS,
   type QuantityMethod,
 } from "../computo/ifc-quantity-rules";
 import { listCategoriaRules, setCategoriaRule, resetCategoriaRule } from "../computo/ifc-categoria-rules";
@@ -33,7 +33,10 @@ function readQuickFilter(container: HTMLElement): string {
 
 /** Tabla editable de reglas de cuantificación por tipo IFC (ver
  *  ifc-quantity-rules.ts) — se re-renderiza entera en cada cambio, mismo
- *  patrón que la tabla de Cómputo en computo-manager.ts. */
+ *  patrón que la tabla de Cómputo en computo-manager.ts. Cada regla tiene el
+ *  método (área/volumen/longitud/cantidad/auto) y, opcionalmente, una fuente
+ *  explícita: de qué Property Set y propiedad leer el número (si no, el
+ *  extractor prueba sus claves candidatas — NetSideArea, GrossArea, …). */
 function renderQuantityRules(container: HTMLElement): void {
   const filter = readQuickFilter(container);
   const rules = listQuantityRules().filter((rule) => !filter || rule.tipo.toUpperCase().includes(filter));
@@ -41,20 +44,48 @@ function renderQuantityRules(container: HTMLElement): void {
     .map((method) => `<option value="${method}">${QUANTITY_METHOD_LABELS[method]}</option>`)
     .join("");
 
+  // Catálogo de PSets/propiedades vistos hasta ahora, para autocompletar los
+  // campos de fuente (mismo origen que el Property Set Inspector y el modal de
+  // Columnas). Son solo sugerencias: el campo es texto libre y funciona
+  // aunque todavía no se haya explorado el modelo.
+  const seenPsets = listSeenPsets();
+  const psetDatalist = seenPsets
+    .map((p) => `<option value="${escapeHtml(p.name)}"></option>`)
+    .join("");
+  const propNames = [...new Set(seenPsets.flatMap((p) => p.properties.map((pr) => pr.name)))].sort();
+  const propDatalist = propNames.map((n) => `<option value="${escapeHtml(n)}"></option>`).join("");
+
   container.innerHTML = `
+    <datalist id="qr-pset-options">${psetDatalist}</datalist>
+    <datalist id="qr-prop-options">${propDatalist}</datalist>
     <div class="quantity-rules-list">
       ${rules.length === 0
         ? `<div class="quantity-rules-empty">${filter ? "Ningún tipo IFC coincide con el filtro." : "No hay reglas."}</div>`
-        : rules.map((rule) => `
-        <div class="quantity-rule-row">
-          <span class="quantity-rule-tipo">${escapeHtml(rule.tipo)}</span>
-          <select class="quantity-rule-select" data-tipo="${escapeHtml(rule.tipo)}">${methodOptions}</select>
-          <button type="button" class="quantity-rule-reset" data-tipo="${escapeHtml(rule.tipo)}"
-            title="${rule.isCustomType ? "Quitar tipo" : "Restaurar valor por defecto"}"
-            ${rule.isCustomType || rule.isOverridden ? "" : "disabled"}>
-            <iconify-icon icon="${rule.isCustomType ? "material-symbols:delete-outline" : "material-symbols:restart-alt"}"></iconify-icon>
-          </button>
-        </div>`).join("")}
+        : rules.map((rule) => {
+          const measurable = rule.method !== "cantidad";
+          return `
+        <div class="quantity-rule">
+          <div class="quantity-rule-row">
+            <span class="quantity-rule-tipo" title="${escapeHtml(rule.tipo)}">${escapeHtml(rule.tipo)}</span>
+            <select class="quantity-rule-select" data-tipo="${escapeHtml(rule.tipo)}">${methodOptions}</select>
+            <button type="button" class="quantity-rule-reset" data-tipo="${escapeHtml(rule.tipo)}"
+              title="${rule.isCustomType ? "Quitar tipo" : "Restaurar valor por defecto"}"
+              ${rule.isCustomType || rule.isOverridden || rule.source ? "" : "disabled"}>
+              <iconify-icon icon="${rule.isCustomType ? "material-symbols:delete-outline" : "material-symbols:restart-alt"}"></iconify-icon>
+            </button>
+          </div>
+          <div class="quantity-rule-source" ${measurable ? "" : "hidden"}>
+            <span class="quantity-rule-source-label">Medir desde:</span>
+            <input type="text" class="quantity-rule-source-pset" list="qr-pset-options"
+              data-tipo="${escapeHtml(rule.tipo)}" placeholder="Property Set (cualquiera)"
+              value="${escapeHtml(rule.source?.pset ?? "")}">
+            <span class="quantity-rule-source-sep">/</span>
+            <input type="text" class="quantity-rule-source-prop" list="qr-prop-options"
+              data-tipo="${escapeHtml(rule.tipo)}" placeholder="Propiedad, ej. NetSideArea"
+              value="${escapeHtml(rule.source?.prop ?? "")}">
+          </div>
+        </div>`;
+        }).join("")}
     </div>
     <div class="quantity-rule-add">
       <input type="text" class="quantity-rule-add-input" placeholder="Tipo IFC, ej. IFCCOLUMN">
@@ -78,6 +109,36 @@ function renderQuantityRules(container: HTMLElement): void {
       if (!tipo) return;
       setQuantityRule(tipo, select.value as QuantityMethod);
       renderQuantityRules(container);
+    });
+  });
+
+  // Fuente de PSet: se aplica al salir del campo (change), leyendo los dos
+  // inputs de la misma fila. Un `prop` vacío borra la fuente (vuelve a la
+  // búsqueda automática). No se re-renderiza la lista entera (haría perder el
+  // foco al tabular entre PSet y propiedad) — solo se ajusta el botón de
+  // restaurar de esa fila.
+  const applySource = (tipo: string): void => {
+    const psetInput = container.querySelector<HTMLInputElement>(
+      `.quantity-rule-source-pset[data-tipo="${CSS.escape(tipo)}"]`,
+    );
+    const propInput = container.querySelector<HTMLInputElement>(
+      `.quantity-rule-source-prop[data-tipo="${CSS.escape(tipo)}"]`,
+    );
+    if (!psetInput || !propInput) return;
+    setQuantitySource(tipo, { pset: psetInput.value, prop: propInput.value });
+    const resetBtn = container.querySelector<HTMLButtonElement>(
+      `.quantity-rule-reset[data-tipo="${CSS.escape(tipo)}"]`,
+    );
+    const rule = rules.find((r) => r.tipo === tipo);
+    if (resetBtn && rule) {
+      resetBtn.disabled = !(rule.isCustomType || rule.isOverridden || propInput.value.trim());
+    }
+  };
+  container.querySelectorAll<HTMLInputElement>(
+    ".quantity-rule-source-pset, .quantity-rule-source-prop",
+  ).forEach((input) => {
+    input.addEventListener("change", () => {
+      if (input.dataset.tipo) applySource(input.dataset.tipo);
     });
   });
 
@@ -317,7 +378,10 @@ export function createSettingsModal(fragments: OBC.FragmentsManager): SettingsMo
                   <span class="settings-row-desc">
                     Define cómo se calcula la cantidad de cada tipo de elemento en
                     la herramienta de Cómputo: por área, volumen, longitud o
-                    cantidad de piezas. Se guarda en este navegador.
+                    cantidad de piezas. Opcionalmente, "Medir desde" fija de qué
+                    Property Set y propiedad leer el número (ej.
+                    Qto_RoofBaseQuantities / ProjectedArea) en vez de la búsqueda
+                    automática. Se guarda en este navegador.
                   </span>
                 </div>
               </div>

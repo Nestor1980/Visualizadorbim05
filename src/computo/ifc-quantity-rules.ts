@@ -29,9 +29,22 @@
 
 export type QuantityMethod = "cantidad" | "area" | "area_bruta" | "volumen" | "longitud" | "auto";
 
+/** Fuente explícita de cantidad para un tipo IFC: en vez de dejar que el
+ *  extractor pruebe sus claves candidatas (NetSideArea, GrossArea, …) sobre
+ *  todos los quantity sets, se le indica exactamente de qué Property Set y qué
+ *  propiedad leer el número. `pset` vacío = cualquier Property Set que tenga
+ *  esa propiedad. Se configura desde Configuración → Cómputo → Reglas. */
+export interface QuantitySource {
+  pset: string;
+  prop: string;
+}
+
 export interface QuantityRule {
   tipo: string;
   method: QuantityMethod;
+  /** Property Set/propiedad de la que leer la cantidad (override del usuario),
+   *  o `null` para dejar la búsqueda automática por método. */
+  source: QuantitySource | null;
   /** true si el tipo no viene en `DEFAULT_RULES` — lo agregó el usuario. */
   isCustomType: boolean;
   /** true si el valor efectivo viene de una override guardada, no del default. */
@@ -39,6 +52,7 @@ export interface QuantityRule {
 }
 
 const STORAGE_KEY = "bim-computo-quantity-rules";
+const SOURCE_STORAGE_KEY = "bim-computo-quantity-sources";
 
 export const QUANTITY_METHOD_LABELS: Record<QuantityMethod, string> = {
   cantidad: "Cantidad (piezas)",
@@ -135,6 +149,25 @@ function writeOverrides(overrides: Record<string, QuantityMethod>): void {
   else localStorage.setItem(STORAGE_KEY, JSON.stringify(overrides));
 }
 
+let sourcesCache: Record<string, QuantitySource> | null = null;
+
+function readSources(): Record<string, QuantitySource> {
+  if (sourcesCache) return sourcesCache;
+  try {
+    const raw = localStorage.getItem(SOURCE_STORAGE_KEY);
+    sourcesCache = raw ? JSON.parse(raw) : {};
+  } catch {
+    sourcesCache = {};
+  }
+  return sourcesCache!;
+}
+
+function writeSources(sources: Record<string, QuantitySource>): void {
+  sourcesCache = sources;
+  if (Object.keys(sources).length === 0) localStorage.removeItem(SOURCE_STORAGE_KEY);
+  else localStorage.setItem(SOURCE_STORAGE_KEY, JSON.stringify(sources));
+}
+
 /** Método de cuantificación efectivo para un tipo IFC: override del usuario
  *  para `CLASE:PREDEFINEDTYPE` (si `predefinedType` viene y hay regla para
  *  ese par), si no override para la `CLASE` sola, si no el default de
@@ -154,14 +187,42 @@ export function getQuantityMethod(tipoIfc: string | null, predefinedType?: strin
   return overrides[classKey] ?? DEFAULT_RULES[classKey] ?? "auto";
 }
 
+/** Fuente de cantidad efectiva para un tipo IFC (Property Set + propiedad de
+ *  la que leer el número), o `null` si no hay ninguna configurada — mismo
+ *  orden de resolución que `getQuantityMethod`: `CLASE:PREDEFINEDTYPE` y si
+ *  no la `CLASE` sola. Solo overrides del usuario: no hay defaults de fábrica. */
+export function getQuantitySource(
+  tipoIfc: string | null,
+  predefinedType?: string | null,
+): QuantitySource | null {
+  if (!tipoIfc) return null;
+  const sources = readSources();
+  const classKey = normalizeIfcType(tipoIfc);
+
+  const pdt = predefinedType?.trim();
+  if (pdt && !UNDEFINED_PREDEFINED_TYPES.has(pdt.toUpperCase())) {
+    const compoundKey = normalizeIfcType(`${classKey}:${pdt}`);
+    if (sources[compoundKey]) return sources[compoundKey];
+  }
+
+  return sources[classKey] ?? null;
+}
+
 /** Todas las reglas para mostrar en el panel de Configuración: unión de los
- *  tipos con default de fábrica y los que el usuario haya agregado. */
+ *  tipos con default de fábrica y los que el usuario haya agregado (por
+ *  método o por fuente de PSet). */
 export function listQuantityRules(): QuantityRule[] {
   const overrides = readOverrides();
-  const tipos = new Set([...Object.keys(DEFAULT_RULES), ...Object.keys(overrides)]);
+  const sources = readSources();
+  const tipos = new Set([
+    ...Object.keys(DEFAULT_RULES),
+    ...Object.keys(overrides),
+    ...Object.keys(sources),
+  ]);
   return [...tipos].sort().map((tipo) => ({
     tipo,
     method: overrides[tipo] ?? DEFAULT_RULES[tipo] ?? "auto",
+    source: sources[tipo] ?? null,
     isCustomType: !(tipo in DEFAULT_RULES),
     isOverridden: tipo in overrides,
   }));
@@ -179,11 +240,28 @@ export function setQuantityRule(tipoIfc: string, method: QuantityMethod): void {
   writeOverrides(overrides);
 }
 
-/** Quita la regla de un tipo IFC: si tenía default de fábrica, vuelve a él;
- *  si era un tipo agregado por el usuario, desaparece de la lista. */
+/** Fija (o limpia, con `null` o `prop` vacío) la fuente de cantidad de un tipo
+ *  IFC — el Property Set y la propiedad de la que el extractor debe leer el
+ *  número en vez de probar sus claves candidatas. */
+export function setQuantitySource(tipoIfc: string, source: QuantitySource | null): void {
+  const key = normalizeIfcType(tipoIfc);
+  if (!key) return;
+  const sources = { ...readSources() };
+  const prop = source?.prop.trim() ?? "";
+  if (!prop) delete sources[key];
+  else sources[key] = { pset: source?.pset.trim() ?? "", prop };
+  writeSources(sources);
+}
+
+/** Quita la regla de un tipo IFC (método Y fuente de PSet): si tenía default
+ *  de fábrica, vuelve a él; si era un tipo agregado por el usuario, desaparece
+ *  de la lista. */
 export function resetQuantityRule(tipoIfc: string): void {
   const key = normalizeIfcType(tipoIfc);
   const overrides = { ...readOverrides() };
   delete overrides[key];
   writeOverrides(overrides);
+  const sources = { ...readSources() };
+  delete sources[key];
+  writeSources(sources);
 }

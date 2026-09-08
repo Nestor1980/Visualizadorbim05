@@ -1819,16 +1819,55 @@ bim-view-cube:active {
   flex-direction: column;
   gap: 0.35rem;
   margin-top: 0.5rem;
-  max-height: 260px;
+  max-height: 320px;
   overflow-y: auto;
   scrollbar-gutter: stable;
 }
+/* Cada regla: fila principal (tipo · método · restaurar) + fila de fuente de
+ * PSet debajo (settings-modal.ts, renderQuantityRules). */
+.quantity-rule {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.3rem 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.quantity-rule:last-child { border-bottom: none; }
 .quantity-rule-row {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   padding: 0.3rem 0;
 }
+.quantity-rule .quantity-rule-row { padding: 0; }
+.quantity-rule-source {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding-left: 0.1rem;
+}
+.quantity-rule-source-label {
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+.quantity-rule-source-sep {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+.quantity-rule-source-pset,
+.quantity-rule-source-prop {
+  flex: 1 1 0;
+  min-width: 0;
+  font-size: 0.75rem;
+  padding: 0.2rem 0.4rem;
+  border-radius: 5px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+.quantity-rule-source-pset::placeholder,
+.quantity-rule-source-prop::placeholder { color: var(--text-muted); }
 .quantity-rule-tipo {
   flex: 1 1 auto;
   min-width: 0;
