@@ -4,9 +4,11 @@ import { createThemeToggleButton } from "./theme";
 import { makeModalDraggable, resetModalPosition, closeOnBackdropClick } from "./draggable-modal";
 import { getDiscordWebhookUrl, setDiscordWebhookUrl } from "../bcf/share";
 import {
-  listQuantityRules, setQuantityRule, setQuantitySource, resetQuantityRule, QUANTITY_METHOD_LABELS,
-  type QuantityMethod,
+  listQuantityRules, setQuantityRule, setQuantitySource, setQuantityAdjust, resetQuantityRule,
+  QUANTITY_METHOD_LABELS,
+  type QuantityMethod, type QuantityAdjust,
 } from "../computo/ifc-quantity-rules";
+import { isValidQuantityFormula } from "../computo/quantity-formula";
 import { listCategoriaRules, setCategoriaRule, resetCategoriaRule } from "../computo/ifc-categoria-rules";
 import { listSeenPsets, setPsetVisible, setPropertyVisible } from "../ifc/pset-visibility";
 import { scanAllModelsForPsets } from "../ifc/pset-scan";
@@ -63,6 +65,7 @@ function renderQuantityRules(container: HTMLElement): void {
         ? `<div class="quantity-rules-empty">${filter ? "Ningún tipo IFC coincide con el filtro." : "No hay reglas."}</div>`
         : rules.map((rule) => {
           const measurable = rule.method !== "cantidad";
+          const geomOn = rule.adjust?.geometry ?? false;
           return `
         <div class="quantity-rule">
           <div class="quantity-rule-row">
@@ -70,11 +73,11 @@ function renderQuantityRules(container: HTMLElement): void {
             <select class="quantity-rule-select" data-tipo="${escapeHtml(rule.tipo)}">${methodOptions}</select>
             <button type="button" class="quantity-rule-reset" data-tipo="${escapeHtml(rule.tipo)}"
               title="${rule.isCustomType ? "Quitar tipo" : "Restaurar valor por defecto"}"
-              ${rule.isCustomType || rule.isOverridden || rule.source ? "" : "disabled"}>
+              ${rule.isCustomType || rule.isOverridden || rule.source || rule.adjust ? "" : "disabled"}>
               <iconify-icon icon="${rule.isCustomType ? "material-symbols:delete-outline" : "material-symbols:restart-alt"}"></iconify-icon>
             </button>
           </div>
-          <div class="quantity-rule-source" ${measurable ? "" : "hidden"}>
+          <div class="quantity-rule-source" ${measurable && !geomOn ? "" : "hidden"}>
             <span class="quantity-rule-source-label">Medir desde:</span>
             <input type="text" class="quantity-rule-source-pset" list="qr-pset-options"
               data-tipo="${escapeHtml(rule.tipo)}" placeholder="Property Set (cualquiera)"
@@ -83,6 +86,18 @@ function renderQuantityRules(container: HTMLElement): void {
             <input type="text" class="quantity-rule-source-prop" list="qr-prop-options"
               data-tipo="${escapeHtml(rule.tipo)}" placeholder="Propiedad, ej. NetSideArea"
               value="${escapeHtml(rule.source?.prop ?? "")}">
+          </div>
+          <div class="quantity-rule-adjust" ${measurable ? "" : "hidden"}>
+            <label class="quantity-rule-geom"
+              title="Ignora los Property Sets y calcula la magnitud desde la geometría del elemento — útil cuando el modelo no exporta quantity sets (Qto_*)">
+              <input type="checkbox" class="quantity-rule-geom-check" data-tipo="${escapeHtml(rule.tipo)}" ${geomOn ? "checked" : ""}>
+              <span>Calcular desde geometría</span>
+            </label>
+            <span class="quantity-rule-source-sep">·</span>
+            <span class="quantity-rule-source-label"
+              title="Fórmula aplicada al total ya medido. x = cantidad medida. Ej.: x * 0.9 descuenta un 10% por solapamiento">ƒ(x):</span>
+            <input type="text" class="quantity-rule-factor" data-tipo="${escapeHtml(rule.tipo)}"
+              placeholder="x * 0.9" value="${escapeHtml(rule.adjust?.factor ?? "")}">
           </div>
         </div>`;
         }).join("")}
@@ -139,6 +154,38 @@ function renderQuantityRules(container: HTMLElement): void {
   ).forEach((input) => {
     input.addEventListener("change", () => {
       if (input.dataset.tipo) applySource(input.dataset.tipo);
+    });
+  });
+
+  // Ajuste por regla: checkbox "Calcular desde geometría" + fórmula ƒ(x). Los
+  // dos inputs viven en la misma fila; cada cambio guarda el par completo.
+  const readAdjust = (tipo: string): QuantityAdjust => {
+    const geomCheck = container.querySelector<HTMLInputElement>(
+      `.quantity-rule-geom-check[data-tipo="${CSS.escape(tipo)}"]`,
+    );
+    const factorInput = container.querySelector<HTMLInputElement>(
+      `.quantity-rule-factor[data-tipo="${CSS.escape(tipo)}"]`,
+    );
+    return { geometry: geomCheck?.checked ?? false, factor: factorInput?.value ?? "" };
+  };
+  container.querySelectorAll<HTMLInputElement>(".quantity-rule-geom-check").forEach((check) => {
+    check.addEventListener("change", () => {
+      const tipo = check.dataset.tipo;
+      if (!tipo) return;
+      setQuantityAdjust(tipo, readAdjust(tipo));
+      renderQuantityRules(container); // muestra/oculta la fila "Medir desde"
+    });
+  });
+  container.querySelectorAll<HTMLInputElement>(".quantity-rule-factor").forEach((input) => {
+    // Feedback en vivo mientras se escribe; se guarda al salir del campo.
+    input.addEventListener("input", () => {
+      input.classList.toggle("quantity-rule-factor-invalid", !isValidQuantityFormula(input.value));
+    });
+    input.addEventListener("change", () => {
+      const tipo = input.dataset.tipo;
+      if (!tipo || !isValidQuantityFormula(input.value)) return;
+      setQuantityAdjust(tipo, readAdjust(tipo));
+      renderQuantityRules(container);
     });
   });
 
@@ -381,7 +428,11 @@ export function createSettingsModal(fragments: OBC.FragmentsManager): SettingsMo
                     cantidad de piezas. Opcionalmente, "Medir desde" fija de qué
                     Property Set y propiedad leer el número (ej.
                     Qto_RoofBaseQuantities / ProjectedArea) en vez de la búsqueda
-                    automática. Se guarda en este navegador.
+                    automática; "Calcular desde geometría" ignora los Property
+                    Sets y mide sobre la malla del elemento (para modelos sin
+                    Qto_*); y la fórmula ƒ(x) afecta el total ya medido —
+                    x = cantidad medida, ej. <code>x * 0.9</code> descuenta un 10%
+                    por solapamiento en cubiertas. Se guarda en este navegador.
                   </span>
                 </div>
               </div>

@@ -2,7 +2,7 @@ import * as OBC from "@thatopen/components";
 import * as OBF from "@thatopen/components-front";
 import { getPropertySets, getItemData, getElementTypeName, getPredefinedType } from "../ifc/properties";
 import { getQuantityForSelection, isCountedCategory, defaultUnidadForMethod } from "../computo/quantity-extractor";
-import { getQuantityMethod } from "../computo/ifc-quantity-rules";
+import { getQuantityMethod, subscribeQuantityRules } from "../computo/ifc-quantity-rules";
 import { getCategoriaNombre } from "../computo/ifc-categoria-rules";
 import { compareItemDesignacion } from "../computo/iapv-order";
 import { psetValueKey } from "../computo/computo-columns";
@@ -190,6 +190,12 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+/** Unidades que el propio cómputo pone al medir — `recomputeCantidad` puede
+ *  reescribirlas al recalcular (ej. si cambia la regla del tipo), pero deja
+ *  intacta cualquier otra (unidad traída del PSet `Unidad` del modelo o
+ *  tipeada a mano). */
+const AUTO_UNIDADES = new Set(["", "un", "m2", "m3", "ml"]);
+
 function toModelIdMap(elementos: { modelId: string; localId: number }[]): OBC.ModelIdMap {
   const map: OBC.ModelIdMap = {};
   for (const { modelId, localId } of elementos) {
@@ -321,7 +327,35 @@ export function createComputoTool(
       toModelIdMap(item.elementos), fragments, item.tipoIfc, item.predefinedType,
     );
     item.cantidad = round2(quantity?.cantidad ?? item.elementos.length);
+    // Sincroniza la unidad con la magnitud que efectivamente se pudo medir
+    // (m2/m3/ml) — así, si cambia la regla de cuantificación del tipo
+    // (Configuración → Reglas), el ítem no queda con la unidad vieja. Solo se
+    // pisa una unidad "automática" (vacía o una magnitud estándar): una unidad
+    // traída del modelo (PSet `Unidad`) o tipeada a mano por el usuario se
+    // respeta.
+    if (quantity && AUTO_UNIDADES.has(item.unidad)) item.unidad = quantity.unidad;
   }
+
+  /** Recalcula la cantidad (y unidad) de TODOS los ítems del cómputo — se
+   *  dispara cuando cambian las reglas de cuantificación por tipo IFC desde
+   *  Configuración (método o Property Set de origen), para que la tabla
+   *  refleje el nuevo criterio sin tener que borrar y recrear los ítems.
+   *  Coalescido en un microtask porque `resetQuantityRule` hace dos escrituras
+   *  seguidas (método + fuente) y no hace falta recomputar dos veces. */
+  let recomputeAllPending = false;
+  function scheduleRecomputeAll(): void {
+    if (recomputeAllPending) return;
+    recomputeAllPending = true;
+    queueMicrotask(async () => {
+      recomputeAllPending = false;
+      if (list.size === 0) return;
+      for (const item of list.values()) await recomputeCantidad(item);
+      const first = list.values().next().value as ComputoItem | undefined;
+      if (first) onItemChanged.trigger(first); // un solo re-render de la tabla
+      repaintHighlight();
+    });
+  }
+  subscribeQuantityRules(scheduleRecomputeAll);
 
   async function seedFieldsFromElement(item: ComputoItem, modelId: string, localId: number): Promise<void> {
     const psets = await getPropertySets(modelId, localId, fragments);

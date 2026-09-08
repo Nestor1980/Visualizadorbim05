@@ -3,11 +3,14 @@ import * as OBC from "@thatopen/components";
 import * as OBF from "@thatopen/components-front";
 import { createRenderizadoPanel } from "./renderizado-panel";
 import { createPropertiesPanel } from "./properties-panel";
+import { createPropertySetPanel } from "./property-set-panel";
 import { createDynamicTabsPanel, type DynamicPanelTab } from "./dynamic-tabs-panel";
 import type { SelectionManager } from "../../selection/selection-manager";
 import type { ViewModesController } from "../../core/view-modes";
 
 const INFO_TAB_ID = "informacion";
+const PROPS_TAB_ID = "propiedades";
+const PROPERTY_SET_TAB_ID = "property-set";
 
 export interface RightPanel {
   element: HTMLElement;
@@ -54,6 +57,34 @@ export function createRightPanel(
     fixed: true,
   });
 
+  // — Propiedades: clon exacto de "Información" (tabla General + Property Sets)
+  // en su propia solapa independiente. Comparte el mismo flujo de render pero
+  // mantiene su propio scroll / estado de colapsables. —
+  const propsPanel = createPropertiesPanel(components, fragments, {
+    label: "Propiedades",
+    icon: "material-symbols:list-alt",
+  });
+  propsPanel.section.collapsed = false;
+  propsPanel.section.fixed     = true;
+  dynamicPanel.addTab({
+    id: PROPS_TAB_ID,
+    label: "Propiedades",
+    icon: "material-symbols:list-alt",
+    content: propsPanel.section,
+    fixed: true,
+  });
+
+  // — Property Set: quantities crudas (área, longitud, volumen…) de los Qto_*
+  // que viven en la selección. —
+  const propertySetPanel = createPropertySetPanel(components, fragments);
+  dynamicPanel.addTab({
+    id: PROPERTY_SET_TAB_ID,
+    label: "Property Set",
+    icon: "material-symbols:square-foot",
+    content: propertySetPanel.section,
+    fixed: true,
+  });
+
   const renderizadoPanel = createRenderizadoPanel(world, postproduction, sunLight, threeRenderer, viewModes);
   dynamicPanel.addTab({
     id: "renderizado",
@@ -71,8 +102,15 @@ export function createRightPanel(
     selectionManager.lastModelIdMap = modelIdMap;
     activateInfoTab();
     propertiesPanel.updateItemsData({ modelIdMap, emptySelectionWarning: false });
-    await propertiesPanel.renderForSelection(modelIdMap);
+    propsPanel.updateItemsData({ modelIdMap, emptySelectionWarning: false });
+    await Promise.all([
+      propertiesPanel.renderForSelection(modelIdMap),
+      propsPanel.renderForSelection(modelIdMap),
+      propertySetPanel.renderForSelection(modelIdMap),
+    ]);
     propertiesPanel.resetScrollTop();
+    propsPanel.resetScrollTop();
+    propertySetPanel.resetScrollTop();
   };
 
   const applyTypeSelection = async (
@@ -83,8 +121,15 @@ export function createRightPanel(
     selectionManager.lastModelIdMap = modelIdMap;
     activateInfoTab();
     propertiesPanel.updateItemsData({ modelIdMap, emptySelectionWarning: false });
-    await propertiesPanel.renderForTypeGroup(modelIdMap, typeLabel, count);
+    propsPanel.updateItemsData({ modelIdMap, emptySelectionWarning: false });
+    await Promise.all([
+      propertiesPanel.renderForTypeGroup(modelIdMap, typeLabel, count),
+      propsPanel.renderForTypeGroup(modelIdMap, typeLabel, count),
+      propertySetPanel.renderForTypeGroup(modelIdMap, typeLabel, count),
+    ]);
     propertiesPanel.resetScrollTop();
+    propsPanel.resetScrollTop();
+    propertySetPanel.resetScrollTop();
   };
 
   return {

@@ -1,7 +1,8 @@
 import * as THREE from "three";
 import * as OBC from "@thatopen/components";
 import { getPropertySets, getItemData, getExpressId } from "../ifc/properties";
-import { getQuantityMethod, getQuantitySource, type QuantityMethod, type QuantitySource } from "./ifc-quantity-rules";
+import { getQuantityMethod, getQuantitySource, getQuantityAdjust, type QuantityMethod, type QuantitySource } from "./ifc-quantity-rules";
+import { evalQuantityFormula } from "./quantity-formula";
 
 export interface ExtractedQuantity {
   unidad: string;
@@ -258,16 +259,24 @@ async function getAggregatedChildrenIds(
 
 /** Magnitud de un elemento a partir de lo que trae él mismo: quantity sets
  *  IFC primero, respaldo geométrico de área después. NO baja a sus
- *  componentes — eso lo hace `getElementQuantity`. */
+ *  componentes — eso lo hace `getElementQuantity`.
+ *
+ *  `preferGeometry` (checkbox "Calcular desde geometría" de la regla del
+ *  tipo): saltea los Property Sets y calcula directo de la geometría. Como el
+ *  cálculo geométrico solo produce área, para métodos de volumen/longitud no
+ *  hay nada que calcular y se devuelve `null` (el ítem cae a carga manual). */
 async function getOwnElementQuantity(
   modelId: string,
   localId: number,
   fragments: OBC.FragmentsManager,
   method: QuantityMethod,
   source?: QuantitySource | null,
+  preferGeometry = false,
 ): Promise<ExtractedQuantity | null> {
-  const fromPsets = await getQuantityFromPsets(modelId, localId, fragments, method, source);
-  if (fromPsets) return fromPsets;
+  if (!preferGeometry) {
+    const fromPsets = await getQuantityFromPsets(modelId, localId, fragments, method, source);
+    if (fromPsets) return fromPsets;
+  }
 
   // El respaldo geométrico solo tiene sentido para tipos que se miden por
   // área (o sin regla conocida, "auto") — un tipo que se mide por volumen o
@@ -300,12 +309,13 @@ async function getAggregatedChildrenQuantity(
   localId: number,
   fragments: OBC.FragmentsManager,
   method: QuantityMethod,
+  preferGeometry = false,
 ): Promise<ExtractedQuantity | null> {
   const childIds = await getAggregatedChildrenIds(modelId, localId, fragments);
   if (childIds.length === 0) return null;
   const childQuantities = await Promise.all(
     childIds.map((childId) =>
-      getOwnElementQuantity(modelId, childId, fragments, method).catch(() => null),
+      getOwnElementQuantity(modelId, childId, fragments, method, null, preferGeometry).catch(() => null),
     ),
   );
   return sumSameUnit(childQuantities);
@@ -317,6 +327,7 @@ async function getElementQuantity(
   fragments: OBC.FragmentsManager,
   method: QuantityMethod,
   source?: QuantitySource | null,
+  preferGeometry = false,
 ): Promise<ExtractedQuantity | null> {
   // Cubiertas (`area_bruta` es la regla de IFCROOF / IFCSLAB:ROOF): se prueba
   // PRIMERO sumar los componentes (chapas IfcPlate, losas IfcSlab que agrega el
@@ -328,16 +339,16 @@ async function getElementQuantity(
   // Excepción: si el usuario configuró a mano una fuente de PSet para el tipo,
   // manda esa — se lee del propio elemento antes de bajar a los componentes.
   if (method === "area_bruta" && !source?.prop) {
-    const fromChildren = await getAggregatedChildrenQuantity(modelId, localId, fragments, method);
+    const fromChildren = await getAggregatedChildrenQuantity(modelId, localId, fragments, method, preferGeometry);
     if (fromChildren) return fromChildren;
   }
 
-  const own = await getOwnElementQuantity(modelId, localId, fragments, method, source);
+  const own = await getOwnElementQuantity(modelId, localId, fragments, method, source, preferGeometry);
   if (own) return own;
 
   // Resto de contenedores sin quantity set ni geometría propia: último recurso,
   // sumar la magnitud de sus componentes.
-  return getAggregatedChildrenQuantity(modelId, localId, fragments, method);
+  return getAggregatedChildrenQuantity(modelId, localId, fragments, method, preferGeometry);
 }
 
 /**
@@ -362,12 +373,31 @@ export async function getQuantityForSelection(
   if (pairs.length === 0) return null;
 
   const method = getQuantityMethod(tipoIfc, predefinedType);
-  if (method === "cantidad") return { unidad: "un", cantidad: pairs.length };
+  const adjust = getQuantityAdjust(tipoIfc, predefinedType);
 
-  const source = getQuantitySource(tipoIfc, predefinedType);
+  // Fórmula del usuario ("macro") sobre el valor final ya medido: `x` = la
+  // cantidad medida. Ej. `x * 0.9` para descontar 10% por solapamiento en
+  // cubiertas. Se aplica a la suma total de la selección (no elemento por
+  // elemento), y nunca deja la cantidad negativa. Una fórmula inválida se
+  // ignora (el campo ya avisa en Configuración).
+  const applyFactor = (q: ExtractedQuantity | null): ExtractedQuantity | null => {
+    const formula = adjust?.factor?.trim();
+    if (!q || !formula) return q;
+    const adjusted = evalQuantityFormula(formula, q.cantidad);
+    if (adjusted === null) return q;
+    return { unidad: q.unidad, cantidad: Math.max(0, adjusted) };
+  };
+
+  if (method === "cantidad") return applyFactor({ unidad: "un", cantidad: pairs.length });
+
+  // Si la regla pide calcular desde geometría, la fuente explícita de PSet no
+  // aplica (son criterios contradictorios y geometría manda).
+  const preferGeometry = adjust?.geometry ?? false;
+  const source = preferGeometry ? null : getQuantitySource(tipoIfc, predefinedType);
   const quantities = await Promise.all(
-    pairs.map(({ modelId, localId }) => getElementQuantity(modelId, localId, fragments, method, source)),
+    pairs.map(({ modelId, localId }) =>
+      getElementQuantity(modelId, localId, fragments, method, source, preferGeometry)),
   );
 
-  return sumSameUnit(quantities);
+  return applyFactor(sumSameUnit(quantities));
 }

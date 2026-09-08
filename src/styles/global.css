@@ -1846,6 +1846,10 @@ bim-view-cube:active {
   gap: 0.3rem;
   padding-left: 0.1rem;
 }
+/* El atributo `hidden` (método "cantidad", o "Calcular desde geometría"
+ * activo) tiene que ganarle al `display: flex` de arriba. */
+.quantity-rule-source[hidden],
+.quantity-rule-adjust[hidden] { display: none; }
 .quantity-rule-source-label {
   flex: 0 0 auto;
   font-size: 0.72rem;
@@ -1868,6 +1872,41 @@ bim-view-cube:active {
 }
 .quantity-rule-source-pset::placeholder,
 .quantity-rule-source-prop::placeholder { color: var(--text-muted); }
+/* Fila de ajuste: checkbox "Calcular desde geometría" + fórmula ƒ(x)
+ * (settings-modal.ts, renderQuantityRules). */
+.quantity-rule-adjust {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding-left: 0.1rem;
+  flex-wrap: wrap;
+}
+.quantity-rule-geom {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.quantity-rule-geom input { cursor: pointer; margin: 0; }
+.quantity-rule-factor {
+  flex: 1 1 90px;
+  min-width: 0;
+  font-size: 0.75rem;
+  font-family: monospace;
+  padding: 0.2rem 0.4rem;
+  border-radius: 5px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+.quantity-rule-factor::placeholder { color: var(--text-muted); }
+.quantity-rule-factor-invalid {
+  border-color: #e04a4a;
+  outline: none;
+}
 .quantity-rule-tipo {
   flex: 1 1 auto;
   min-width: 0;
