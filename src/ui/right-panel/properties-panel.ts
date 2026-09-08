@@ -3,6 +3,7 @@ import * as CUI from "@thatopen/ui-obc";
 import * as BUI from "@thatopen/ui";
 import { getPropertySets, getSharedPropertySets } from "../../ifc/properties";
 import { isPsetVisible, isPropertyVisible, registerSeen } from "../../ifc/pset-visibility";
+import { injectCollapsibleStyles, createCollapsible } from "./collapsible";
 
 export interface PropertiesPanel {
   section: BUI.PanelSection;
@@ -12,28 +13,19 @@ export interface PropertiesPanel {
   resetScrollTop: () => void;
 }
 
-function injectCollapsibleStyles(): void {
+/** Título/ícono de la solapa. Por defecto es "Información"; la solapa
+ *  "Propiedades" reusa este mismo panel con otra etiqueta (ver right-panel/index.ts). */
+export interface PropertiesPanelOptions {
+  label?: string;
+  icon?: string;
+}
+
+let filterStylesInjected = false;
+function injectFilterStyles(): void {
+  if (filterStylesInjected) return;
+  filterStylesInjected = true;
   const s = document.createElement("style");
   s.textContent = `
-    .sel-collapsible { border-bottom:1px solid var(--bim-ui_bg-contrast-20); }
-    .sel-collapsible:last-child { border-bottom:none; }
-    .sel-collapsible-header {
-      width:100%; display:flex; align-items:center; gap:6px;
-      padding:8px 6px; border:none; cursor:pointer; text-align:left;
-      background:var(--bim-ui_bg-contrast-10); color:var(--bim-ui_bg-contrast-90);
-      font-size:11px; font-weight:600; letter-spacing:0.2px;
-      font-family:inherit; transition:background 0.15s;
-    }
-    .sel-collapsible-header:hover { background:var(--bim-ui_bg-contrast-20); }
-    .sel-collapsible-chevron {
-      display:inline-flex; transition:transform 0.15s; font-size:9px;
-      color:var(--bim-ui_bg-contrast-60); flex-shrink:0;
-    }
-    .sel-collapsible.is-open > .sel-collapsible-header > .sel-collapsible-chevron {
-      transform:rotate(90deg);
-    }
-    .sel-collapsible-body { display:none; padding:4px 2px; }
-    .sel-collapsible.is-open > .sel-collapsible-body { display:block; }
     .info-quick-filter {
       display:flex; align-items:center; gap:6px;
       margin:6px 6px 4px; padding:5px 8px;
@@ -94,34 +86,13 @@ function renderPropertiesTable(properties: Record<string, string>): string {
   return `<table style="width:100%;border-collapse:collapse;"><tbody>${rows}</tbody></table>`;
 }
 
-function createCollapsible(
-  label: string,
-  expanded: boolean,
-  onToggle?: (open: boolean) => void,
-): { wrapper: HTMLElement; body: HTMLElement } {
-  const wrapper = document.createElement("div");
-  wrapper.className = `sel-collapsible${expanded ? " is-open" : ""}`;
-
-  const header = document.createElement("button");
-  header.className = "sel-collapsible-header";
-  header.innerHTML = `<span class="sel-collapsible-chevron">&#9656;</span><span>${label}</span>`;
-  header.addEventListener("click", () => {
-    wrapper.classList.toggle("is-open");
-    onToggle?.(wrapper.classList.contains("is-open"));
-  });
-
-  const body = document.createElement("div");
-  body.className = "sel-collapsible-body";
-
-  wrapper.append(header, body);
-  return { wrapper, body };
-}
-
 export function createPropertiesPanel(
   components: OBC.Components,
   fragments: OBC.FragmentsManager,
+  options: PropertiesPanelOptions = {},
 ): PropertiesPanel {
   injectCollapsibleStyles();
+  injectFilterStyles();
 
   const [itemsDataTable, updateItemsData] = CUI.tables.itemsData({
     components, modelIdMap: {}, emptySelectionWarning: true,
@@ -160,8 +131,8 @@ export function createPropertiesPanel(
 
   // — Section —
   const section = document.createElement("bim-panel-section") as BUI.PanelSection;
-  section.label     = "Información";
-  section.icon      = "material-symbols:info";
+  section.label     = options.label ?? "Información";
+  section.icon      = options.icon ?? "material-symbols:info";
   section.collapsed = true;
   // La solapa "Información" del panel dinámico (right-panel/index.ts) sobreescribe
   // collapsed/fixed para dejar la sección siempre abierta y sin colapsable propio.

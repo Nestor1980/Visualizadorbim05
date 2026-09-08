@@ -184,11 +184,24 @@ async function startApp(): Promise<{
   // solapa "Información" del panel dinámico (ver right-panel/index.ts: tanto
   // applySelection como applyTypeSelection activan esa solapa).
   leftPanel.onElementClick((modelId, localId) => {
+    // Con la herramienta Cómputo activa, un click en el árbol/Panel de Tipos
+    // suma ese elemento al cómputo (igual que un click 3D — ver el handler de
+    // `onHighlight` más abajo), en vez de solo mostrar sus propiedades.
+    if (toolManager.activeMode === "computo") {
+      computoTool.registerSelection({ [modelId]: new Set([localId]) });
+      return;
+    }
     leftPanel.clearTypesSelection();
     rightPanel.applySelection({ [modelId]: new Set([localId]) }).catch(console.error);
   });
 
   leftPanel.onTypeGroupClick((modelIdMap, typeLabel, count) => {
+    // Ídem para una selección de tipo entero (o varias filas sumadas con Ctrl)
+    // desde el Panel de Tipos: se aplica el Cómputo a todos los elementos.
+    if (toolManager.activeMode === "computo") {
+      computoTool.registerSelection(modelIdMap);
+      return;
+    }
     rightPanel.applyTypeSelection(modelIdMap, typeLabel, count).catch(console.error);
   });
 
