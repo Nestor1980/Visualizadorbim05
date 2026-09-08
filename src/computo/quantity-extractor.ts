@@ -143,16 +143,24 @@ async function getQuantityFromPsets(
  * "área de superficie" (`MeasurementUtils` solo trae `getItemsVolume`), así que
  * se arma acá.
  *
- * Método: se detecta el eje "espesor" del elemento (el de mayor Σ|n·eje|·área
- * entre x/y/z — el eje contra el que se enfrentan las dos caras grandes) y se
- * suma el área de TODOS los triángulos que miran hacia un lado de ese eje. La
- * versión anterior agrupaba por normal cuantizada y devolvía el grupo más
- * grande: en una chapa ondulada / "perfilada" / cubierta sinusoidal cada tramo
- * de la onda cae en un grupo distinto y devolvía solo uno (subestimaba fuerte,
- * ej. 2 m² donde iban ~13). Sumar un lado entero da la superficie desarrollada
- * real. Para una pared los bordes (canto superior/inferior/extremos) tienen la
- * normal perpendicular al eje espesor → no entran, así que sigue dando ~una
- * cara.
+ * Método, por cada *sample* de la geometría del elemento (ver abajo): se detecta
+ * el eje "espesor" (el de mayor Σ|n·eje|·área entre x/y/z — el eje contra el que
+ * se enfrentan las dos caras grandes) y se suma el área de TODOS los triángulos
+ * que miran hacia un lado de ese eje. Sumar un lado entero da la superficie
+ * desarrollada real: en una chapa ondulada / "perfilada" cada tramo de la onda
+ * tiene una normal distinta pero todos caen del mismo lado del eje espesor. Para
+ * una pared los bordes (canto superior/inferior/extremos) tienen la normal
+ * perpendicular al eje espesor → quedan afuera, así que da ~una cara.
+ *
+ * `getTriangles()` devuelve un arreglo por cada *sample* de la geometría del
+ * elemento. En los export de Revit un mismo muro/losa suele traer varios samples
+ * casi coincidentes (capas del material, o la misma malla repetida por
+ * representación) y TODOS ocupan el mismo lugar. Sumar los samples multiplicaba
+ * el área por su cantidad (un muro de 18 m² con 6 samples daba ~107 — este era
+ * el bug). Por eso se mide cada sample por separado y se toma el MÁXIMO: las
+ * copias colapsan a una sola cara. (Un elemento partido en piezas realmente
+ * disjuntas se subestimaría, pero ese caso casi siempre trae quantity set propio
+ * y no llega hasta acá.)
  */
 async function getDominantFaceArea(
   modelId: string,
@@ -167,16 +175,18 @@ async function getDominantFaceArea(
     const geometry = await item.getGeometry();
     if (!geometry) return null;
 
-    const trianglesByTile = await geometry.getTriangles();
-    if (!trianglesByTile) return null;
+    const trianglesBySample = await geometry.getTriangles();
+    if (!trianglesBySample) return null;
 
     const normal = new THREE.Vector3();
-    const axisWeight = [0, 0, 0]; // Σ |n·eje|·área → candidato a eje "espesor"
-    const areaPos = [0, 0, 0];    // área de triángulos con n·eje > 0
-    const areaNeg = [0, 0, 0];    // ídem con n·eje < 0
-    let total = 0;
+    let best = 0;
 
-    for (const triangles of trianglesByTile) {
+    for (const triangles of trianglesBySample) {
+      const axisWeight = [0, 0, 0]; // Σ |n·eje|·área → eje "espesor" de este sample
+      const areaPos = [0, 0, 0];    // área de triángulos con n·eje > 0
+      const areaNeg = [0, 0, 0];    // ídem con n·eje < 0
+      let total = 0;
+
       for (const tri of triangles) {
         const area = tri.getArea();
         if (!Number.isFinite(area) || area <= 0) continue;
@@ -190,18 +200,21 @@ async function getDominantFaceArea(
           else if (c < 0) areaNeg[a] += area;
         }
       }
+
+      if (total === 0) continue;
+
+      let axis = 0;
+      if (axisWeight[1] > axisWeight[axis]) axis = 1;
+      if (axisWeight[2] > axisWeight[axis]) axis = 2;
+
+      const face = Math.max(areaPos[axis], areaNeg[axis]);
+      // `total / 2` cubre una malla cerrada sin un eje espesor claro (elemento
+      // macizo, no laminar): la mitad de la superficie total.
+      const sampleArea = face > 0 ? face : total / 2;
+      if (sampleArea > best) best = sampleArea;
     }
 
-    if (total === 0) return null;
-
-    let axis = 0;
-    if (axisWeight[1] > axisWeight[axis]) axis = 1;
-    if (axisWeight[2] > axisWeight[axis]) axis = 2;
-
-    const face = Math.max(areaPos[axis], areaNeg[axis]);
-    // `total / 2` cubre el caso de una malla cerrada sin un eje espesor claro
-    // (elemento macizo, no laminar): la mitad de la superficie total.
-    return face > 0 ? face : total / 2;
+    return best > 0 ? best : null;
   } catch {
     return null;
   }
