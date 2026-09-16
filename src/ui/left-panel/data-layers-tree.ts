@@ -631,6 +631,20 @@ export function createDataLayersTree(
       row.append(makeIconButton("mdi:table", "Ver tabla de BCF Topics", onOpenTopicsTable));
     }
 
+    // Los planos de corte quedan activos indefinidamente (no hay un punto del
+    // código que los borre solo — ver Cómputo/Aislar, que sí tienen su propio
+    // "mostrar todo"). Un botón acá borra de una sola vez todos los cortes de
+    // esta capa, sin tener que ir plano por plano ni borrar la capa entera
+    // (que además se llevaría cotas/etiquetas/dibujos/cómputo).
+    if (kind === "section") {
+      row.append(makeIconButton("mdi:delete-sweep", "Eliminar todos los cortes de esta capa", () => {
+        if (itemIds.length === 0) return;
+        if (!confirm(`¿Eliminar los ${itemIds.length} plano(s) de corte de "${layer.name}"?`)) return;
+        for (const id of itemIds) clipper.delete(world, id);
+        requestRender();
+      }));
+    }
+
     wrapper.append(row);
 
     if (expanded) {

@@ -222,7 +222,7 @@ async function startApp(): Promise<{
   // El modal de lista "BCF Topics" fue reemplazado por la solapa dedicada: el
   // botón "Ver tabla de BCF Topics" del árbol ahora lleva directo a esa solapa.
   leftPanel.onOpenTopicsTable(() => mainTabs.activateTab("bcf-topic"));
-  const toolbar        = createToolbar(world, fragments, toolManager, selectionManager, openModal, highlighter);
+  const toolbar        = createToolbar(world, fragments, toolManager, selectionManager, openModal, highlighter, computoTool);
   const settingsModal   = createSettingsModal(fragments);
 
   // Undo / redo a nivel proyecto (Ctrl+Z / Ctrl+Shift+Z): snapshot serializado

@@ -61,9 +61,15 @@ function readName(raw: any): string | null {
 /** Objetos de Tipo IFC (`IfcElementType`) vinculados a la instancia.
  *
  *  El `IfcImporter` de @thatopen/fragments 3.4 no expone `IsTypedBy`: el
- *  vínculo instancia↔tipo llega como un `IfcRelDefinesByType` más dentro de
- *  `IsDefinedBy` (con su `RelatingType`). Se contemplan las dos formas para
- *  no depender de con qué herramienta se convirtió el IFC. */
+ *  vínculo instancia↔tipo llega dentro de `IsDefinedBy`. Según el modelo,
+ *  puede llegar envuelto en un `IfcRelDefinesByType` (con `RelatingType`) o
+ *  **directo**: el objeto de Tipo ya inlineado, con su propia categoría IFC
+ *  (ej. `IFCWALLTYPE`) en vez de `IFCRELDEFINESBYTYPE` — caso real de
+ *  `Modulo Ahora Tu Hogar.ifc` (Revit 2025), donde ninguna pared resolvía el
+ *  Tipo porque el código solo buscaba `category === "IFCRELDEFINESBYTYPE"` y
+ *  el array trae el `IFCWALLTYPE` posta. Se contempla también esa variante
+ *  ya-inlineada en `IsDefinedBy` (no solo en `IsTypedBy`) para no depender de
+ *  con qué herramienta/versión se exportó el IFC. */
 async function collectTypeObjects(model: any, itemData: any): Promise<any[]> {
   const types: any[] = [];
   const seen = new Set<number>();
@@ -89,15 +95,16 @@ async function collectTypeObjects(model: any, itemData: any): Promise<any[]> {
     }
   }
 
-  // Forma B: `IsDefinedBy` con un `IfcRelDefinesByType` (caso fragments 3.4).
+  // Forma B: `IsDefinedBy` con un `IfcRelDefinesByType`, o con el objeto de
+  // Tipo ya inlineado directo (ver nota arriba — caso real de este proyecto).
   if (Array.isArray(itemData.IsDefinedBy)) {
     for (const relRef of itemData.IsDefinedBy) {
       const relObj = await resolveRef(model, relRef, false);
       if (!relObj || typeof relObj !== "object") continue;
       const category = relObj._category?.value ?? relObj._category;
-      if (relObj.RelatingType || category === "IFCRELDEFINESBYTYPE") {
-        await addType(relObj.RelatingType ?? relObj);
-      }
+      if (relObj.RelatingType) await addType(relObj.RelatingType);
+      else if (category === "IFCRELDEFINESBYTYPE") await addType(relObj);
+      else if (Array.isArray(relObj.HasPropertySets)) await addType(relObj); // ya es el tipo
     }
   }
 

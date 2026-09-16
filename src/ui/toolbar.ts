@@ -3,6 +3,7 @@ import * as OBF from "@thatopen/components-front";
 import * as BUI from "@thatopen/ui";
 import type { ToolManager } from "../tools/tool-manager";
 import type { SelectionManager } from "../selection/selection-manager";
+import type { ComputoTool } from "../tools/computo-tool";
 import { fitViewToModels } from "../camera/fit-view";
 import { syncPickableWithVisibility } from "../selection/visibility-sync";
 
@@ -13,6 +14,7 @@ export function createToolbar(
   selectionManager: SelectionManager,
   openBcfModal: () => void,
   highlighter: OBF.Highlighter,
+  computoTool: ComputoTool,
 ): BUI.Toolbar {
   const toolbar = BUI.Component.create<BUI.Toolbar>(() => {
     return BUI.html`
@@ -126,10 +128,18 @@ export function createToolbar(
                 }
                 selectionManager.isIsolated = false;
               } else {
-                const selectedKeys = Object.keys(selectionManager.lastModelIdMap);
+                // En modo Cómputo no hay "última selección" en el sentido de
+                // Navegar/Información (los clicks van sumando ítems a la
+                // tabla): lo que corresponde aislar ahí es todo lo que ya
+                // está cargado en el Cómputo, no `lastModelIdMap` (que solo
+                // lo actualiza el flujo del Panel de Información).
+                const modelIdMap = toolManager.activeMode === "computo"
+                  ? computoTool.getElementsModelIdMap()
+                  : selectionManager.lastModelIdMap;
+                const selectedKeys = Object.keys(modelIdMap);
                 if (!selectedKeys.length) return;
                 for (const [modelUuid, model] of fragments.list) {
-                  const selectedIds = selectionManager.lastModelIdMap[modelUuid];
+                  const selectedIds = modelIdMap[modelUuid];
                   if (selectedIds && selectedIds.size > 0) {
                     await model.setVisible(undefined, false);
                     await model.setVisible(Array.from(selectedIds), true);

@@ -7,6 +7,7 @@ import { getCategoriaNombre } from "../computo/ifc-categoria-rules";
 import { compareItemDesignacion } from "../computo/iapv-order";
 import { psetValueKey } from "../computo/computo-columns";
 import { registerSeen } from "../ifc/pset-visibility";
+import { findPropertyValue, getIapvPliegoInfo } from "../ifc/iapv-pliego";
 
 export interface ComputoItem {
   id: string;
@@ -131,50 +132,21 @@ export interface ComputoTool {
    *  `repaintHighlight()` una sola vez después de restaurar todos los ítems. */
   restoreItem: (data: ComputoItem) => void;
   repaintHighlight: () => void;
+  /** Todos los elementos que ya están cargados en el Cómputo (todos los
+   *  ítems, todas las secciones), como `ModelIdMap` — usado por "Aislar
+   *  selección" en la barra de herramientas cuando el modo activo es
+   *  "computo": ahí no hay una "selección actual" en el sentido de
+   *  Navegar/Información (los clicks van sumando ítems a la tabla), así que
+   *  lo que corresponde aislar es el contenido completo del Cómputo. */
+  getElementsModelIdMap: () => OBC.ModelIdMap;
 }
 
 const RUBRO_KEY = /rubro|categor/i;
 const DESC_KEY = /descripcion|^description$|^name$/i;
 const UNIDAD_KEY = /unidad|^unit$/i;
 const PRECIO_KEY = /preciounitario|unitprice|^precio$/i;
-// Claves exactas (no laxas como las de arriba) porque son los nombres de PSet
-// fijos del estándar IAPV — una regex laxa como la de RUBRO_KEY arriesgaría
-// falsos positivos con otras propiedades "IAPV_*" del modelo (IAPV_Local,
-// IAPV_Inspector).
-const IAPV_ITEM_KEY = /^IAPV_Item$/i;
-const IAPV_SUBITEM_KEY = /^IAPV_Suitem$/i;
-
-function findPropertyValue(
-  psets: { name: string; properties: Record<string, string> }[],
-  pattern: RegExp,
-): string | null {
-  for (const pset of psets) {
-    for (const [key, value] of Object.entries(pset.properties)) {
-      if (pattern.test(key) && value && value !== "—") return value;
-    }
-  }
-  return null;
-}
-
-/** URL_PATTERN, matching properties-panel.ts. */
-const URL_PATTERN = /^https?:\/\//i;
-
-/** Busca la primera propiedad cuyo VALOR (no el nombre) tenga forma de URL —
- *  a propósito no está atada a un nombre de propiedad fijo como "URL del
- *  Pliego": cada IFC/exportador puede llamarla distinto (`IAPV_URL`, `Weblink`,
- *  etc.), así que sirve para cualquier modelo IFC, no solo el de IAPV. Mismo
- *  criterio que ya usa properties-panel.ts para mostrar links en el panel de
- *  propiedades — acá se reutiliza para poblar `ComputoItem.urlPliego`. */
-function findUrlPropertyValue(
-  psets: { name: string; properties: Record<string, string> }[],
-): string | null {
-  for (const pset of psets) {
-    for (const value of Object.values(pset.properties)) {
-      if (value && URL_PATTERN.test(value.trim())) return value.trim();
-    }
-  }
-  return null;
-}
+// IAPV_ITEM_KEY / IAPV_SUBITEM_KEY / findUrlPropertyValue viven en
+// ifc/iapv-pliego.ts (compartidas con el Panel de Información).
 
 /** Clave de agrupación por tipo: nombre de tipo/familia si se pudo resolver
  *  (más específico), si no la clase IFC, si no `null` (sin identidad
@@ -374,9 +346,10 @@ export function createComputoTool(
     item.psetValues = psetValues;
 
     item.rubro = findPropertyValue(psets, RUBRO_KEY) ?? "";
-    item.iapvItem = findPropertyValue(psets, IAPV_ITEM_KEY) ?? "";
-    item.iapvSubItem = findPropertyValue(psets, IAPV_SUBITEM_KEY) ?? "";
-    item.urlPliego = findUrlPropertyValue(psets) ?? "";
+    const pliego = getIapvPliegoInfo(psets);
+    item.iapvItem = pliego.iapvItem;
+    item.iapvSubItem = pliego.iapvSubItem;
+    item.urlPliego = pliego.urlPliego;
 
     // Preferir el nombre de tipo/familia (compartido entre instancias del
     // mismo tipo, ej. "MUR_LHC200") por sobre el Name de la instancia (que
@@ -672,5 +645,6 @@ export function createComputoTool(
     deleteItem,
     restoreItem,
     repaintHighlight,
+    getElementsModelIdMap: aggregateModelIdMap,
   };
 }

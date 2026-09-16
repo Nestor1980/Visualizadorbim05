@@ -3,6 +3,7 @@ import * as CUI from "@thatopen/ui-obc";
 import * as BUI from "@thatopen/ui";
 import { getPropertySets, getSharedPropertySets } from "../../ifc/properties";
 import { isPsetVisible, isPropertyVisible, registerSeen } from "../../ifc/pset-visibility";
+import { getIapvPliegoInfo, type PsetLike } from "../../ifc/iapv-pliego";
 import { injectCollapsibleStyles, createCollapsible } from "./collapsible";
 
 export interface PropertiesPanel {
@@ -44,6 +45,25 @@ function injectFilterStyles(): void {
       display:none; align-items:center; color:var(--bim-ui_bg-contrast-60);
     }
     .info-quick-filter.has-value .info-quick-filter-clear { display:inline-flex; }
+    .info-pliego-block {
+      margin:6px 6px 4px; padding:8px 10px;
+      border:1px solid var(--bim-ui_main-base); border-radius:6px;
+      background:var(--bim-ui_bg-contrast-10);
+    }
+    .info-pliego-block .info-pliego-label {
+      font-size:10.5px; font-weight:600; text-transform:uppercase;
+      letter-spacing:0.02em; color:var(--bim-ui_bg-contrast-60);
+    }
+    .info-pliego-block .info-pliego-designacion {
+      margin-top:4px; font-size:11px; color:var(--bim-ui_bg-contrast-100);
+      line-height:1.4;
+    }
+    .info-pliego-block a {
+      display:inline-flex; align-items:center; gap:4px; margin-top:6px;
+      font-size:11px; font-weight:600; color:var(--bim-ui_main-base);
+      text-decoration:none;
+    }
+    .info-pliego-block a:hover { text-decoration:underline; }
   `;
   document.head.append(s);
 }
@@ -152,6 +172,37 @@ export function createPropertiesPanel(
   const filterInput = filterBar.querySelector<HTMLInputElement>(".info-quick-filter-input")!;
   const filterClear = filterBar.querySelector<HTMLButtonElement>(".info-quick-filter-clear")!;
 
+  // — Bloque destacado del Pliego IAPV: designación de Item/SubItem + link a
+  //   la especificación técnica, cuando el elemento los trae (ver
+  //   ifc/iapv-pliego.ts). Vive arriba de las secciones de Psets porque es la
+  //   info que el inspector en obra necesita primero, no enterrada dentro de
+  //   un Pset que puede estar colapsado. —
+  const pliegoBlock = document.createElement("div");
+  pliegoBlock.className = "info-pliego-block";
+  pliegoBlock.style.display = "none";
+
+  /** Actualiza el bloque destacado con los PSets ya obtenidos de un único
+   *  elemento; se oculta si no hay designación ni URL de Pliego. No se
+   *  muestra en selección múltiple/de tipo (`renderForTypeGroup`): con
+   *  elementos de distinto ítem del Pliego no hay un solo valor que mostrar. */
+  const updatePliegoBlock = (psets: PsetLike[]): void => {
+    const { iapvItem, iapvSubItem, urlPliego } = getIapvPliegoInfo(psets);
+    const designacion = iapvSubItem || iapvItem;
+    if (!designacion && !urlPliego) {
+      pliegoBlock.style.display = "none";
+      return;
+    }
+    pliegoBlock.innerHTML = `
+      <div class="info-pliego-label">Especificación técnica — Pliego IAPV</div>
+      ${designacion ? `<div class="info-pliego-designacion">${designacion}</div>` : ""}
+      ${urlPliego ? `
+        <a href="${urlPliego}" target="_blank" rel="noopener noreferrer">
+          Ver Pliego <iconify-icon icon="material-symbols:open-in-new" style="font-size:11px;"></iconify-icon>
+        </a>` : ""}
+    `;
+    pliegoBlock.style.display = "";
+  };
+
   const applyFilter = (): void => {
     filterTerm = filterInput.value.trim();
     filterBar.classList.toggle("has-value", filterTerm !== "");
@@ -174,7 +225,7 @@ export function createPropertiesPanel(
   generalCollapsible.body.append(itemsDataTable);
 
   sectionsContainer.append(generalCollapsible.wrapper);
-  section.append(filterBar, sectionsContainer);
+  section.append(filterBar, pliegoBlock, sectionsContainer);
 
   const collapseIntoSection = () => {
     section.collapsed = false;
@@ -242,11 +293,15 @@ export function createPropertiesPanel(
     const [modelId, ids] = entries[0] ?? [];
     const localId = ids ? [...ids][0] : undefined;
 
-    if (!modelId || localId === undefined) return;
+    if (!modelId || localId === undefined) {
+      pliegoBlock.style.display = "none";
+      return;
+    }
 
     const propertySets = await getPropertySets(modelId, localId, fragments);
     if (myGen !== renderGen) return;
 
+    updatePliegoBlock(propertySets);
     const appendedAny = propertySets.map(appendPsetSection).some(Boolean);
     if (!appendedAny) {
       const { wrapper, body } = createCollapsible("Sin Psets", false);
@@ -272,6 +327,10 @@ export function createPropertiesPanel(
 
     clearPsetSections();
     generalCollapsible.wrapper.style.display = "none";
+    // Con varios elementos seleccionados no hay un solo IAPV_Item/URL que
+    // mostrar (ver nota en updatePliegoBlock) — se oculta hasta volver a una
+    // selección de un único elemento.
+    pliegoBlock.style.display = "none";
 
     const { wrapper: summaryWrapper, body: summaryBody } = createCollapsible("General", true);
     summaryBody.innerHTML = `
