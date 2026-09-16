@@ -1,7 +1,7 @@
 import { utils, writeFile } from "xlsx";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import type { ComputoTool, ComputoItem } from "../tools/computo-tool";
+import type { ComputoTool, ComputoItem, ComputoInstancia } from "../tools/computo-tool";
 import { formatMoney } from "./computo-manager";
 import { compareItemDesignacion } from "./iapv-order";
 import { visibleComputoColumns, psetValueKey } from "./computo-columns";
@@ -31,6 +31,24 @@ function itemCells(item: ComputoItem, format: boolean): (string | number)[] {
       case "precioUnitario": return format ? formatMoney(item.precioUnitario) : item.precioUnitario;
       case "importe":        return format ? formatMoney(importe) : importe;
       default:               return "";
+    }
+  });
+}
+
+/** Fila de una instancia del ítem (un elemento IFC concreto, ver
+ *  `ComputoInstancia`): el nombre indentado en la columna del SubItem — la
+ *  designación del ítem que las agrupa, igual que en la tabla — y su cantidad
+ *  individual. Unidad, precio e importe quedan vacíos: la unidad es la misma
+ *  para todas y ya está en la fila del ítem, y el precio/importe son del ítem
+ *  — repetirlos acá haría parecer que el presupuesto suma dos veces. */
+function instanciaCells(instancia: ComputoInstancia, format: boolean): (string | number)[] {
+  const cols = visibleComputoColumns();
+  const labelId = cols.find((c) => c.id === "iapvSubItem")?.id ?? cols[0]?.id;
+  return cols.map((c) => {
+    if (c.id === labelId) return `    ${instancia.nombre}`;
+    switch (c.id) {
+      case "cantidad": return format ? formatMoney(instancia.cantidad) : instancia.cantidad;
+      default:         return "";
     }
   });
 }
@@ -112,7 +130,18 @@ function fileStamp(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-export function exportComputoToExcel(computoTool: ComputoTool): void {
+/** Detalle por instancia de un ítem — si falla la lectura del modelo se
+ *  exporta el ítem sin desglose en vez de abortar la exportación entera. */
+async function instancias(computoTool: ComputoTool, item: ComputoItem): Promise<ComputoInstancia[]> {
+  try {
+    return await computoTool.getInstancias(item.id);
+  } catch (error) {
+    console.error(error);
+    return [];
+  }
+}
+
+export async function exportComputoToExcel(computoTool: ComputoTool): Promise<void> {
   const groups = groupItems(computoTool);
   const total = [...computoTool.list.values()].reduce((sum, i) => sum + i.cantidad * i.precioUnitario, 0);
 
@@ -120,7 +149,12 @@ export function exportComputoToExcel(computoTool: ComputoTool): void {
   for (const group of groups) {
     if (group.items.length === 0) continue;
     rows.push(groupRow(group.nombre));
-    for (const item of group.items) rows.push(itemCells(item, false));
+    for (const item of group.items) {
+      rows.push(itemCells(item, false));
+      for (const instancia of await instancias(computoTool, item)) {
+        rows.push(instanciaCells(instancia, false));
+      }
+    }
   }
   rows.push([]);
   rows.push(totalRow(total, false));
@@ -133,7 +167,7 @@ export function exportComputoToExcel(computoTool: ComputoTool): void {
   writeFile(workbook, `computo-${fileStamp()}.xlsx`);
 }
 
-export function exportComputoToPdf(computoTool: ComputoTool): void {
+export async function exportComputoToPdf(computoTool: ComputoTool): Promise<void> {
   const groups = groupItems(computoTool);
   const total = [...computoTool.list.values()].reduce((sum, i) => sum + i.cantidad * i.precioUnitario, 0);
 
@@ -146,7 +180,12 @@ export function exportComputoToPdf(computoTool: ComputoTool): void {
   for (const group of groups) {
     if (group.items.length === 0) continue;
     body.push([{ content: group.nombre, colSpan: colCount, styles: { fontStyle: "bold", fillColor: [235, 235, 235] } }]);
-    for (const item of group.items) body.push(itemCells(item, true));
+    for (const item of group.items) {
+      body.push(itemCells(item, true));
+      for (const instancia of await instancias(computoTool, item)) {
+        body.push(instanciaCells(instancia, true));
+      }
+    }
   }
 
   autoTable(doc, {

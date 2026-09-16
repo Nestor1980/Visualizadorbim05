@@ -32,6 +32,9 @@ interface BuiltinColumnDef {
   designacion: boolean;
   /** No se puede ocultar. */
   locked: boolean;
+  /** Nace oculta: la columna existe y se puede activar desde el modal, pero no
+   *  se muestra hasta que el usuario la pida (ver `DEFAULT_HIDDEN`). */
+  defaultHidden?: boolean;
   /** Ancho sugerido para el Excel (unidades `wch` de SheetJS). */
   excelWidth: number;
 }
@@ -67,17 +70,32 @@ export interface ComputoColumnView {
 const BUILTIN_COLUMNS: BuiltinColumnDef[] = [
   { id: "iapvItem",       label: "Item",         designacion: true,  locked: false, excelWidth: 26 },
   { id: "iapvSubItem",    label: "SubItem",      designacion: true,  locked: false, excelWidth: 30 },
-  { id: "rubro",          label: "Rubro",        designacion: false, locked: false, excelWidth: 18 },
-  { id: "descripcion",    label: "Descripción",  designacion: false, locked: false, excelWidth: 36 },
+  { id: "rubro",          label: "Rubro",        designacion: false, locked: false, excelWidth: 18, defaultHidden: true },
+  { id: "descripcion",    label: "Descripción",  designacion: false, locked: false, excelWidth: 36, defaultHidden: true },
   { id: "unidad",         label: "Unidad",       designacion: false, locked: false, excelWidth: 10 },
   { id: "cantidad",       label: "Cantidad",     designacion: false, locked: false, excelWidth: 12 },
   { id: "precioUnitario", label: "Precio Unit.", designacion: false, locked: false, excelWidth: 14 },
   { id: "importe",        label: "Importe",      designacion: false, locked: true,  excelWidth: 14 },
 ];
 
+/** Columnas que nacen ocultas. "Rubro" y "Descripción" duplicaban la
+ *  designación del ítem: el nombre del elemento es el SubItem (ver
+ *  `seedFieldsFromElement` en computo-tool.ts), y un presupuesto real numera
+ *  Rubro/Item en la Designación de la Obra, no en una columna de texto aparte.
+ *  El dato sigue existiendo (el Rubro agrupa la tabla cuando no hay
+ *  categorías): quien lo quiera ver lo activa desde el modal de Columnas. */
+const DEFAULT_HIDDEN: string[] = BUILTIN_COLUMNS.filter((c) => c.defaultHidden).map((c) => c.id);
+
 const STORAGE_KEY = "bim-computo-columns";
 
+/** Versión del catálogo de columnas de fábrica. Se sube cuando cambia qué
+ *  columnas se muestran por defecto, para aplicar ese cambio también a quienes
+ *  ya tienen una preferencia guardada de antes (ver `migrate`). */
+const CONFIG_VERSION = 2;
+
 interface StoredConfig {
+  /** Ver `CONFIG_VERSION`. */
+  version: number;
   /** Ids en orden de visualización (fijas y de PSet mezcladas). */
   order: string[];
   /** Ids ocultos. */
@@ -86,7 +104,23 @@ interface StoredConfig {
   pset: PsetColumnDef[];
 }
 
-const EMPTY_CONFIG: StoredConfig = { order: [], hidden: [], pset: [] };
+/** Configuración de fábrica: sin reordenar, sin columnas de PSet, y con las de
+ *  `DEFAULT_HIDDEN` apagadas. */
+function defaultConfig(): StoredConfig {
+  return { version: CONFIG_VERSION, order: [], hidden: [...DEFAULT_HIDDEN], pset: [] };
+}
+
+/** Lleva una configuración guardada con un catálogo anterior al actual:
+ *  apaga las columnas que ahora nacen ocultas, sin tocar el resto de las
+ *  preferencias (orden, columnas de PSet, otras ocultas). Una vez que el
+ *  usuario vuelve a activar esas columnas, la configuración queda en la
+ *  versión actual y no se las vuelve a apagar. */
+function migrate(cfg: StoredConfig): StoredConfig {
+  if (cfg.version >= CONFIG_VERSION) return cfg;
+  const hidden = [...cfg.hidden];
+  for (const id of DEFAULT_HIDDEN) if (!hidden.includes(id)) hidden.push(id);
+  return { ...cfg, version: CONFIG_VERSION, hidden };
+}
 
 let cache: StoredConfig | null = null;
 let psetCounter = 0;
@@ -96,22 +130,23 @@ function readConfig(): StoredConfig {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
-      cache = { ...EMPTY_CONFIG };
+      cache = defaultConfig();
     } else {
       const parsed = JSON.parse(raw);
       // Migración desde el formato viejo (un array plano de ids ocultos).
       if (Array.isArray(parsed)) {
-        cache = { order: [], hidden: parsed as string[], pset: [] };
+        cache = migrate({ version: 1, order: [], hidden: parsed as string[], pset: [] });
       } else {
-        cache = {
+        cache = migrate({
+          version: Number.isFinite(parsed.version) ? parsed.version : 1,
           order: Array.isArray(parsed.order) ? parsed.order : [],
           hidden: Array.isArray(parsed.hidden) ? parsed.hidden : [],
           pset: Array.isArray(parsed.pset) ? parsed.pset : [],
-        };
+        });
       }
     }
   } catch {
-    cache = { ...EMPTY_CONFIG };
+    cache = defaultConfig();
   }
   // El contador arranca por encima de los ids ya guardados para no repetir.
   for (const col of cache.pset) {
@@ -123,8 +158,13 @@ function readConfig(): StoredConfig {
 
 function writeConfig(next: StoredConfig): void {
   cache = next;
+  // Si quedó igual a la de fábrica se borra la preferencia, para que el usuario
+  // siga tomando los cambios del catálogo por defecto en el futuro.
   const isDefault =
-    next.order.length === 0 && next.hidden.length === 0 && next.pset.length === 0;
+    next.order.length === 0
+    && next.pset.length === 0
+    && next.hidden.length === DEFAULT_HIDDEN.length
+    && next.hidden.every((id) => DEFAULT_HIDDEN.includes(id));
   if (isDefault) localStorage.removeItem(STORAGE_KEY);
   else localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
   emitChange();
@@ -281,13 +321,15 @@ export function renamePsetColumn(id: string, label: string): void {
 export function removePsetColumn(id: string): void {
   const cfg = readConfig();
   writeConfig({
+    ...cfg,
     order: cfg.order.filter((o) => o !== id),
     hidden: cfg.hidden.filter((h) => h !== id),
     pset: cfg.pset.filter((c) => c.id !== id),
   });
 }
 
-/** Vuelve al catálogo de fábrica (borra orden, ocultas y columnas de PSet). */
+/** Vuelve al catálogo de fábrica (borra orden y columnas de PSet, y deja
+ *  ocultas solo las de `DEFAULT_HIDDEN`). */
 export function resetColumns(): void {
-  writeConfig({ ...EMPTY_CONFIG });
+  writeConfig(defaultConfig());
 }

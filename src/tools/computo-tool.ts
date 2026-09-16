@@ -22,7 +22,11 @@ export interface ComputoItem {
    *  y `computo-manager.ts`); si falta, se usa el agrupamiento por Rubro. */
   iapvItem: string;
   /** Designación del SubItem del Presupuesto Oficial de IAPV (ej. "4.1 De
-   *  ladrillos huecos de 0,20m de espesor"), leída del PSet `IAPV_Suitem`. */
+   *  ladrillos huecos de 0,20m de espesor"), leída del PSet `IAPV_Suitem`. Si
+   *  el elemento no trae ese PSet cae al nombre de tipo/familia (ej. "Basic
+   *  Wall:4.4 De ladrillos"): el ítem agrupa todas las instancias de ese tipo,
+   *  así que ese nombre es su designación — las instancias se despliegan como
+   *  filas hijas debajo (ver `getInstancias`). */
   iapvSubItem: string;
   /** URL a la especificación técnica del Pliego que define este ítem —
    *  primera propiedad con VALOR con forma de URL que se encuentre entre los
@@ -61,6 +65,28 @@ export interface ComputoItem {
    *  la asignación es manual (drag & drop en computo-manager.ts); a futuro se
    *  planea auto-agrupar por tipo IFC. */
   categoriaId: string | null;
+}
+
+/**
+ * Una instancia concreta de un ítem de cómputo: el elemento IFC tal como está
+ * en el modelo, con su nombre propio y su magnitud individual. Un ítem agrupa
+ * todas las instancias de un mismo tipo (ver `identityKey`), y su SubItem es el
+ * nombre de ese tipo; estas filas son el detalle que lo compone — la suma de
+ * sus cantidades es (salvo ajustes por fórmula, ver `getQuantityForSelection`)
+ * la cantidad del ítem.
+ *
+ * No se persiste: se resuelve leyendo el modelo bajo demanda (ver
+ * `getInstancias`), porque son datos derivados del IFC que no tiene sentido
+ * guardar en el proyecto.
+ */
+export interface ComputoInstancia {
+  modelId: string;
+  localId: number;
+  /** `Name` del elemento IFC (ej. "Basic Wall:4.4 De ladrillos:317645"), o
+   *  `#<localId>` si no trae ninguno. */
+  nombre: string;
+  unidad: string;
+  cantidad: number;
 }
 
 /** Sección de la tabla de cómputo creada a mano por el usuario (botón
@@ -121,6 +147,12 @@ export interface ComputoTool {
   /** Saca un elemento puntual de un ítem (usado por la fila hija del árbol
    *  de Capas de Datos) — si era el último, borra el ítem entero. */
   removeElementFromItem: (itemId: string, modelId: string, localId: number) => void;
+  /** Detalle por instancia de un ítem (ver `ComputoInstancia`): nombre y
+   *  magnitud individual de cada uno de sus `elementos`, en el mismo orden.
+   *  Lee el modelo, así que es asincrónico y viene cacheado por ítem (el cache
+   *  se invalida al agregar/quitar elementos o al cambiar las reglas de
+   *  cuantificación). `[]` si el ítem ya no existe. */
+  getInstancias: (itemId: string) => Promise<ComputoInstancia[]>;
   updateItem: (
     id: string,
     patch: Partial<Pick<ComputoItem, "rubro" | "descripcion" | "unidad" | "cantidad" | "precioUnitario" | "iapvItem" | "iapvSubItem">>,
@@ -134,7 +166,12 @@ export interface ComputoTool {
 }
 
 const RUBRO_KEY = /rubro|categor/i;
-const DESC_KEY = /descripcion|^description$|^name$/i;
+// "Descripción" es el texto del rubro (lo que se lee en un presupuesto), no el
+// nombre del elemento: por eso NO matchea `Name` — ese nombre identifica al
+// tipo que el ítem agrupa y va al SubItem (ver `NAME_KEY` y
+// `seedFieldsFromElement`).
+const DESC_KEY = /descripcion|^description$/i;
+const NAME_KEY = /^name$/i;
 const UNIDAD_KEY = /unidad|^unit$/i;
 const PRECIO_KEY = /preciounitario|unitprice|^precio$/i;
 // Claves exactas (no laxas como las de arriba) porque son los nombres de PSet
@@ -263,6 +300,30 @@ async function getIfcIdentity(
   return { tipoIfc, tipoElemento, predefinedType };
 }
 
+/** `Name` del elemento IFC — el nombre de la INSTANCIA (ej. "Basic Wall:4.4 De
+ *  ladrillos:317645", con el sufijo único que le pone el exportador), a
+ *  diferencia de `getElementTypeName`, que da el del tipo compartido por todas
+ *  ellas. `null` si el elemento no trae Name. */
+async function getInstanceName(
+  fragments: OBC.FragmentsManager,
+  modelId: string,
+  localId: number,
+): Promise<string | null> {
+  const model = fragments.list.get(modelId);
+  if (!model) return null;
+  try {
+    const itemData = await getItemData(model, localId, false);
+    const rawName = itemData?.Name;
+    const name =
+      typeof rawName === "string" ? rawName
+      : rawName?.value !== undefined ? String(rawName.value)
+      : "";
+    return name.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Herramienta de cómputo y presupuesto: mismo molde que CotaTool/DrawTool
  * (estado propio en `list`, eventos onItemAdded/onItemDeleted para que
@@ -336,6 +397,54 @@ export function createComputoTool(
     if (quantity && AUTO_UNIDADES.has(item.unidad)) item.unidad = quantity.unidad;
   }
 
+  /** Detalle por instancia ya resuelto, por ítem (ver `ComputoInstancia`):
+   *  armarlo cuesta una vuelta al modelo por elemento, y la tabla se
+   *  re-renderiza muchas veces sin que el ítem cambie. `sig` es la lista de
+   *  elementos del ítem: si cambia (se agregó o quitó uno), la entrada se
+   *  descarta sola. Un cambio de reglas de cuantificación lo limpia entero
+   *  (ver `scheduleRecomputeAll`). */
+  const instanciasCache = new Map<string, { sig: string; value: Promise<ComputoInstancia[]> }>();
+
+  function elementosSig(item: ComputoItem): string {
+    return item.elementos.map((e) => `${e.modelId}:${e.localId}`).join("|");
+  }
+
+  async function computeInstancias(item: ComputoItem): Promise<ComputoInstancia[]> {
+    // Los tipos que se cuentan por pieza aportan 1 cada uno por definición —
+    // no hace falta ir a buscarles quantity sets (ver isCountedCategory).
+    const counted = isCountedCategory(item.tipoIfc, item.predefinedType);
+    return Promise.all(
+      item.elementos.map(async ({ modelId, localId }) => {
+        const nombre = (await getInstanceName(fragments, modelId, localId)) ?? `#${localId}`;
+        if (counted) return { modelId, localId, nombre, unidad: "un", cantidad: 1 };
+        const quantity = await getQuantityForSelection(
+          { [modelId]: new Set([localId]) }, fragments, item.tipoIfc, item.predefinedType,
+        );
+        return {
+          modelId,
+          localId,
+          nombre,
+          // Misma magnitud que mide el ítem; si el elemento no arroja ninguna,
+          // se deja su unidad y 1 (el aporte por conteo, que es el respaldo
+          // que usa `recomputeCantidad` para el total).
+          unidad: quantity?.unidad ?? item.unidad,
+          cantidad: round2(quantity?.cantidad ?? 1),
+        };
+      }),
+    );
+  }
+
+  function getInstancias(itemId: string): Promise<ComputoInstancia[]> {
+    const item = list.get(itemId);
+    if (!item) return Promise.resolve([]);
+    const sig = elementosSig(item);
+    const cached = instanciasCache.get(itemId);
+    if (cached && cached.sig === sig) return cached.value;
+    const value = computeInstancias(item);
+    instanciasCache.set(itemId, { sig, value });
+    return value;
+  }
+
   /** Recalcula la cantidad (y unidad) de TODOS los ítems del cómputo — se
    *  dispara cuando cambian las reglas de cuantificación por tipo IFC desde
    *  Configuración (método o Property Set de origen), para que la tabla
@@ -348,6 +457,9 @@ export function createComputoTool(
     recomputeAllPending = true;
     queueMicrotask(async () => {
       recomputeAllPending = false;
+      // Las magnitudes por instancia salen de las mismas reglas que acaban de
+      // cambiar, así que el detalle cacheado ya no vale.
+      instanciasCache.clear();
       if (list.size === 0) return;
       for (const item of list.values()) await recomputeCantidad(item);
       const first = list.values().next().value as ComputoItem | undefined;
@@ -375,23 +487,25 @@ export function createComputoTool(
 
     item.rubro = findPropertyValue(psets, RUBRO_KEY) ?? "";
     item.iapvItem = findPropertyValue(psets, IAPV_ITEM_KEY) ?? "";
-    item.iapvSubItem = findPropertyValue(psets, IAPV_SUBITEM_KEY) ?? "";
     item.urlPliego = findUrlPropertyValue(psets) ?? "";
 
-    // Preferir el nombre de tipo/familia (compartido entre instancias del
-    // mismo tipo, ej. "MUR_LHC200") por sobre el Name de la instancia (que
-    // suele traer un sufijo único por elemento y ensucia la tabla).
-    let descripcion = findPropertyValue(psets, DESC_KEY) ?? item.tipoElemento ?? "";
-    if (!descripcion) {
-      const model = fragments.list.get(modelId);
-      const itemData = model ? await getItemData(model, localId, false) : null;
-      const rawName = itemData?.Name;
-      descripcion =
-        typeof rawName === "string" ? rawName
-        : rawName?.value !== undefined ? String(rawName.value)
-        : "";
-    }
-    item.descripcion = descripcion;
+    // SubItem = designación del ítem. Con el PSet de IAPV manda ese; si no, es
+    // el nombre de tipo/familia (compartido entre todas las instancias del
+    // tipo, ej. "Basic Wall:4.4 De ladrillos"), que es justamente lo que el
+    // ítem agrupa — cada instancia se ve como fila hija con su propio Name
+    // (ver `getInstancias`). Se prefiere el nombre del tipo por sobre el Name
+    // de la instancia, que trae un sufijo único por elemento y ensuciaría la
+    // designación.
+    const nombreTipo =
+      item.tipoElemento
+      ?? findPropertyValue(psets, NAME_KEY)
+      ?? (await getInstanceName(fragments, modelId, localId));
+    item.iapvSubItem = findPropertyValue(psets, IAPV_SUBITEM_KEY) ?? nombreTipo ?? "";
+
+    // Descripción: el texto del rubro (Pliego). Solo se siembra si el modelo
+    // trae una propiedad de descripción propiamente dicha — el nombre del
+    // elemento ya no cae acá, va al SubItem (arriba).
+    item.descripcion = findPropertyValue(psets, DESC_KEY) ?? "";
 
     const precioStr = findPropertyValue(psets, PRECIO_KEY);
     item.precioUnitario = precioStr ? (parseFloat(precioStr) || 0) : 0;
@@ -479,6 +593,7 @@ export function createComputoTool(
     if (item.elementos.length === 0) {
       const categoriaId = item.categoriaId;
       list.delete(item.id);
+      instanciasCache.delete(item.id);
       if (currentItemId === item.id) currentItemId = null;
       onItemDeleted.trigger(item.id);
       pruneCategoriaIfEmpty(categoriaId);
@@ -538,6 +653,7 @@ export function createComputoTool(
     if (!item) return;
     const categoriaId = item.categoriaId;
     list.delete(id);
+    instanciasCache.delete(id);
     if (currentItemId === id) currentItemId = null;
     onItemDeleted.trigger(id);
     pruneCategoriaIfEmpty(categoriaId);
@@ -545,6 +661,24 @@ export function createComputoTool(
   }
 
   function restoreItem(data: ComputoItem): void {
+    // Proyectos guardados antes de que el nombre del elemento pasara a ser el
+    // SubItem (ver `seedFieldsFromElement`) lo traen en Descripción: se mueve
+    // acá para que la tabla restaurada quede igual que una recién computada. Si
+    // Descripción trae otra cosa (una descripción de verdad, de un PSet), se
+    // respeta y el SubItem se arma con el nombre del tipo.
+    const nombreTipo = data.tipoElemento ?? "";
+    let iapvSubItem = data.iapvSubItem ?? "";
+    let descripcion = data.descripcion ?? "";
+    if (!iapvSubItem) {
+      if (nombreTipo) {
+        iapvSubItem = nombreTipo;
+        if (descripcion === nombreTipo) descripcion = "";
+      } else {
+        iapvSubItem = descripcion;
+        descripcion = "";
+      }
+    }
+
     // `predefinedType`/`categoriaId` pueden faltar en proyectos guardados con
     // una versión anterior del cómputo — se completan con `null` (equivale a
     // "sin dato"/"sin sección", igual que antes de que existieran estos campos).
@@ -553,7 +687,8 @@ export function createComputoTool(
       predefinedType: data.predefinedType ?? null,
       categoriaId: data.categoriaId ?? null,
       iapvItem: data.iapvItem ?? "",
-      iapvSubItem: data.iapvSubItem ?? "",
+      iapvSubItem,
+      descripcion,
       urlPliego: data.urlPliego ?? "",
       psetValues: data.psetValues ?? {},
       elementos: [...data.elementos],
@@ -668,6 +803,7 @@ export function createComputoTool(
     registerSelection: (modelIdMap) => { void registerSelection(modelIdMap); },
     addAllElements,
     removeElementFromItem,
+    getInstancias,
     updateItem,
     deleteItem,
     restoreItem,
