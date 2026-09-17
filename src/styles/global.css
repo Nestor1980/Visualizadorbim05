@@ -288,6 +288,11 @@ bim-grid {
   font: inherit;
   font-size: 11px;
 }
+/* Cantidad y Precio Unit. alinean a la derecha como el resto de los números de
+ * la tabla (importes, subtotales, cantidades de cada instancia). */
+.computo-input[type="number"] {
+  text-align: right;
+}
 .computo-input:hover {
   border-color: var(--border-subtle);
 }
@@ -296,6 +301,11 @@ bim-grid {
   border-color: var(--accent);
   background: var(--bg-surface);
 }
+/* Ojo: estos contenedores flex son un `<div>` DENTRO del `<td>`, no el `<td>`
+ * mismo — un `<td>` con `display:flex` deja de ser celda de tabla y el
+ * navegador fusiona en una sola celda anónima a todos los hermanos no-celda
+ * contiguos, corriendo la fila entera respecto de la cabecera (ver
+ * itemCellHtml en computo-manager.ts). */
 .computo-item-cell {
   display: flex;
   align-items: center;
@@ -315,6 +325,84 @@ bim-grid {
 }
 .computo-pliego-link:hover {
   opacity: 0.75;
+}
+/* Celda del SubItem: la designación del ítem (nombre del tipo de elemento, o
+ * el SubItem del Pliego) más el botón que despliega sus instancias — ver
+ * itemCellHtml en computo-manager.ts. */
+.computo-subitem-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.computo-subitem-cell .computo-input {
+  flex: 1 1 auto;
+}
+.computo-instancias-toggle {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 1px 3px 1px 1px;
+  border: none;
+  border-radius: 4px;
+  background: var(--bim-ui_bg-contrast-10, var(--bg-surface-hover));
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+}
+.computo-instancias-toggle:hover {
+  background: var(--bim-ui_bg-contrast-20, var(--bg-surface));
+  color: var(--text-primary);
+}
+.computo-instancias-toggle iconify-icon {
+  transition: transform 0.15s;
+}
+.computo-instancias-toggle.is-expanded iconify-icon {
+  transform: rotate(90deg);
+}
+.computo-instancias-count {
+  font-size: 9.5px;
+  font-weight: 700;
+}
+/* Filas hijas de un ítem: cada instancia (elemento IFC) que lo compone, con su
+ * magnitud individual — ver instanciaRowHtml en computo-manager.ts. */
+.computo-instancia-row td {
+  color: var(--text-secondary);
+  background: var(--bim-ui_bg-contrast-10, var(--bg-surface-hover));
+}
+.computo-table .computo-instancia-name {
+  padding-left: 32px;
+}
+.computo-instancia-name span {
+  display: inline-block;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+.computo-table .computo-instancias-loading {
+  padding-left: 32px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+.computo-instancia-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+.computo-instancia-delete:hover {
+  color: var(--text-primary);
+  background: var(--bg-surface);
 }
 .computo-actions {
   text-align: center;

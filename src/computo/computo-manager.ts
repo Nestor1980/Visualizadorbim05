@@ -1,6 +1,6 @@
 import * as BUI from "@thatopen/ui";
 import * as OBC from "@thatopen/components";
-import type { ComputoTool, ComputoItem } from "../tools/computo-tool";
+import type { ComputoTool, ComputoItem, ComputoInstancia } from "../tools/computo-tool";
 import { exportComputoToExcel, exportComputoToPdf } from "./computo-export";
 import { compareItemDesignacion } from "./iapv-order";
 import {
@@ -64,7 +64,22 @@ function sortByIapvOrder(items: ComputoItem[]): ComputoItem[] {
  *  el orden de columnas visibles los define `computo-columns.ts` (editable
  *  desde el modal "Columnas del Cómputo"). Las columnas fijas son inputs
  *  editables inline; las traídas de un PSet son texto de solo lectura. */
-function itemCellHtml(item: ComputoItem, col: ComputoColumnView): string {
+/** Botón que despliega/oculta las instancias de un ítem, con su cantidad al
+ *  lado (ej. "4"). Vive en la celda del SubItem — la designación que las
+ *  agrupa; si esa columna está oculta, en la de acciones (ver `itemRowHtml`). */
+function instanciasToggleHtml(item: ComputoItem, expandida: boolean): string {
+  const cantidad = item.elementos.length;
+  if (cantidad === 0) return "";
+  return `
+    <button type="button" class="computo-instancias-toggle${expandida ? " is-expanded" : ""}"
+            data-item-id="${item.id}"
+            title="${expandida ? "Ocultar" : "Ver"} las ${cantidad} instancias">
+      <iconify-icon icon="material-symbols:chevron-right"></iconify-icon>
+      <span class="computo-instancias-count">${cantidad}</span>
+    </button>`;
+}
+
+function itemCellHtml(item: ComputoItem, col: ComputoColumnView, expandida: boolean): string {
   if (col.kind === "pset") {
     const value = item.psetValues[psetValueKey(col.pset ?? "", col.prop ?? "")] ?? "";
     return `<td class="computo-pset-cell" title="${escapeHtml(value)}">${escapeHtml(value)}</td>`;
@@ -79,13 +94,31 @@ function itemCellHtml(item: ComputoItem, col: ComputoColumnView): string {
              <iconify-icon icon="material-symbols:open-in-new"></iconify-icon>
            </a>`
         : "";
-      return `<td class="computo-item-cell">
-        <input type="text" class="computo-input" data-field="iapvItem" value="${item.iapvItem}" placeholder="—">
-        ${pliegoLinkHtml}
+      // El contenido con layout propio va en un `<div>` adentro de la celda,
+      // NUNCA con `display:flex` sobre el `<td>`: un `<td>` así deja de ser
+      // celda de tabla y el navegador envuelve a TODOS los hermanos no-celda
+      // contiguos en UNA sola celda anónima — dos columnas de estas seguidas
+      // (Item y SubItem) fusionaban sus celdas y corrían toda la fila un lugar
+      // respecto de la cabecera.
+      return `<td>
+        <div class="computo-item-cell">
+          <input type="text" class="computo-input" data-field="iapvItem" value="${item.iapvItem}" placeholder="—">
+          ${pliegoLinkHtml}
+        </div>
       </td>`;
     }
     case "iapvSubItem":
-      return `<td><input type="text" class="computo-input" data-field="iapvSubItem" value="${item.iapvSubItem}" placeholder="—"></td>`;
+      // El SubItem es la designación del ítem — con el PSet de IAPV, la del
+      // Pliego; si no, el nombre del tipo de elemento (ej. "Basic Wall:4.4 De
+      // ladrillos"), que es lo que el ítem agrupa. Las instancias de ese tipo
+      // se despliegan como filas hijas acá abajo (ver `instanciaRowHtml`), así
+      // que el botón que las muestra/oculta vive en esta celda.
+      return `<td>
+        <div class="computo-subitem-cell">
+          ${instanciasToggleHtml(item, expandida)}
+          <input type="text" class="computo-input" data-field="iapvSubItem" value="${escapeHtml(item.iapvSubItem)}" placeholder="—">
+        </div>
+      </td>`;
     case "rubro":
       return `<td><input type="text" class="computo-input" data-field="rubro" value="${item.rubro}" placeholder="Rubro"></td>`;
     case "descripcion":
@@ -103,15 +136,78 @@ function itemCellHtml(item: ComputoItem, col: ComputoColumnView): string {
   }
 }
 
-function itemRowHtml(item: ComputoItem): string {
-  const cells = visibleComputoColumns().map((c) => itemCellHtml(item, c)).join("");
+function itemRowHtml(item: ComputoItem, expandida: boolean): string {
+  const cols = visibleComputoColumns();
+  const cells = cols.map((c) => itemCellHtml(item, c, expandida)).join("");
+  // Con la columna SubItem oculta el toggle no tendría dónde ir: se agrega a la
+  // celda de acciones para que el detalle por instancia siga siendo accesible.
+  const toggleHtml = cols.some((c) => c.id === "iapvSubItem")
+    ? ""
+    : instanciasToggleHtml(item, expandida);
   return `
     <tr data-item-id="${item.id}" draggable="true">
       ${cells}
       <td class="computo-actions">
+        ${toggleHtml}
         <button type="button" class="computo-delete" data-item-id="${item.id}" title="Eliminar">
           <iconify-icon icon="material-symbols:delete-outline"></iconify-icon>
         </button>
+      </td>
+    </tr>`;
+}
+
+/** Columna donde se lista el nombre de cada instancia: la del SubItem, que es
+ *  la designación del ítem que las agrupa. Si esa columna está oculta (ver el
+ *  modal de Columnas) se usa la primera visible, para que el detalle no quede
+ *  sin etiqueta. */
+function instanciaLabelColumnId(cols: ComputoColumnView[]): string | undefined {
+  return cols.find((c) => c.id === "iapvSubItem")?.id ?? cols[0]?.id;
+}
+
+/** Fila hija de un ítem: una instancia concreta (un elemento IFC del modelo)
+ *  con su nombre y su magnitud individual. Solo se llenan el nombre y la
+ *  cantidad: la unidad es la misma para todas y ya está en la cabeza del grupo
+ *  (la fila del ítem), y precio e importe son del ítem — repetirlos acá haría
+ *  parecer que el cómputo suma dos veces. No lleva `data-item-id` a propósito:
+ *  esas filas son las de ítem (drag & drop entre secciones, borrado). */
+function instanciaRowHtml(item: ComputoItem, instancia: ComputoInstancia, indice: number): string {
+  const cols = visibleComputoColumns();
+  const labelId = instanciaLabelColumnId(cols);
+  const cells = cols
+    .map((col) => {
+      if (col.id === labelId) {
+        return `<td class="computo-instancia-name">
+          <span title="${escapeHtml(instancia.nombre)}">${escapeHtml(instancia.nombre)}</span>
+        </td>`;
+      }
+      switch (col.id) {
+        case "cantidad": return `<td class="computo-num">${formatMoney(instancia.cantidad)}</td>`;
+        default:         return `<td></td>`;
+      }
+    })
+    .join("");
+
+  return `
+    <tr class="computo-instancia-row">
+      ${cells}
+      <td class="computo-actions">
+        <button type="button" class="computo-instancia-delete"
+                data-parent-item="${item.id}"
+                data-instancia="${indice}"
+                title="Quitar esta instancia del ítem">
+          <iconify-icon icon="material-symbols:close"></iconify-icon>
+        </button>
+      </td>
+    </tr>`;
+}
+
+/** Fila de espera mientras se leen las instancias del modelo (una vuelta al
+ *  worker por elemento, ver `getInstancias` en computo-tool.ts). */
+function instanciasLoadingRowHtml(): string {
+  return `
+    <tr class="computo-instancia-row">
+      <td class="computo-instancias-loading" colspan="${visibleComputoColumns().length + 1}">
+        Calculando instancias…
       </td>
     </tr>`;
 }
@@ -236,6 +332,47 @@ export function setupComputoSection(
    *  entre secciones, vive solo mientras dura el gesto. */
   let draggedItemId: string | null = null;
 
+  /** Ítems con el detalle de instancias desplegado (estado de la vista, no del
+   *  cómputo: no se guarda con el proyecto). */
+  const instanciasExpandidas = new Set<string>();
+  /** Instancias ya resueltas por ítem — `renderTable` es sincrónico, así que
+   *  el detalle se pide una vez, se guarda acá y se vuelve a renderizar
+   *  cuando llega. */
+  const instanciasByItem = new Map<string, ComputoInstancia[]>();
+  const instanciasPendientes = new Set<string>();
+
+  /** Instancias de un ítem si ya están resueltas; si no, arranca el pedido (y
+   *  el render que lo muestre) y devuelve `null` para que la tabla dibuje la
+   *  fila de espera. */
+  const ensureInstancias = (itemId: string): ComputoInstancia[] | null => {
+    const cached = instanciasByItem.get(itemId);
+    if (cached) return cached;
+    if (!instanciasPendientes.has(itemId)) {
+      instanciasPendientes.add(itemId);
+      computoTool.getInstancias(itemId)
+        .catch((error) => { console.error(error); return [] as ComputoInstancia[]; })
+        // Se guarda también el resultado vacío o fallido: si no, el render que
+        // dispara este `then` volvería a pedirlas y quedaría en bucle.
+        .then((instancias) => {
+          instanciasByItem.set(itemId, instancias);
+          instanciasPendientes.delete(itemId);
+          renderTable();
+        });
+    }
+    return null;
+  };
+
+  /** Fila del ítem y, si está desplegado, las de sus instancias. */
+  const itemRowsHtml = (item: ComputoItem): string => {
+    const expandida = instanciasExpandidas.has(item.id);
+    let html = itemRowHtml(item, expandida);
+    if (!expandida) return html;
+    const instancias = ensureInstancias(item.id);
+    if (!instancias) return html + instanciasLoadingRowHtml();
+    instancias.forEach((instancia, indice) => { html += instanciaRowHtml(item, instancia, indice); });
+    return html;
+  };
+
   const addCategoriaBtn = document.createElement("button");
   addCategoriaBtn.type = "button";
   addCategoriaBtn.className = "computo-add-categoria-btn";
@@ -298,8 +435,10 @@ export function setupComputoSection(
     btn.addEventListener("click", () => {
       closeExportMenu();
       if (computoTool.list.size === 0) return;
-      if (btn.dataset.format === "excel") exportComputoToExcel(computoTool);
-      else exportComputoToPdf(computoTool);
+      // Asincrónicas: leen el detalle por instancia de cada ítem (ver
+      // `getInstancias`) para desglosarlo en la planilla / el PDF.
+      if (btn.dataset.format === "excel") void exportComputoToExcel(computoTool);
+      else void exportComputoToPdf(computoTool);
     });
   });
 
@@ -355,7 +494,7 @@ export function setupComputoSection(
             <td></td>
           </tr>`;
         const groupItems = hasIapv ? sortByIapvOrder(group) : group;
-        for (const item of groupItems) bodyHtml += itemRowHtml(item);
+        for (const item of groupItems) bodyHtml += itemRowsHtml(item);
       }
       bodyHtml = `<tbody class="computo-categoria-section" data-categoria-id="${SIN_CATEGORIA_ID}">${bodyHtml}</tbody>`;
     } else {
@@ -373,7 +512,7 @@ export function setupComputoSection(
         bodyHtml += `<tbody class="computo-categoria-section" data-categoria-id="${dropId}">`;
         bodyHtml += categoriaHeaderHtml(section, total);
         const sectionItems = hasIapv ? sortByIapvOrder(section.items) : section.items;
-        for (const item of sectionItems) bodyHtml += itemRowHtml(item);
+        for (const item of sectionItems) bodyHtml += itemRowsHtml(item);
         bodyHtml += `</tbody>`;
       }
     }
@@ -431,6 +570,31 @@ export function setupComputoSection(
       btn.addEventListener("click", () => {
         const id = btn.getAttribute("data-item-id");
         if (id) computoTool.deleteItem(id);
+      });
+    });
+
+    tableContainer.querySelectorAll<HTMLButtonElement>(".computo-instancias-toggle").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const id = btn.getAttribute("data-item-id");
+        if (!id) return;
+        if (instanciasExpandidas.has(id)) instanciasExpandidas.delete(id);
+        else instanciasExpandidas.add(id);
+        renderTable();
+      });
+    });
+
+    tableContainer.querySelectorAll<HTMLButtonElement>(".computo-instancia-delete").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const itemId = btn.getAttribute("data-parent-item");
+        const indice = Number(btn.getAttribute("data-instancia"));
+        if (!itemId || !Number.isInteger(indice)) return;
+        const instancia = instanciasByItem.get(itemId)?.[indice];
+        if (!instancia) return;
+        // Quita el elemento del ítem (recalcula su cantidad y, si era el
+        // último, borra el ítem) — la tabla se redibuja por `onItemChanged` /
+        // `onItemDeleted`.
+        computoTool.removeElementFromItem(itemId, instancia.modelId, instancia.localId);
       });
     });
 
@@ -518,8 +682,20 @@ export function setupComputoSection(
 
   renderTable();
   computoTool.onItemAdded.add(renderTable);
-  computoTool.onItemChanged.add(renderTable);
-  computoTool.onItemDeleted.add(renderTable);
+  // Un cambio de ítem puede mover sus cantidades por instancia (y un cambio de
+  // reglas de cuantificación dispara un solo `onItemChanged` por todo el
+  // cómputo — ver `scheduleRecomputeAll` en computo-tool.ts), así que se
+  // descarta el detalle ya resuelto. Volver a pedirlo es barato: el tool lo
+  // tiene cacheado por firma de elementos y no re-lee el modelo si no cambió.
+  computoTool.onItemChanged.add(() => {
+    instanciasByItem.clear();
+    renderTable();
+  });
+  computoTool.onItemDeleted.add((id) => {
+    instanciasExpandidas.delete(id);
+    instanciasByItem.delete(id);
+    renderTable();
+  });
   computoTool.onCategoriaAdded.add(renderTable);
   computoTool.onCategoriaChanged.add(renderTable);
   computoTool.onCategoriaDeleted.add(renderTable);
