@@ -104,6 +104,7 @@ export function setupProjectHistory(deps: {
       labels: s.labels,
       drawings: s.drawings,
       cotas: s.cotas,
+      areas: s.areas ?? [],
       computo: s.computo,
       computoCategorias: s.computoCategorias ?? [],
     });
@@ -278,6 +279,8 @@ export function setupProjectHistory(deps: {
   // — Eventos de cada herramienta: dan una etiqueta específica al paso —
   deps.cotas.onItemAdded.add(() => markChange("Agregar cota"));
   deps.cotas.onItemDeleted.add(() => markChange("Eliminar cota"));
+  deps.cotas.onAreaAdded.add(() => markChange("Agregar medición de superficie"));
+  deps.cotas.onAreaDeleted.add(() => markChange("Eliminar medición de superficie"));
 
   deps.drawings.onItemAdded.add(() => markChange("Agregar trazo"));
   deps.drawings.onItemDeleted.add(() => markChange("Eliminar trazo"));

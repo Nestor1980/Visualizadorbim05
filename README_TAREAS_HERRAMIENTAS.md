@@ -74,25 +74,34 @@ nunca reflejaba lo elegido para el Cómputo.
 
 ## 3. La medición debería incluir tomar medidas de superficie
 
-**Estado `[~]` — ya existe medio camino.** El modo "superficie" de la
-herramienta de cota **ya existe**: al hacer click sobre una cara, resalta todo
-su perímetro y crea una cota por cada borde
-([src/tools/cota-tool.ts:499-505](src/tools/cota-tool.ts#L499)). Lo que falta
-es la medida de **área** en sí — hoy solo salen las longitudes de los bordes,
-no un valor de m² de la cara.
+**Estado `[x]` — resuelto.** El modo "superficie" de la herramienta de cota ya
+resaltaba el perímetro de la cara y creaba una cota por borde
+([src/tools/cota-tool.ts](src/tools/cota-tool.ts)); faltaba el valor de área
+en sí.
 
-### Checklist
-- [ ] Calcular el área de la cara detectada en modo "superficie" (la
-  triangulación ya está disponible para armar `segments`, se puede sumar el
-  área de los triángulos del mismo modo que `getDominantFaceArea` en
-  [src/computo/quantity-extractor.ts](src/computo/quantity-extractor.ts)).
-- [ ] Decidir la UI: ¿una cota adicional en el centro de la cara con el valor
-  en m² (mismo estilo que `formatDistance`,
-  [cota-tool.ts:207](src/tools/cota-tool.ts#L207)), o un formato nuevo
-  `formatArea`?
-- [ ] Confirmar que el valor se pueda editar/eliminar igual que una cota de
-  distancia (reusar `CotaItem` / `list` / `onItemAdded` si aplica, o un tipo
-  paralelo).
+**Fix aplicado:**
+- `computeFaceArea()` en [cota-tool.ts](src/tools/cota-tool.ts) suma el área
+  de cada triángulo de la cara raycasteada (mismo criterio de producto cruz
+  que `getDominantFaceArea` en
+  [quantity-extractor.ts](src/computo/quantity-extractor.ts), sin la lógica de
+  "eje dominante" porque acá los triángulos ya son de una sola cara plana).
+  `FaceBoundary` ahora también trae `area` y `centroid`.
+- Nueva clase `CotaAreaItem` (paralela a `CotaItem` pero más simple: una sola
+  etiqueta en el centroide, sin vértices/shaft propios — el perímetro ya lo
+  dibujan las `CotaItem` de borde que se crean junto con ella). Al clickear en
+  modo "Superficie" ahora se crean las cotas de borde **más** una medición de
+  área.
+- Integrado en el mismo pipeline que las cotas: aparece como categoría
+  "Áreas" en el árbol de Capas de Datos
+  ([data-layers-tree.ts](src/ui/left-panel/data-layers-tree.ts)) con
+  nombre editable, ocultar/mostrar y borrar; viaja con el proyecto guardado
+  (`SerializedDataLayers.areas`) y con el undo/redo
+  ([project-history.ts](src/core/project-history.ts) — agregado a
+  `layersCmpKey` y a los listeners de `markChange`).
+- Verificado en el navegador: click en modo Superficie → aparece "Área N — X
+  m²" tanto flotando en el modelo como en el árbol; ocultar, borrar, deshacer
+  (Ctrl+Z) y rehacer (Ctrl+Shift+Z) funcionan. `npm run build` y chequeo
+  estricto de tipos sin errores nuevos.
 
 ---
 
@@ -219,7 +228,7 @@ una cota al mismo tiempo, ni tener Cómputo y Dibujo simultáneos.
 3. **Punto 1** — ✅ parcialmente resuelto por el mismo fix; falta terminar de
    verificar (visibilidad por defecto, otras clases IFC).
 4. **Punto 5** (limpiar planos de corte) — ✅ resuelto.
-5. **Punto 3** (medir superficie) — el modo ya existe, falta el cálculo de área
-   y la UI para mostrarlo.
-6. **Puntos 4 y 7** — mismo diagnóstico de fondo (`ToolManager` exclusivo);
-   conviene decidirlos juntos antes de tocar `tool-manager.ts` dos veces.
+5. **Punto 3** (medir superficie) — ✅ resuelto.
+6. **Puntos 4 y 7** — únicos pendientes. Mismo diagnóstico de fondo
+   (`ToolManager` exclusivo); conviene decidirlos juntos antes de tocar
+   `tool-manager.ts` dos veces.

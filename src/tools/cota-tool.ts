@@ -116,6 +116,16 @@ export interface CotaTool {
    *  por el flujo interactivo de click) — usada al restaurar un proyecto
    *  guardado. */
   addCota: (start: THREE.Vector3, end: THREE.Vector3) => CotaItem;
+  /** Mediciones de superficie ya creadas — mismo patrón que `list` para
+   *  cotas: el árbol de capas de datos se suscribe a estos eventos para
+   *  anidar cada una en la capa activa. */
+  areas: Map<string, CotaAreaItem>;
+  onAreaAdded: OBC.Event<CotaAreaItem>;
+  onAreaDeleted: OBC.Event<string>;
+  deleteArea: (id: string) => void;
+  /** Recrea una medición de superficie ya terminada (posición + área) sin
+   *  pasar por el flujo interactivo — usada al restaurar un proyecto guardado. */
+  addArea: (position: THREE.Vector3, area: number) => CotaAreaItem;
 }
 
 interface VertexMarker {
@@ -155,6 +165,33 @@ function faceVertex(facePoints: Float32Array, idx: number): THREE.Vector3 {
 interface FaceBoundary {
   segments: [THREE.Vector3, THREE.Vector3][];
   vertices: THREE.Vector3[];
+  /** Superficie total de la cara (suma del área de todos sus triángulos, no
+   *  solo el perímetro) — unidades de mundo al cuadrado, asumidas m². */
+  area: number;
+  /** Centroide de los vértices del perímetro — punto donde se ubica la
+   *  etiqueta de área al crear la medición. No es el centroide real de la
+   *  superficie (que pesaría por triángulo), pero alcanza para ubicar la
+   *  etiqueta dentro de la cara. */
+  centroid: THREE.Vector3;
+}
+
+/** Área de una cara raycasteada: suma el área de cada triángulo de su
+ *  triangulación (mismo criterio de producto cruz que `getDominantFaceArea`
+ *  en quantity-extractor.ts, pero sin la lógica de "eje dominante" — acá ya
+ *  se sabe que todos los triángulos pertenecen a la misma cara plana). */
+function computeFaceArea(facePoints: Float32Array, faceIndices: Uint16Array): number {
+  let area = 0;
+  const ab = new THREE.Vector3();
+  const ac = new THREE.Vector3();
+  for (let i = 0; i < faceIndices.length; i += 3) {
+    const a = faceVertex(facePoints, faceIndices[i]);
+    const b = faceVertex(facePoints, faceIndices[i + 1]);
+    const c = faceVertex(facePoints, faceIndices[i + 2]);
+    ab.subVectors(b, a);
+    ac.subVectors(c, a);
+    area += ab.cross(ac).length() * 0.5;
+  }
+  return area;
 }
 
 function computeFaceBoundary(facePoints: Float32Array, faceIndices: Uint16Array): FaceBoundary {
@@ -167,7 +204,11 @@ function computeFaceBoundary(facePoints: Float32Array, faceIndices: Uint16Array)
     uniqueIndices.add(b);
   }
   const vertices = [...uniqueIndices].map((idx) => faceVertex(facePoints, idx));
-  return { segments, vertices };
+  const centroid = vertices
+    .reduce((sum, v) => sum.add(v), new THREE.Vector3())
+    .multiplyScalar(vertices.length > 0 ? 1 / vertices.length : 0);
+  const area = computeFaceArea(facePoints, faceIndices);
+  return { segments, vertices, area, centroid };
 }
 
 /**
@@ -206,6 +247,45 @@ function deriveSnapState(result: FRAGS.RaycastResult | undefined, mode: CotaSnap
  *  etiqueta de una cota. */
 function formatDistance(distance: number): string {
   return `${distance.toFixed(2)} m`;
+}
+
+/** Formatea una superficie (unidades de mundo al cuadrado, asumidas m²). */
+function formatArea(area: number): string {
+  return `${area.toFixed(2)} m²`;
+}
+
+/**
+ * Medición de superficie ya creada (permanente) — hermana de `CotaItem` pero
+ * más simple: una sola etiqueta flotando en el centroide de la cara medida
+ * (el perímetro ya queda dibujado por las `CotaItem` de borde que se crean
+ * junto con ella en modo "superficie", así que no hace falta un contorno propio).
+ */
+export class CotaAreaItem {
+  readonly id: string;
+  readonly position: THREE.Vector3;
+  readonly area: number;
+  private readonly labelMark: OBF.Mark;
+  private _visible = true;
+
+  constructor(params: { id: string; position: THREE.Vector3; area: number; labelMark: OBF.Mark }) {
+    this.id = params.id;
+    this.position = params.position;
+    this.area = params.area;
+    this.labelMark = params.labelMark;
+  }
+
+  get visible(): boolean {
+    return this._visible;
+  }
+
+  set visible(value: boolean) {
+    this._visible = value;
+    this.labelMark.visible = value;
+  }
+
+  dispose(): void {
+    this.labelMark.dispose();
+  }
 }
 
 export function createCotaTool(
@@ -376,6 +456,33 @@ export function createCotaTool(
     onItemDeleted.trigger(id);
   }
 
+  // — Mediciones de superficie ya creadas (permanentes) —
+  const areas = new Map<string, CotaAreaItem>();
+  const onAreaAdded = new OBC.Event<CotaAreaItem>();
+  const onAreaDeleted = new OBC.Event<string>();
+  let areaCounter = 0;
+
+  function createArea(position: THREE.Vector3, area: number): CotaAreaItem {
+    const labelMark = new OBF.Mark(world, createLabelElement());
+    labelMark.three.position.copy(position);
+    labelMark.three.element.textContent = formatArea(area);
+
+    areaCounter += 1;
+    const id = `area-${Date.now()}-${areaCounter}`;
+    const item = new CotaAreaItem({ id, position: position.clone(), area, labelMark });
+    areas.set(id, item);
+    onAreaAdded.trigger(item);
+    return item;
+  }
+
+  function deleteArea(id: string): void {
+    const item = areas.get(id);
+    if (!item) return;
+    item.dispose();
+    areas.delete(id);
+    onAreaDeleted.trigger(id);
+  }
+
   // — Colocación en curso: primer click ya fijado, esperando el segundo —
   let pendingStart: THREE.Vector3 | null = null;
   let startPreviewMarker: VertexMarker | null = null;
@@ -497,10 +604,12 @@ export function createCotaTool(
     }
 
     // Modo "superficie": el hover resalta todo el perímetro de la cara, así
-    // que un único click crea una cota por cada borde de ese perímetro.
+    // que un único click crea una cota por cada borde de ese perímetro más
+    // una medición de área con el total de la superficie.
     if (currentState.kind === "face") {
       disableOrbitForThisClick();
       for (const [a, b] of currentState.segments) createCota(a.clone(), b.clone());
+      createArea(currentState.centroid, currentState.area);
       return;
     }
 
@@ -556,5 +665,10 @@ export function createCotaTool(
     onItemDeleted,
     deleteCota,
     addCota: createCota,
+    areas,
+    onAreaAdded,
+    onAreaDeleted,
+    deleteArea,
+    addArea: createArea,
   };
 }

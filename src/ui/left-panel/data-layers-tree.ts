@@ -12,6 +12,7 @@ export interface DataLayer {
   collectionId: string | null;
   expanded: boolean;
   cotasExpanded: boolean;
+  areasExpanded: boolean;
   sectionsExpanded: boolean;
   topicsExpanded: boolean;
   labelsExpanded: boolean;
@@ -49,6 +50,11 @@ export interface SerializedDataLayers {
   cotas: {
     layerId: string; name: string; start: Vec3Tuple; end: Vec3Tuple; visible: boolean;
   }[];
+  /** Mediciones de superficie (ver `CotaAreaItem` en cota-tool.ts) — opcional
+   *  porque proyectos guardados antes de esta feature no lo traen. */
+  areas?: {
+    layerId: string; name: string; position: Vec3Tuple; area: number; visible: boolean;
+  }[];
   computo: ({ layerId: string } & ComputoItem)[];
   /** Secciones de la tabla de cómputo (ver `ComputoCategoria`) — no tienen
    *  `layerId`: son un agrupador propio de la tabla, no de las capas de datos. */
@@ -59,7 +65,7 @@ export interface SerializedDataLayers {
   measurements?: unknown[];
 }
 
-type DraggedItem = { kind: "cota" | "section" | "topic" | "label" | "draw" | "computo"; id: string } | null;
+type DraggedItem = { kind: "cota" | "area" | "section" | "topic" | "label" | "draw" | "computo"; id: string } | null;
 
 /**
  * Renderiza filas para el árbol de `models-tree.ts` (Colecciones), que es el
@@ -120,10 +126,13 @@ export function createDataLayersTree(
   const drawName = new Map<string, string>();             // strokeId -> nombre editable
   const cotaDataLayer = new Map<string, string>();        // cotaId -> dataLayerId
   const cotaName = new Map<string, string>();             // cotaId -> nombre editable
+  const areaDataLayer = new Map<string, string>();        // areaId -> dataLayerId
+  const areaName = new Map<string, string>();             // areaId -> nombre editable
   const computoDataLayer = new Map<string, string>();     // computoItemId -> dataLayerId
   let sectionCounter = 0;
   let drawCounter = 0;
   let cotaCounter = 0;
+  let areaCounter = 0;
 
   let draggedItem: DraggedItem = null;
   let draggedDataLayerId: string | null = null;
@@ -140,6 +149,9 @@ export function createDataLayersTree(
 
     for (const id of [...cotaDataLayer.keys()]) if (!cotas.list.has(id)) cotaDataLayer.delete(id);
     for (const id of [...cotaName.keys()]) if (!cotas.list.has(id)) cotaName.delete(id);
+
+    for (const id of [...areaDataLayer.keys()]) if (!cotas.areas.has(id)) areaDataLayer.delete(id);
+    for (const id of [...areaName.keys()]) if (!cotas.areas.has(id)) areaName.delete(id);
 
     for (const id of [...computoDataLayer.keys()]) if (!computos.list.has(id)) computoDataLayer.delete(id);
   }
@@ -248,6 +260,55 @@ export function createDataLayersTree(
     });
     const deleteBtn = makeIconButton("mdi:delete", "Eliminar cota", () => {
       cotas.deleteCota(cotaId);
+      requestRender();
+    });
+
+    actions.append(eyeBtn, deleteBtn);
+    row.append(icon, label, actions);
+    return row;
+  }
+
+  function renderAreaRow(areaId: string): HTMLElement {
+    const area = cotas.areas.get(areaId);
+    if (!area) return document.createElement("div");
+    const name = areaName.get(areaId) ?? areaId;
+    const hidden = !area.visible;
+
+    const row = document.createElement("div");
+    row.className = "models-row models-row--nested data-layer-item-row";
+    row.draggable = true;
+    row.addEventListener("dragstart", (e: DragEvent) => {
+      draggedItem = { kind: "area", id: areaId };
+      e.dataTransfer?.setData("text/plain", areaId);
+      if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+      row.classList.add("is-dragging");
+    });
+    row.addEventListener("dragend", () => {
+      draggedItem = null;
+      row.classList.remove("is-dragging");
+    });
+
+    const icon = document.createElement("bim-icon") as any;
+    icon.icon = "mdi:vector-square";
+    icon.className = "models-row-icon";
+
+    const label = document.createElement("span");
+    label.className = "models-row-name";
+    label.textContent = `${name} — ${area.area.toFixed(2)} m²`;
+    label.addEventListener("dblclick", (e) => {
+      e.stopPropagation();
+      startRename(name, label, (value) => areaName.set(areaId, value));
+    });
+
+    const actions = document.createElement("div");
+    actions.className = "models-row-actions";
+
+    const eyeBtn = makeIconButton(hidden ? "mdi:eye-off" : "mdi:eye", hidden ? "Mostrar" : "Ocultar", () => {
+      area.visible = !area.visible;
+      requestRender();
+    });
+    const deleteBtn = makeIconButton("mdi:delete", "Eliminar medición de superficie", () => {
+      cotas.deleteArea(areaId);
       requestRender();
     });
 
@@ -562,7 +623,7 @@ export function createDataLayersTree(
 
   function renderCategoryRow(
     layer: DataLayer,
-    kind: "cota" | "section" | "topic" | "label" | "draw" | "computo",
+    kind: "cota" | "area" | "section" | "topic" | "label" | "draw" | "computo",
     label: string,
     icon: string,
     itemIds: string[],
@@ -588,6 +649,7 @@ export function createDataLayersTree(
       wrapper.classList.remove("drag-over");
       if (!draggedItem || draggedItem.kind !== kind) return;
       if (kind === "cota") cotaDataLayer.set(draggedItem.id, layer.id);
+      else if (kind === "area") areaDataLayer.set(draggedItem.id, layer.id);
       else if (kind === "section") planeDataLayer.set(draggedItem.id, layer.id);
       else if (kind === "topic") topicDataLayer.set(draggedItem.id, layer.id);
       else if (kind === "draw") drawDataLayer.set(draggedItem.id, layer.id);
@@ -651,6 +713,7 @@ export function createDataLayersTree(
       for (const id of itemIds) {
         wrapper.append(
           kind === "cota"        ? renderCotaRow(id) :
+          kind === "area"        ? renderAreaRow(id) :
           kind === "section"     ? renderSectionRow(id) :
           kind === "topic"       ? renderTopicRow(id) :
           kind === "draw"        ? renderDrawRow(id) :
@@ -678,6 +741,9 @@ export function createDataLayersTree(
       .map(([id]) => id);
     const cotaIds = [...cotaDataLayer.entries()]
       .filter(([id, layerId]) => layerId === layer.id && cotas.list.has(id))
+      .map(([id]) => id);
+    const areaIds = [...areaDataLayer.entries()]
+      .filter(([id, layerId]) => layerId === layer.id && cotas.areas.has(id))
       .map(([id]) => id);
     const computoIds = [...computoDataLayer.entries()]
       .filter(([id, layerId]) => layerId === layer.id && computos.list.has(id))
@@ -721,6 +787,7 @@ export function createDataLayersTree(
       row.classList.remove("drag-over");
       if (!draggedItem) return;
       if (draggedItem.kind === "cota") cotaDataLayer.set(draggedItem.id, layer.id);
+      else if (draggedItem.kind === "area") areaDataLayer.set(draggedItem.id, layer.id);
       else if (draggedItem.kind === "section") planeDataLayer.set(draggedItem.id, layer.id);
       else if (draggedItem.kind === "topic") topicDataLayer.set(draggedItem.id, layer.id);
       else if (draggedItem.kind === "draw") drawDataLayer.set(draggedItem.id, layer.id);
@@ -782,16 +849,21 @@ export function createDataLayersTree(
           const cota = cotas.list.get(id);
           if (cota) cota.visible = !layer.hidden;
         }
+        for (const id of areaIds) {
+          const area = cotas.areas.get(id);
+          if (area) area.visible = !layer.hidden;
+        }
         requestRender();
       },
     );
 
-    const deleteBtn = makeIconButton("mdi:delete", "Eliminar capa de datos (borra sus cotas, cortes, etiquetas, dibujos e ítems de cómputo)", () => {
-      if (!confirm(`¿Eliminar "${layer.name}" y todas sus cotas/cortes/etiquetas/dibujos/ítems de cómputo?`)) return;
+    const deleteBtn = makeIconButton("mdi:delete", "Eliminar capa de datos (borra sus cotas, áreas, cortes, etiquetas, dibujos e ítems de cómputo)", () => {
+      if (!confirm(`¿Eliminar "${layer.name}" y todas sus cotas/áreas/cortes/etiquetas/dibujos/ítems de cómputo?`)) return;
       for (const id of sectionIds) clipper.delete(world, id);
       for (const id of labelIds) labels.deleteLabel(id);
       for (const id of drawIds) drawings.deleteStroke(id);
       for (const id of cotaIds) cotas.deleteCota(id);
+      for (const id of areaIds) cotas.deleteArea(id);
       for (const id of computoIds) computos.deleteItem(id);
       const idx = dataLayers.indexOf(layer);
       if (idx >= 0) dataLayers.splice(idx, 1);
@@ -810,6 +882,12 @@ export function createDataLayersTree(
         wrapper.append(renderCategoryRow(
           layer, "cota", "Cotas", "solar:ruler-bold", cotaIds,
           layer.cotasExpanded, () => { layer.cotasExpanded = !layer.cotasExpanded; },
+        ));
+      }
+      if (areaIds.length > 0) {
+        wrapper.append(renderCategoryRow(
+          layer, "area", "Áreas", "mdi:vector-square", areaIds,
+          layer.areasExpanded, () => { layer.areasExpanded = !layer.areasExpanded; },
         ));
       }
       if (sectionIds.length > 0) {
@@ -859,6 +937,7 @@ export function createDataLayersTree(
       collectionId,
       expanded: true,
       cotasExpanded: true,
+      areasExpanded: true,
       sectionsExpanded: true,
       topicsExpanded: true,
       labelsExpanded: true,
@@ -959,6 +1038,17 @@ export function createDataLayersTree(
   });
   cotas.onItemDeleted.add((id) => { cotaDataLayer.delete(id); cotaName.delete(id); requestRender(); });
 
+  cotas.onAreaAdded.add((area) => {
+    const layer = ensureDefaultDataLayer();
+    if (!areaDataLayer.has(area.id)) areaDataLayer.set(area.id, layer.id);
+    if (!areaName.has(area.id)) {
+      areaCounter += 1;
+      areaName.set(area.id, `Área ${areaCounter}`);
+    }
+    requestRender();
+  });
+  cotas.onAreaDeleted.add((id) => { areaDataLayer.delete(id); areaName.delete(id); requestRender(); });
+
   computos.onItemAdded.add((item) => {
     const layer = ensureDefaultDataLayer();
     if (!computoDataLayer.has(item.id)) computoDataLayer.set(item.id, layer.id);
@@ -1023,6 +1113,17 @@ export function createDataLayersTree(
       })
       .filter((c): c is NonNullable<typeof c> => c !== null);
 
+    const areasOut = [...areaDataLayer.entries()]
+      .map(([id, layerId]) => {
+        const area = cotas.areas.get(id);
+        if (!area) return null;
+        return {
+          layerId, name: areaName.get(id) ?? id,
+          position: v3(area.position), area: area.area, visible: area.visible,
+        };
+      })
+      .filter((a): a is NonNullable<typeof a> => a !== null);
+
     const computoOut = [...computoDataLayer.entries()]
       .map(([id, layerId]) => {
         const item = computos.list.get(id);
@@ -1037,7 +1138,7 @@ export function createDataLayersTree(
       layers: dataLayers.map((l) => ({ ...l })),
       activeDataLayerId,
       sections, topics: topicsOut, labels: labelsOut, drawings: drawingsOut, cotas: cotasOut,
-      computo: computoOut, computoCategorias: computoCategoriasOut,
+      areas: areasOut, computo: computoOut, computoCategorias: computoCategoriasOut,
     };
   }
 
@@ -1049,6 +1150,7 @@ export function createDataLayersTree(
     for (const id of [...labels.list.keys()]) labels.deleteLabel(id);
     for (const id of [...drawings.list.keys()]) drawings.deleteStroke(id);
     for (const id of [...cotas.list.keys()]) cotas.deleteCota(id);
+    for (const id of [...cotas.areas.keys()]) cotas.deleteArea(id);
     for (const id of [...computos.list.keys()]) computos.deleteItem(id);
     for (const id of [...computos.categorias.keys()]) computos.deleteCategoria(id);
 
@@ -1060,6 +1162,8 @@ export function createDataLayersTree(
     drawName.clear();
     cotaDataLayer.clear();
     cotaName.clear();
+    areaDataLayer.clear();
+    areaName.clear();
     computoDataLayer.clear();
     activeDataLayerId = null;
 
@@ -1107,6 +1211,13 @@ export function createDataLayersTree(
       cota.visible = c.visible;
       cotaDataLayer.set(cota.id, c.layerId);
       cotaName.set(cota.id, c.name);
+    }
+
+    for (const a of data.areas ?? []) {
+      const area = cotas.addArea(toVec3(a.position), a.area);
+      area.visible = a.visible;
+      areaDataLayer.set(area.id, a.layerId);
+      areaName.set(area.id, a.name);
     }
 
     for (const cat of data.computoCategorias ?? []) computos.restoreCategoria(cat);
