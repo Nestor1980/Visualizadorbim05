@@ -266,6 +266,35 @@ function groupLabelColspan(): number {
   return Math.max(1, visibleComputoColumns().length - 2);
 }
 
+/** Ancho relativo de la columna de acciones (toggle de instancias / eliminar),
+ *  en las mismas unidades "wch" que `excelWidth` — se mezcla con esas para el
+ *  reparto proporcional del `<colgroup>` de abajo. */
+const ACTIONS_COL_WIDTH = 7;
+
+/** `<colgroup>` con un ancho explícito (%) por columna, proporcional a
+ *  `excelWidth` (ya calibrado para las mismas columnas en el export a Excel).
+ *  Fija el ancho de cada columna UNA sola vez para toda la tabla — con
+ *  `table-layout: fixed` (ver global.css) la cabecera y cada tipo de fila
+ *  (ítem, instancia, categoría, "Calculando instancias…") quedan clavadas a
+ *  la misma grilla sin importar su contenido ni su colspan.
+ *
+ *  Sin esto, el ancho de cada columna lo decide el layout automático del
+ *  navegador a partir del contenido de TODAS las filas — y esta tabla mezcla
+ *  formas de fila muy distintas (categoría con colspan agrupado, fila de
+ *  carga con colspan=N+1, nombres de instancia arbitrariamente largos): con
+ *  layout automático terminaban resolviendo anchos de columna distintos según
+ *  qué filas hubiera en pantalla en ese momento, y la cabecera (que no varía)
+ *  quedaba desalineada respecto del cuerpo. */
+function colgroupHtml(): string {
+  const cols = visibleComputoColumns();
+  const total = cols.reduce((sum, c) => sum + c.excelWidth, 0) + ACTIONS_COL_WIDTH;
+  const dataColsHtml = cols
+    .map((c) => `<col style="width:${((c.excelWidth / total) * 100).toFixed(3)}%">`)
+    .join("");
+  const actionsColHtml = `<col style="width:${((ACTIONS_COL_WIDTH / total) * 100).toFixed(3)}%">`;
+  return `<colgroup>${dataColsHtml}${actionsColHtml}</colgroup>`;
+}
+
 function categoriaHeaderHtml(section: ComputoSection, total: number): string {
   const subtotal = section.items.reduce((sum, e) => sum + e.cantidad * e.precioUnitario, 0);
   const incidencia = total > 0 ? (subtotal / total) * 100 : 0;
@@ -523,6 +552,7 @@ export function setupComputoSection(
     // monetario general de la tabla (sí los subtotales por grupo / sección).
     tableContainer.innerHTML = `
       <table class="computo-table">
+        ${colgroupHtml()}
         ${tableHeadHtml()}
         ${bodyHtml}
       </table>

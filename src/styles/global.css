@@ -209,6 +209,16 @@ bim-grid {
 }
 .computo-table {
   width: 100%;
+  /* Ancho de columna fijado por el `<colgroup>` que arma `colgroupHtml()` en
+   * computo-manager.ts — NUNCA por el contenido (ver el comentario ahí):
+   * evita que la cabecera y las filas (de ítem, de instancia, de categoría)
+   * terminen resolviendo anchos de columna distintos entre sí. */
+  table-layout: fixed;
+  /* Con anchos fijos, una tabla muy angosta comprimiría el contenido hasta
+   * ilegible en vez de scrollear — `.computo-body` (el contenedor scrolleable)
+   * ya tiene overflow:auto, así que el mínimo dispara el scroll horizontal en
+   * vez de apretar columnas. */
+  min-width: 680px;
   border-collapse: collapse;
   font-size: 11px;
 }
@@ -372,15 +382,16 @@ bim-grid {
   color: var(--text-secondary);
   background: var(--bim-ui_bg-contrast-10, var(--bg-surface-hover));
 }
+/* El ancho ya lo fija el `<colgroup>` (ver colgroupHtml en
+ * computo-manager.ts) — acá solo hace falta recortar con "…" lo que no entre,
+ * ya no un `max-width` en píxeles adivinado. */
 .computo-table .computo-instancia-name {
   padding-left: 32px;
-}
-.computo-instancia-name span {
-  display: inline-block;
-  max-width: 260px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.computo-instancia-name span {
   vertical-align: bottom;
 }
 .computo-table .computo-instancias-loading {
@@ -508,10 +519,11 @@ bim-grid {
   font-size: 14px;
 }
 /* Celda de una columna traída de un Property Set (solo lectura) — ver
- * computo-columns.ts / itemCellHtml en computo-manager.ts. */
+ * computo-columns.ts / itemCellHtml en computo-manager.ts. El ancho lo fija
+ * el `<colgroup>` (colgroupHtml en computo-manager.ts); acá solo se recorta
+ * con "…" lo que no entre. */
 .computo-pset-cell {
   color: var(--text-secondary);
-  max-width: 220px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
