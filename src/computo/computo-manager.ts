@@ -107,18 +107,25 @@ function itemCellHtml(item: ComputoItem, col: ComputoColumnView, expandida: bool
         </div>
       </td>`;
     }
-    case "iapvSubItem":
+    case "iapvSubItem": {
       // El SubItem es la designación del ítem — con el PSet de IAPV, la del
-      // Pliego; si no, el nombre del tipo de elemento (ej. "Basic Wall:4.4 De
-      // ladrillos"), que es lo que el ítem agrupa. Las instancias de ese tipo
-      // se despliegan como filas hijas acá abajo (ver `instanciaRowHtml`), así
-      // que el botón que las muestra/oculta vive en esta celda.
+      // Pliego; si no, el nombre de tipo de elemento ya limpio de categoría e
+      // id de Revit (ver `extractElementLabel` en computo-tool.ts), que es lo
+      // que el ítem agrupa. Ese nombre crudo (con la info "técnica" que al
+      // usuario final del cómputo no le sirve) queda como tooltip — ver
+      // `nombreElemento`. Las instancias de ese tipo se despliegan como filas
+      // hijas acá abajo (ver `instanciaRowHtml`), así que el botón que las
+      // muestra/oculta vive en esta celda.
+      const tooltipHtml = item.nombreElemento && item.nombreElemento !== item.iapvSubItem
+        ? ` title="${escapeHtml(item.nombreElemento)}"`
+        : "";
       return `<td>
         <div class="computo-subitem-cell">
           ${instanciasToggleHtml(item, expandida)}
-          <input type="text" class="computo-input" data-field="iapvSubItem" value="${escapeHtml(item.iapvSubItem)}" placeholder="—">
+          <input type="text" class="computo-input" data-field="iapvSubItem" value="${escapeHtml(item.iapvSubItem)}" placeholder="—"${tooltipHtml}>
         </div>
       </td>`;
+    }
     case "rubro":
       return `<td><input type="text" class="computo-input" data-field="rubro" value="${item.rubro}" placeholder="Rubro"></td>`;
     case "descripcion":
@@ -176,8 +183,11 @@ function instanciaRowHtml(item: ComputoItem, instancia: ComputoInstancia, indice
   const cells = cols
     .map((col) => {
       if (col.id === labelId) {
+        // El nombre visible ya viene limpio de categoría/id de Revit (ver
+        // `extractElementLabel` en computo-tool.ts); el crudo completo queda
+        // como tooltip, para quien necesite identificar el elemento exacto.
         return `<td class="computo-instancia-name">
-          <span title="${escapeHtml(instancia.nombre)}">${escapeHtml(instancia.nombre)}</span>
+          <span title="${escapeHtml(instancia.nombreCompleto)}">${escapeHtml(instancia.nombre)}</span>
         </td>`;
       }
       switch (col.id) {
