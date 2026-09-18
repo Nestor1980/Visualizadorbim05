@@ -232,6 +232,7 @@ bim-grid {
   font-weight: 700;
   color: var(--text-secondary);
   border-bottom: 1px solid var(--border-subtle);
+  border-right: 1px solid var(--border-subtle);
 }
 /* Cabecera de dos filas ("Designación de la Obra" > Item/SubItem, ver
  * computo-manager.ts): las celdas de la 2da fila deben pegarse debajo de la
@@ -244,6 +245,7 @@ bim-grid {
 .computo-table td {
   padding: 6px 10px;
   border-bottom: 1px solid var(--bim-ui_bg-contrast-20, var(--border-subtle));
+  border-right: 1px solid var(--bim-ui_bg-contrast-20, var(--border-subtle));
   vertical-align: middle;
 }
 .computo-table .computo-num {
