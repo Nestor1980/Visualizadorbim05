@@ -22,6 +22,19 @@ export interface ModelTreeView {
 const SKIP_FULL  = new Set(["IFCPROJECT"]);
 const SKIP_CLASS = new Set(["IFCSITE", "IFCBUILDING", "IFCBUILDINGSTOREY"]);
 
+/** Clases de descomposición espacial (contenedores, no tipos de elemento de
+ *  obra) que la vista "Estructura por Tipos" debe ignorar como agrupador —
+ *  ver `buildTypesTree`. Sin este filtro, el árbol de tipos las trata igual
+ *  que a cualquier clase IFC real: cada piso (`IfcBuildingStorey`) termina
+ *  listado como si fuera un "tipo" más, con su cantidad de pisos como
+ *  "cantidad de elementos" (ej. "BUILDINGSTOREY: 10"), y lo mismo con
+ *  Project/Site/Building. Reusa las mismas clases que ya se saltean al
+ *  compactar el árbol ESPACIAL (`SKIP_FULL`/`SKIP_CLASS`, ver
+ *  `toCompactTree`) más `IFCSPACE` (ambientes) — ese árbol no la salteaba
+ *  porque ahí sí importa mostrar cada ambiente como nodo navegable; acá no,
+ *  un "tipo" ambiente tan poco tiene sentido como un "tipo" piso. */
+const SPATIAL_STRUCTURE_CLASSES = new Set([...SKIP_FULL, ...SKIP_CLASS, "IFCSPACE"]);
+
 function nameCell(label: string, icon?: string): any {
   if (!icon) return label;
   const wrap = document.createElement("span");
@@ -390,6 +403,21 @@ export function createModelTreeView(
     }
   };
 
+  /**
+   * Arma `typesData` recorriendo el árbol crudo (sin compactar) e ignorando
+   * por completo su jerarquía de descomposición espacial: no importa bajo qué
+   * piso/edificio/sitio cuelgue un nodo de clase IFC, sus instancias se suman
+   * al MISMO balde por nombre de clase (el `Map` es único para todo el
+   * recorrido, no se reinicia por piso) — así "Muro" cuenta las 20 paredes de
+   * todo el proyecto, no las de un piso a la vez.
+   *
+   * Los nodos de clase que SON esa descomposición espacial
+   * (`SPATIAL_STRUCTURE_CLASSES` — Project/Site/Building/BuildingStorey/
+   * Space) no generan balde propio (no tiene sentido un "tipo" cuya cantidad
+   * sea la cantidad de pisos): se saltean sin dejar de recorrer sus hijos, así
+   * los elementos reales que cuelgan de cada piso se siguen encontrando y
+   * agrupando por su propia clase.
+   */
   const buildTypesTree = (rawNodes: any[]): void => {
     typesData.clear();
     const walkTree = (nodes: any[]) => {
@@ -397,7 +425,7 @@ export function createModelTreeView(
         const nodeName: string = node.data?.Name ?? "";
         const upper = nodeName.toUpperCase();
         const isIfcClass = /^IFC[A-Z]+$/i.test(upper);
-        if (isIfcClass) {
+        if (isIfcClass && !SPATIAL_STRUCTURE_CLASSES.has(upper)) {
           if (!typesData.has(upper)) typesData.set(upper, []);
           const bucket = typesData.get(upper)!;
           for (const child of node.children ?? []) {
