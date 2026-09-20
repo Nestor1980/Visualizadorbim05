@@ -326,6 +326,32 @@ bim-grid {
 .computo-item-cell .computo-input {
   flex: 1 1 auto;
 }
+/* Celda de Cantidad con el aviso "sin dato" (ver ComputoItem.sinDato en
+ * computo-tool.ts) — mismo patrón de `<div>` flex adentro del `<td>` que
+ * `.computo-item-cell`. */
+.computo-cantidad-cell {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.computo-cantidad-cell .computo-input {
+  flex: 1 1 auto;
+}
+/* Advertencia "sin dato": el método de cuantificación pide medir pero no se
+ * encontró esa magnitud en el elemento — la cantidad mostrada es un conteo de
+ * piezas de respaldo, no la medición pedida (ver ComputoItem.sinDato /
+ * ComputoInstancia.sinDato). En la fila del ítem va junto al input de
+ * Cantidad; en las de instancia, inline antes del número. */
+.computo-sindato-warning {
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--bim-ui_color-warning, #d9822b);
+  cursor: help;
+  vertical-align: -2px;
+}
+.computo-instancia-row .computo-sindato-warning {
+  margin-right: 3px;
+}
 .computo-pliego-link {
   flex: 0 0 auto;
   display: inline-flex;

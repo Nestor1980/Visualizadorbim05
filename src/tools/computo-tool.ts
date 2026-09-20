@@ -62,6 +62,17 @@ export interface ComputoItem {
    *  losa de fundación (volumen) contra una losa de piso (área) que
    *  comparten "IFCSLAB". */
   predefinedType: string | null;
+  /** `true` cuando el método de cuantificación del tipo pide medir (área,
+   *  volumen o longitud) pero no se encontró esa magnitud en ningún elemento
+   *  del ítem — ni en la fuente explícita configurada en Configuración →
+   *  Cómputo → Reglas ("Medir desde"), ni en la búsqueda automática por
+   *  Property Sets, ni por geometría — y `cantidad` quedó en la cantidad de
+   *  piezas del ítem como último recurso (ver `recomputeCantidad`). Sin este
+   *  aviso, esa caída silenciosa es indistinguible de una medición real: la
+   *  tabla se ve exactamente igual (mismo campo `cantidad`, misma `unidad`
+   *  que quedó de la última medición válida o del default del método). Se
+   *  muestra como advertencia junto a Cantidad en computo-manager.ts. */
+  sinDato: boolean;
   /** Nombre crudo (sin limpiar) del elemento/tipo que dio origen a
    *  `iapvSubItem` cuando ese campo no vino del PSet de IAPV — ej. "Basic
    *  Wall:4.4 De ladrillos:317645", con el prefijo de categoría y el id de
@@ -106,6 +117,9 @@ export interface ComputoInstancia {
   nombreCompleto: string;
   unidad: string;
   cantidad: number;
+  /** Ver `ComputoItem.sinDato` — mismo aviso, pero para esta instancia sola:
+   *  no se encontró su magnitud individual y `cantidad` quedó en 1 (conteo). */
+  sinDato: boolean;
 }
 
 /** Sección de la tabla de cómputo creada a mano por el usuario (botón
@@ -432,6 +446,7 @@ export function createComputoTool(
       // categoría se marcara como "contada") se autocorrija apenas se le
       // suma o saca un elemento, sin depender de borrarlo y recrearlo.
       item.unidad = "un";
+      item.sinDato = false;
       return;
     }
     const quantity = await getQuantityForSelection(
@@ -445,6 +460,10 @@ export function createComputoTool(
     // traída del modelo (PSet `Unidad`) o tipeada a mano por el usuario se
     // respeta.
     if (quantity && AUTO_UNIDADES.has(item.unidad)) item.unidad = quantity.unidad;
+    // Ver ComputoItem.sinDato: sin `quantity`, `cantidad` de arriba quedó en
+    // la cuenta de piezas como último recurso — se avisa en vez de dejarlo
+    // indistinguible de una medición real.
+    item.sinDato = quantity === null;
   }
 
   /** Detalle por instancia ya resuelto, por ítem (ver `ComputoInstancia`):
@@ -467,7 +486,7 @@ export function createComputoTool(
       item.elementos.map(async ({ modelId, localId }) => {
         const nombreCompleto = (await getInstanceName(fragments, modelId, localId)) ?? `#${localId}`;
         const nombre = extractElementLabel(nombreCompleto);
-        if (counted) return { modelId, localId, nombre, nombreCompleto, unidad: "un", cantidad: 1 };
+        if (counted) return { modelId, localId, nombre, nombreCompleto, unidad: "un", cantidad: 1, sinDato: false };
         const quantity = await getQuantityForSelection(
           { [modelId]: new Set([localId]) }, fragments, item.tipoIfc, item.predefinedType,
         );
@@ -481,6 +500,7 @@ export function createComputoTool(
           // que usa `recomputeCantidad` para el total).
           unidad: quantity?.unidad ?? item.unidad,
           cantidad: round2(quantity?.cantidad ?? 1),
+          sinDato: quantity === null,
         };
       }),
     );
@@ -612,7 +632,7 @@ export function createComputoTool(
       item = {
         id: `computo-${Date.now()}-${itemCounter}`,
         rubro: "", descripcion: "", unidad: "", cantidad: 0, precioUnitario: 0,
-        iapvItem: "", iapvSubItem: "", urlPliego: "", psetValues: {}, nombreElemento: null,
+        iapvItem: "", iapvSubItem: "", urlPliego: "", psetValues: {}, nombreElemento: null, sinDato: false,
         elementos: [], tipoIfc: identity.tipoIfc, tipoElemento: identity.tipoElemento,
         predefinedType: identity.predefinedType,
         categoriaId: categoriaNombre ? findOrCreateCategoriaByName(categoriaNombre).id : null,
@@ -746,6 +766,11 @@ export function createComputoTool(
       descripcion,
       urlPliego: data.urlPliego ?? "",
       psetValues: data.psetValues ?? {},
+      // `sinDato` no se guarda con el proyecto (es un aviso derivado del
+      // estado actual del modelo/reglas, no un dato propio del ítem) — arranca
+      // en `false` y se resuelve solo apenas cambien las reglas o se toque el
+      // ítem (ver `scheduleRecomputeAll` / `recomputeCantidad`).
+      sinDato: false,
       elementos: [...data.elementos],
     };
     list.set(item.id, item);

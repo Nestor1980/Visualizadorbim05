@@ -132,8 +132,25 @@ function itemCellHtml(item: ComputoItem, col: ComputoColumnView, expandida: bool
       return `<td><input type="text" class="computo-input" data-field="descripcion" value="${item.descripcion}" placeholder="Descripción"></td>`;
     case "unidad":
       return `<td><input type="text" class="computo-input" data-field="unidad" value="${item.unidad}"></td>`;
-    case "cantidad":
-      return `<td><input type="number" class="computo-input" data-field="cantidad" value="${item.cantidad.toFixed(2)}" step="0.01" min="0"></td>`;
+    case "cantidad": {
+      // `sinDato` (ver computo-tool.ts): el método de cuantificación del tipo
+      // pide medir (área/volumen/longitud) pero no se encontró esa magnitud
+      // en ningún elemento del ítem — ni por la fuente configurada en
+      // Configuración → Cómputo → Reglas, ni por búsqueda automática, ni por
+      // geometría — y esta cantidad quedó en la cuenta de piezas como último
+      // recurso. Sin el aviso es indistinguible de una medición real.
+      const warningHtml = item.sinDato
+        ? `<iconify-icon icon="material-symbols:warning-outline" class="computo-sindato-warning"
+             title="No se encontró ${escapeHtml(item.unidad || "la magnitud")} en los Property Sets de estos elementos — se muestra la cantidad de piezas (${item.elementos.length}) en su lugar. Revisá la regla del tipo en Configuración → Cómputo → Reglas, o el Property Set del elemento."
+           ></iconify-icon>`
+        : "";
+      return `<td>
+        <div class="computo-cantidad-cell">
+          <input type="number" class="computo-input" data-field="cantidad" value="${item.cantidad.toFixed(2)}" step="0.01" min="0">
+          ${warningHtml}
+        </div>
+      </td>`;
+    }
     case "precioUnitario":
       return `<td><input type="number" class="computo-input" data-field="precioUnitario" value="${item.precioUnitario}" step="any" min="0"></td>`;
     case "importe":
@@ -191,8 +208,18 @@ function instanciaRowHtml(item: ComputoItem, instancia: ComputoInstancia, indice
         </td>`;
       }
       switch (col.id) {
-        case "cantidad": return `<td class="computo-num">${formatMoney(instancia.cantidad)}</td>`;
-        default:         return `<td></td>`;
+        case "cantidad": {
+          // Ver ComputoItem.sinDato / itemCellHtml: mismo aviso, para esta
+          // instancia sola — no se le encontró magnitud propia y `cantidad`
+          // quedó en 1 (conteo).
+          const warningHtml = instancia.sinDato
+            ? `<iconify-icon icon="material-symbols:warning-outline" class="computo-sindato-warning"
+                 title="No se encontró la magnitud de este elemento — se cuenta como 1 pieza."
+               ></iconify-icon>`
+            : "";
+          return `<td class="computo-num">${warningHtml}${formatMoney(instancia.cantidad)}</td>`;
+        }
+        default: return `<td></td>`;
       }
     })
     .join("");
