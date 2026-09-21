@@ -73,6 +73,10 @@ function readName(raw: any): string | null {
 async function collectTypeObjects(model: any, itemData: any): Promise<any[]> {
   const types: any[] = [];
   const seen = new Set<number>();
+  const isTypeObject = (obj: any): boolean => {
+    const category = readName(obj._category)?.toUpperCase() ?? "";
+    return /^IFC.*(?:TYPE|STYLE)$/.test(category) || Array.isArray(obj.HasPropertySets);
+  };
 
   const addType = async (typeRef: any): Promise<void> => {
     const typeObj = await resolveRef(model, typeRef, true);
@@ -91,7 +95,7 @@ async function collectTypeObjects(model: any, itemData: any): Promise<any[]> {
       const relObj = await resolveRef(model, relRef, false);
       if (!relObj || typeof relObj !== "object") continue;
       if (relObj.RelatingType) await addType(relObj.RelatingType);
-      else if (Array.isArray(relObj.HasPropertySets)) await addType(relObj); // ya es el tipo
+      else if (isTypeObject(relObj)) await addType(relObj);
     }
   }
 
@@ -104,7 +108,7 @@ async function collectTypeObjects(model: any, itemData: any): Promise<any[]> {
       const category = relObj._category?.value ?? relObj._category;
       if (relObj.RelatingType) await addType(relObj.RelatingType);
       else if (category === "IFCRELDEFINESBYTYPE") await addType(relObj);
-      else if (Array.isArray(relObj.HasPropertySets)) await addType(relObj); // ya es el tipo
+      else if (isTypeObject(relObj)) await addType(relObj);
     }
   }
 
@@ -279,14 +283,23 @@ export async function getElementTypeName(model: any, localId: number): Promise<s
  * — el atributo IFC que distingue usos distintos de una misma clase (ej.
  * IFCSLAB de fundación vs de piso, IFCCOVERING de zócalo vs de revoque). Se
  * usa para desambiguar la regla de cuantificación cuando la sola clase IFC
- * no alcanza (ver ifc-quantity-rules.ts).
+ * no alcanza (ver ifc-quantity-rules.ts). Si la instancia no lo define,
+ * se busca en su tipo asociado, incluso cuando ese tipo no tenga Psets.
  */
 export async function getPredefinedType(model: any, localId: number): Promise<string | null> {
-  const itemData = await getItemData(model, localId, false);
-  const raw = itemData?.PredefinedType;
-  return typeof raw === "string" ? raw
-    : raw?.value !== undefined ? String(raw.value)
-    : null;
+  const itemData = await getItemData(model, localId, true);
+  if (!itemData) return null;
+  const readType = (raw: any): string | null => {
+    const value = typeof raw === "string" ? raw : raw?.value;
+    return typeof value === "string" ? value.trim().toUpperCase() || null : null;
+  };
+  const instanceType = readType(itemData.PredefinedType);
+  if (instanceType && instanceType !== "NOTDEFINED") return instanceType;
+  for (const typeObj of await collectTypeObjects(model, itemData)) {
+    const type = readType(typeObj.PredefinedType);
+    if (type && type !== "NOTDEFINED") return type;
+  }
+  return instanceType;
 }
 
 export async function getPropertySets(

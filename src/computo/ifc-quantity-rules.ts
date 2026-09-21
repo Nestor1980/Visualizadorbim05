@@ -98,9 +98,6 @@ export function normalizeIfcType(tipoIfc: string): string {
   return `${normalizedClass}:${rest.join(":").trim().toUpperCase()}`;
 }
 
-// PredefinedType que IFC usa como "sin dato" — no alcanzan para desambiguar,
-// se ignoran al armar la clave compuesta CLASE:PREDEFINEDTYPE.
-const UNDEFINED_PREDEFINED_TYPES = new Set(["NOTDEFINED", "USERDEFINED"]);
 
 const DEFAULT_RULES: Record<string, QuantityMethod> = {
   // Se cuentan por pieza — tienen superficie/volumen propio pero en un
@@ -234,7 +231,7 @@ export function getQuantityMethod(tipoIfc: string | null, predefinedType?: strin
   const classKey = normalizeIfcType(tipoIfc);
 
   const pdt = predefinedType?.trim();
-  if (pdt && !UNDEFINED_PREDEFINED_TYPES.has(pdt.toUpperCase())) {
+  if (pdt) {
     const compoundKey = normalizeIfcType(`${classKey}:${pdt}`);
     const compound = overrides[compoundKey] ?? DEFAULT_RULES[compoundKey];
     if (compound) return compound;
@@ -256,7 +253,7 @@ export function getQuantitySource(
   const classKey = normalizeIfcType(tipoIfc);
 
   const pdt = predefinedType?.trim();
-  if (pdt && !UNDEFINED_PREDEFINED_TYPES.has(pdt.toUpperCase())) {
+  if (pdt) {
     const compoundKey = normalizeIfcType(`${classKey}:${pdt}`);
     if (sources[compoundKey]) return sources[compoundKey];
   }
@@ -277,7 +274,7 @@ export function getQuantityAdjust(
   const classKey = normalizeIfcType(tipoIfc);
 
   const pdt = predefinedType?.trim();
-  if (pdt && !UNDEFINED_PREDEFINED_TYPES.has(pdt.toUpperCase())) {
+  if (pdt) {
     const compoundKey = normalizeIfcType(`${classKey}:${pdt}`);
     if (adjusts[compoundKey]) return adjusts[compoundKey];
   }

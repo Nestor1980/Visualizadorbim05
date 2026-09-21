@@ -1823,6 +1823,44 @@ bim-view-cube:active {
   overflow-y: auto;
   scrollbar-gutter: stable;
 }
+.quantity-rule-class-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.6rem 0.2rem;
+  background: var(--bg-surface);
+  font-size: 0.8rem;
+}
+.quantity-rule-add-for-class {
+  border-color: var(--text-primary);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.quantity-rule-unit { font-size: 0.72rem; color: var(--text-muted); white-space: nowrap; }
+.quantity-rule-nested .quantity-rule-row { flex-wrap: wrap; }
+.quantity-rule-nested { margin-left: 0.75rem; }
+.quantity-rule-predefined-label {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+  font-size: 0.72rem;
+}
+.quantity-rule-draft {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.75rem;
+  margin-left: 0.75rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  font-size: 0.8rem;
+}
+.quantity-rule-draft[hidden] { display: none; }
+.quantity-rule-draft label { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
 /* Cada regla: fila principal (tipo · método · restaurar) + fila de fuente de
  * PSet debajo (settings-modal.ts, renderQuantityRules). */
 .quantity-rule {
@@ -1950,6 +1988,7 @@ bim-view-cube:active {
 
 .quantity-rule-add {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
   margin-top: 0.75rem;

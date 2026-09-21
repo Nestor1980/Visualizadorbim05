@@ -117,6 +117,17 @@ export function createPropertiesPanel(
   const [itemsDataTable, updateItemsData] = CUI.tables.itemsData({
     components, modelIdMap: {}, emptySelectionWarning: true,
   });
+  // ui-obc 3.4 genera un bim-label vacío para atributos con dataType
+  // sin unidad (p. ej. PredefinedType, que Fragments guarda como IFCLABEL).
+  // Los textos deben mostrarse directamente; conservar el formato de medidas.
+  const formatValue = itemsDataTable.dataTransform.Value;
+  itemsDataTable.dataTransform = {
+    ...itemsDataTable.dataTransform,
+    Value: (value, row) => {
+      if (typeof value !== "number") return value == null ? "—" : String(value);
+      return formatValue ? formatValue(value, row) : value;
+    },
+  };
   (itemsDataTable as HTMLElement).style.maxHeight = "none";
   (itemsDataTable as HTMLElement).style.overflowY = "visible";
   (itemsDataTable as HTMLElement).style.fontSize  = "11px";

@@ -148,11 +148,11 @@ const PRECIO_KEY = /preciounitario|unitprice|^precio$/i;
 // IAPV_ITEM_KEY / IAPV_SUBITEM_KEY / findUrlPropertyValue viven en
 // ifc/iapv-pliego.ts (compartidas con el Panel de Información).
 
-/** Clave de agrupación por tipo: nombre de tipo/familia si se pudo resolver
- *  (más específico), si no la clase IFC, si no `null` (sin identidad
- *  conocida — nunca se fusiona con otro ítem en ese caso). */
-function identityKey(identity: { tipoIfc: string | null; tipoElemento: string | null }): string | null {
-  return identity.tipoElemento ?? identity.tipoIfc ?? null;
+/** Agrupar por clase, familia y PredefinedType para no mezclar elementos
+ *  sujetos a distintas reglas. Sin clase ni familia no hay identidad segura. */
+function identityKey(identity: { tipoIfc: string | null; tipoElemento: string | null; predefinedType: string | null }): string | null {
+  if (!identity.tipoElemento && !identity.tipoIfc) return null;
+  return JSON.stringify([identity.tipoIfc, identity.tipoElemento, identity.predefinedType]);
 }
 
 /** Redondeo a 2 decimales — límite final antes de guardar/mostrar una
@@ -282,6 +282,10 @@ export function createComputoTool(
   }
 
   async function recomputeCantidad(item: ComputoItem): Promise<void> {
+    const method = getQuantityMethod(item.tipoIfc, item.predefinedType);
+    // Cada regla específica determina su unidad, incluso si el IFC trae
+    // otra unidad o la regla acaba de cambiar de volumen a longitud.
+    if (method !== "auto") item.unidad = defaultUnidadForMethod(method);
     if (item.elementos.length === 0) {
       item.cantidad = 0;
       return;
@@ -298,14 +302,10 @@ export function createComputoTool(
     const quantity = await getQuantityForSelection(
       toModelIdMap(item.elementos), fragments, item.tipoIfc, item.predefinedType,
     );
-    item.cantidad = round2(quantity?.cantidad ?? item.elementos.length);
-    // Sincroniza la unidad con la magnitud que efectivamente se pudo medir
-    // (m2/m3/ml) — así, si cambia la regla de cuantificación del tipo
-    // (Configuración → Reglas), el ítem no queda con la unidad vieja. Solo se
-    // pisa una unidad "automática" (vacía o una magnitud estándar): una unidad
-    // traída del modelo (PSet `Unidad`) o tipeada a mano por el usuario se
-    // respeta.
-    if (quantity && AUTO_UNIDADES.has(item.unidad)) item.unidad = quantity.unidad;
+    // No convertir el número de elementos en supuestos m³ o metros lineales
+    // cuando no se pudo medir la magnitud solicitada.
+    item.cantidad = round2(quantity?.cantidad ?? (method === "auto" ? item.elementos.length : 0));
+    if (method === "auto" && quantity && AUTO_UNIDADES.has(item.unidad)) item.unidad = quantity.unidad;
   }
 
   /** Recalcula la cantidad (y unidad) de TODOS los ítems del cómputo — se
@@ -371,8 +371,8 @@ export function createComputoTool(
 
     // Ventanas, puertas y similares se cuentan por pieza aunque tengan
     // superficie propia — no tiene sentido buscarles un área/volumen.
-    const counted = isCountedCategory(item.tipoIfc, item.predefinedType);
-    let unidad = counted ? "un" : (findPropertyValue(psets, UNIDAD_KEY) ?? "");
+    const method = getQuantityMethod(item.tipoIfc, item.predefinedType);
+    let unidad = method !== "auto" ? defaultUnidadForMethod(method) : (findPropertyValue(psets, UNIDAD_KEY) ?? "");
     if (!unidad) {
       const quantity = await getQuantityForSelection(
         { [modelId]: new Set([localId]) }, fragments, item.tipoIfc, item.predefinedType,

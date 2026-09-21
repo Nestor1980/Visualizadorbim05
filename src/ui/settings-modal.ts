@@ -5,13 +5,14 @@ import { makeModalDraggable, resetModalPosition, closeOnBackdropClick } from "./
 import { getDiscordWebhookUrl, setDiscordWebhookUrl } from "../bcf/share";
 import {
   listQuantityRules, setQuantityRule, setQuantitySource, setQuantityAdjust, resetQuantityRule,
-  QUANTITY_METHOD_LABELS,
+  QUANTITY_METHOD_LABELS, normalizeIfcType,
   type QuantityMethod, type QuantityAdjust,
 } from "../computo/ifc-quantity-rules";
 import { isValidQuantityFormula } from "../computo/quantity-formula";
 import { listCategoriaRules, setCategoriaRule, resetCategoriaRule } from "../computo/ifc-categoria-rules";
 import { listSeenPsets, setPsetVisible, setPropertyVisible } from "../ifc/pset-visibility";
 import { scanAllModelsForPsets } from "../ifc/pset-scan";
+import { getPredefinedTypeOptions } from "../ifc/predefined-types";
 
 export interface SettingsModal {
   modal: HTMLDialogElement;
@@ -40,8 +41,21 @@ function readQuickFilter(container: HTMLElement): string {
  *  explícita: de qué Property Set y propiedad leer el número (si no, el
  *  extractor prueba sus claves candidatas — NetSideArea, GrossArea, …). */
 function renderQuantityRules(container: HTMLElement): void {
+  const unitLabel = (method: QuantityMethod): string => ({ cantidad: "un", area: "m²", area_bruta: "m²", volumen: "m³", longitud: "ml", auto: "según medición" })[method];
   const filter = readQuickFilter(container);
-  const rules = listQuantityRules().filter((rule) => !filter || rule.tipo.toUpperCase().includes(filter));
+  const allRules = listQuantityRules();
+  const predefinedOptions = (ifcClass: string, selected = ""): string => {
+    const values = getPredefinedTypeOptions(ifcClass);
+    // Conservar reglas guardadas previamente sin permitir nuevos valores libres.
+    if (selected && !values.includes(selected)) values.push(selected);
+    return `<option value="" disabled ${selected ? "" : "selected"}>Elegir PredefinedType…</option>` + values.map(value => {
+      const used = value !== selected && allRules.some(rule => rule.tipo === `${ifcClass}:${value}`);
+      return `<option value="${escapeHtml(value)}" ${value === selected ? "selected" : ""} ${used ? "disabled" : ""}>${escapeHtml(value)}${used ? " (regla existente)" : ""}</option>`;
+    }).join("");
+  };
+  const visibleClasses = new Set(allRules.filter(rule => !filter || rule.tipo.includes(filter)).map(rule => rule.tipo.split(":")[0]));
+  const rules = allRules.filter(rule => visibleClasses.has(rule.tipo.split(":")[0]));
+  let previousClass = "";
   const methodOptions = (Object.keys(QUANTITY_METHOD_LABELS) as QuantityMethod[])
     .map((method) => `<option value="${method}">${QUANTITY_METHOD_LABELS[method]}</option>`)
     .join("");
@@ -64,13 +78,27 @@ function renderQuantityRules(container: HTMLElement): void {
       ${rules.length === 0
         ? `<div class="quantity-rules-empty">${filter ? "Ningún tipo IFC coincide con el filtro." : "No hay reglas."}</div>`
         : rules.map((rule) => {
+          const [ifcClass, predefinedType] = rule.tipo.split(":");
+          const groupHeader = ifcClass !== previousClass ? `
+            <div class="quantity-rule-class-header">
+              <strong>${escapeHtml(ifcClass)}</strong>
+              <button type="button" class="quantity-rule-add-btn quantity-rule-add-for-class" data-class="${escapeHtml(ifcClass)}" aria-label="Agregar regla para ${escapeHtml(ifcClass)}" ${getPredefinedTypeOptions(ifcClass).length ? "" : 'disabled title="Esta clase no tiene un catálogo PredefinedType; usá la regla general."'}>+ Agregar regla</button>
+            </div>
+            <div class="quantity-rule-draft" data-class="${escapeHtml(ifcClass)}" hidden></div>` : "";
+          previousClass = ifcClass;
           const measurable = rule.method !== "cantidad";
           const geomOn = rule.adjust?.geometry ?? false;
           return `
-        <div class="quantity-rule">
+        ${groupHeader}
+        <div class="quantity-rule quantity-rule-nested">
           <div class="quantity-rule-row">
-            <span class="quantity-rule-tipo" title="${escapeHtml(rule.tipo)}">${escapeHtml(rule.tipo)}</span>
+            ${predefinedType && rule.isCustomType
+              ? `<label class="quantity-rule-predefined-label">PredefinedType
+                  <select class="quantity-rule-add-input quantity-rule-predefined-edit" aria-label="PredefinedType asociado" data-tipo="${escapeHtml(rule.tipo)}">${predefinedOptions(ifcClass, predefinedType)}</select>
+                </label>`
+              : `<span class="quantity-rule-tipo" title="${escapeHtml(rule.tipo)}">${predefinedType ? `PredefinedType: ${escapeHtml(predefinedType)}` : "Regla general"}</span>`}
             <select class="quantity-rule-select" data-tipo="${escapeHtml(rule.tipo)}">${methodOptions}</select>
+            <span class="quantity-rule-unit">Unidad: ${unitLabel(rule.method)}</span>
             <button type="button" class="quantity-rule-reset" data-tipo="${escapeHtml(rule.tipo)}"
               title="${rule.isCustomType ? "Quitar tipo" : "Restaurar valor por defecto"}"
               ${rule.isCustomType || rule.isOverridden || rule.source || rule.adjust ? "" : "disabled"}>
@@ -103,11 +131,11 @@ function renderQuantityRules(container: HTMLElement): void {
         }).join("")}
     </div>
     <div class="quantity-rule-add">
-      <input type="text" class="quantity-rule-add-input" placeholder="Tipo IFC, ej. IFCCOLUMN">
+      <input type="text" class="quantity-rule-add-input" aria-label="Clase IFC" placeholder="Clase IFC, ej. IFCBEAM">
       <select class="quantity-rule-add-select">${methodOptions}</select>
       <button type="button" class="quantity-rule-add-btn">
         <iconify-icon icon="material-symbols:add"></iconify-icon>
-        <span>Agregar</span>
+        <span>Agregar clase IFC</span>
       </button>
     </div>`;
 
@@ -123,6 +151,25 @@ function renderQuantityRules(container: HTMLElement): void {
       const tipo = select.dataset.tipo;
       if (!tipo) return;
       setQuantityRule(tipo, select.value as QuantityMethod);
+      renderQuantityRules(container);
+    });
+  });
+
+  container.querySelectorAll<HTMLSelectElement>(".quantity-rule-predefined-edit").forEach(input => {
+    input.addEventListener("input", () => input.setCustomValidity(""));
+    input.addEventListener("change", () => {
+      const oldKey = input.dataset.tipo!;
+      const value = input.value.trim().toUpperCase();
+      const newKey = `${oldKey.split(":")[0]}:${value}`;
+      if (newKey === oldKey) return;
+      input.setCustomValidity(!/^[A-Z0-9_]+$/.test(value) ? "Indicá un PredefinedType sin espacios."
+        : listQuantityRules().some(rule => rule.tipo === newKey) ? "Ya existe una regla para este PredefinedType." : "");
+      if (!input.reportValidity()) return;
+      const rule = listQuantityRules().find(rule => rule.tipo === oldKey)!;
+      setQuantityRule(newKey, rule.method);
+      setQuantitySource(newKey, rule.source);
+      setQuantityAdjust(newKey, rule.adjust);
+      resetQuantityRule(oldKey);
       renderQuantityRules(container);
     });
   });
@@ -198,13 +245,72 @@ function renderQuantityRules(container: HTMLElement): void {
     });
   });
 
-  const addInput  = container.querySelector<HTMLInputElement>(".quantity-rule-add-input")!;
-  const addSelect = container.querySelector<HTMLSelectElement>(".quantity-rule-add-select")!;
-  const addBtn    = container.querySelector<HTMLButtonElement>(".quantity-rule-add-btn")!;
+  container.querySelectorAll<HTMLButtonElement>(".quantity-rule-add-for-class").forEach(button => {
+    button.addEventListener("click", () => {
+      const ifcClass = button.dataset.class!;
+      const draft = container.querySelector<HTMLElement>(`.quantity-rule-draft[data-class="${CSS.escape(ifcClass)}"]`)!;
+      if (!draft.hidden) { draft.querySelector<HTMLSelectElement>("[data-predefined]")?.focus(); return; }
+      draft.hidden = false;
+      draft.innerHTML = `
+        <strong>Nueva regla para ${escapeHtml(ifcClass)}</strong>
+        <label>PredefinedType asociado
+          <select class="quantity-rule-add-input" data-predefined aria-label="PredefinedType asociado" required>${predefinedOptions(ifcClass)}</select>
+        </label>
+        <label>Método de cálculo <select class="quantity-rule-add-select">${methodOptions}</select></label>
+        <span class="quantity-rule-unit" data-unit></span>
+        <div class="quantity-rule-row">
+          <button type="button" class="quantity-rule-add-btn" data-save>Guardar regla</button>
+          <button type="button" class="quantity-rule-add-btn" data-cancel>Cancelar</button>
+        </div>`;
+      const input = draft.querySelector<HTMLSelectElement>("[data-predefined]")!;
+      const select = draft.querySelector<HTMLSelectElement>(".quantity-rule-add-select")!;
+      select.value = allRules.find(rule => rule.tipo === ifcClass)?.method ?? "auto";
+      const updateUnit = () => { draft.querySelector("[data-unit]")!.textContent = `Unidad de esta regla: ${unitLabel(select.value as QuantityMethod)}`; };
+      select.addEventListener("change", updateUnit);
+      updateUnit();
+      input.addEventListener("input", () => input.setCustomValidity(""));
+      const save = () => {
+        const predefined = input.value.trim().toUpperCase();
+        const key = `${ifcClass}:${predefined}`;
+        input.setCustomValidity(!/^[A-Z0-9_]+$/.test(predefined)
+          ? "Elegí un PredefinedType de la lista."
+          : listQuantityRules().some(rule => rule.tipo === key)
+            ? "Ya existe una regla para este PredefinedType en esta clase." : "");
+        if (!input.reportValidity()) return;
+        setQuantityRule(key, select.value as QuantityMethod);
+        renderQuantityRules(container);
+        container.querySelector<HTMLElement>(`.quantity-rule-select[data-tipo="${CSS.escape(key)}"]`)?.focus();
+      };
+      draft.querySelector("[data-save]")!.addEventListener("click", save);
+      draft.querySelector("[data-cancel]")!.addEventListener("click", () => { draft.hidden = true; draft.replaceChildren(); });
+      input.addEventListener("keydown", event => { if (event.key === "Enter") { event.preventDefault(); save(); } });
+      input.focus();
+    });
+  });
+
+  const addInput  = container.querySelector<HTMLInputElement>(":scope > .quantity-rule-add .quantity-rule-add-input")!;
+  const addSelect = container.querySelector<HTMLSelectElement>(":scope > .quantity-rule-add .quantity-rule-add-select")!;
+  const addBtn    = container.querySelector<HTMLButtonElement>(":scope > .quantity-rule-add .quantity-rule-add-btn")!;
+  for (const input of [addInput]) {
+    input.addEventListener("input", () => addInput.setCustomValidity(""));
+    input.addEventListener("keydown", event => {
+      if (event.key === "Enter") { event.preventDefault(); addBtn.click(); }
+    });
+  }
   addBtn.addEventListener("click", () => {
-    const tipo = addInput.value.trim();
-    if (!tipo) return;
+    const clase = addInput.value.trim().toUpperCase();
+    const tipo = normalizeIfcType(clase);
+    addInput.setCustomValidity(/^IFC[A-Z0-9]+$/.test(tipo)
+      ? "" : "Indicá una clase IFC, por ejemplo IFCBEAM. Usá Agregar regla para asociar un PredefinedType.");
+    if (!addInput.reportValidity()) return;
+    if (listQuantityRules().some(rule => rule.tipo === tipo)) {
+      addInput.setCustomValidity("Esta regla ya existe. Editala en la lista.");
+      addInput.reportValidity();
+      return;
+    }
     setQuantityRule(tipo, addSelect.value as QuantityMethod);
+    const filterInput = container.parentElement?.querySelector<HTMLInputElement>(".settings-quick-filter-input");
+    if (filterInput) filterInput.value = clase.split(":")[0];
     renderQuantityRules(container);
   });
 }
@@ -423,6 +529,13 @@ export function createSettingsModal(fragments: OBC.FragmentsManager): SettingsMo
                 <div class="settings-row-text">
                   <span class="settings-row-title">Reglas de cuantificación por tipo IFC</span>
                   <span class="settings-row-desc">
+                    En cada clase IFC, usá "Agregar regla" y definí dentro de ella
+                    el PredefinedType al que se aplica (ej. BEAM para IFCBEAM).
+                    La regla específica tiene prioridad sobre la regla general.
+                    Cada regla usa su propia unidad: Volumen para m³ de concreto
+                    o Longitud para metros lineales de perfiles metálicos.
+                    Usá los valores PredefinedType reales del IFC; si ambos
+                    materiales comparten el mismo valor, ese atributo no permite distinguirlos.
                     Define cómo se calcula la cantidad de cada tipo de elemento en
                     la herramienta de Cómputo: por área, volumen, longitud o
                     cantidad de piezas. Opcionalmente, "Medir desde" fija de qué
