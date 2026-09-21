@@ -107,26 +107,50 @@ function itemCellHtml(item: ComputoItem, col: ComputoColumnView, expandida: bool
         </div>
       </td>`;
     }
-    case "iapvSubItem":
+    case "iapvSubItem": {
       // El SubItem es la designación del ítem — con el PSet de IAPV, la del
-      // Pliego; si no, el nombre del tipo de elemento (ej. "Basic Wall:4.4 De
-      // ladrillos"), que es lo que el ítem agrupa. Las instancias de ese tipo
-      // se despliegan como filas hijas acá abajo (ver `instanciaRowHtml`), así
-      // que el botón que las muestra/oculta vive en esta celda.
+      // Pliego; si no, el nombre de tipo de elemento ya limpio de categoría e
+      // id de Revit (ver `extractElementLabel` en computo-tool.ts), que es lo
+      // que el ítem agrupa. Ese nombre crudo (con la info "técnica" que al
+      // usuario final del cómputo no le sirve) queda como tooltip — ver
+      // `nombreElemento`. Las instancias de ese tipo se despliegan como filas
+      // hijas acá abajo (ver `instanciaRowHtml`), así que el botón que las
+      // muestra/oculta vive en esta celda.
+      const tooltipHtml = item.nombreElemento && item.nombreElemento !== item.iapvSubItem
+        ? ` title="${escapeHtml(item.nombreElemento)}"`
+        : "";
       return `<td>
         <div class="computo-subitem-cell">
           ${instanciasToggleHtml(item, expandida)}
-          <input type="text" class="computo-input" data-field="iapvSubItem" value="${escapeHtml(item.iapvSubItem)}" placeholder="—">
+          <input type="text" class="computo-input" data-field="iapvSubItem" value="${escapeHtml(item.iapvSubItem)}" placeholder="—"${tooltipHtml}>
         </div>
       </td>`;
+    }
     case "rubro":
       return `<td><input type="text" class="computo-input" data-field="rubro" value="${item.rubro}" placeholder="Rubro"></td>`;
     case "descripcion":
       return `<td><input type="text" class="computo-input" data-field="descripcion" value="${item.descripcion}" placeholder="Descripción"></td>`;
     case "unidad":
       return `<td><input type="text" class="computo-input" data-field="unidad" value="${item.unidad}"></td>`;
-    case "cantidad":
-      return `<td><input type="number" class="computo-input" data-field="cantidad" value="${item.cantidad.toFixed(2)}" step="0.01" min="0"></td>`;
+    case "cantidad": {
+      // `sinDato` (ver computo-tool.ts): el método de cuantificación del tipo
+      // pide medir (área/volumen/longitud) pero no se encontró esa magnitud
+      // en ningún elemento del ítem — ni por la fuente configurada en
+      // Configuración → Cómputo → Reglas, ni por búsqueda automática, ni por
+      // geometría — y esta cantidad quedó en la cuenta de piezas como último
+      // recurso. Sin el aviso es indistinguible de una medición real.
+      const warningHtml = item.sinDato
+        ? `<iconify-icon icon="material-symbols:warning-outline" class="computo-sindato-warning"
+             title="No se encontró ${escapeHtml(item.unidad || "la magnitud")} en los Property Sets de estos elementos — se muestra la cantidad de piezas (${item.elementos.length}) en su lugar. Revisá la regla del tipo en Configuración → Cómputo → Reglas, o el Property Set del elemento."
+           ></iconify-icon>`
+        : "";
+      return `<td>
+        <div class="computo-cantidad-cell">
+          <input type="number" class="computo-input" data-field="cantidad" value="${item.cantidad.toFixed(2)}" step="0.01" min="0">
+          ${warningHtml}
+        </div>
+      </td>`;
+    }
     case "precioUnitario":
       return `<td><input type="number" class="computo-input" data-field="precioUnitario" value="${item.precioUnitario}" step="any" min="0"></td>`;
     case "importe":
@@ -176,13 +200,26 @@ function instanciaRowHtml(item: ComputoItem, instancia: ComputoInstancia, indice
   const cells = cols
     .map((col) => {
       if (col.id === labelId) {
+        // El nombre visible ya viene limpio de categoría/id de Revit (ver
+        // `extractElementLabel` en computo-tool.ts); el crudo completo queda
+        // como tooltip, para quien necesite identificar el elemento exacto.
         return `<td class="computo-instancia-name">
-          <span title="${escapeHtml(instancia.nombre)}">${escapeHtml(instancia.nombre)}</span>
+          <span title="${escapeHtml(instancia.nombreCompleto)}">${escapeHtml(instancia.nombre)}</span>
         </td>`;
       }
       switch (col.id) {
-        case "cantidad": return `<td class="computo-num">${formatMoney(instancia.cantidad)}</td>`;
-        default:         return `<td></td>`;
+        case "cantidad": {
+          // Ver ComputoItem.sinDato / itemCellHtml: mismo aviso, para esta
+          // instancia sola — no se le encontró magnitud propia y `cantidad`
+          // quedó en 1 (conteo).
+          const warningHtml = instancia.sinDato
+            ? `<iconify-icon icon="material-symbols:warning-outline" class="computo-sindato-warning"
+                 title="No se encontró la magnitud de este elemento — se cuenta como 1 pieza."
+               ></iconify-icon>`
+            : "";
+          return `<td class="computo-num">${warningHtml}${formatMoney(instancia.cantidad)}</td>`;
+        }
+        default: return `<td></td>`;
       }
     })
     .join("");
@@ -264,6 +301,35 @@ function tableHeadHtml(): string {
  *  quedan para subtotal e incidencia. */
 function groupLabelColspan(): number {
   return Math.max(1, visibleComputoColumns().length - 2);
+}
+
+/** Ancho relativo de la columna de acciones (toggle de instancias / eliminar),
+ *  en las mismas unidades "wch" que `excelWidth` — se mezcla con esas para el
+ *  reparto proporcional del `<colgroup>` de abajo. */
+const ACTIONS_COL_WIDTH = 7;
+
+/** `<colgroup>` con un ancho explícito (%) por columna, proporcional a
+ *  `excelWidth` (ya calibrado para las mismas columnas en el export a Excel).
+ *  Fija el ancho de cada columna UNA sola vez para toda la tabla — con
+ *  `table-layout: fixed` (ver global.css) la cabecera y cada tipo de fila
+ *  (ítem, instancia, categoría, "Calculando instancias…") quedan clavadas a
+ *  la misma grilla sin importar su contenido ni su colspan.
+ *
+ *  Sin esto, el ancho de cada columna lo decide el layout automático del
+ *  navegador a partir del contenido de TODAS las filas — y esta tabla mezcla
+ *  formas de fila muy distintas (categoría con colspan agrupado, fila de
+ *  carga con colspan=N+1, nombres de instancia arbitrariamente largos): con
+ *  layout automático terminaban resolviendo anchos de columna distintos según
+ *  qué filas hubiera en pantalla en ese momento, y la cabecera (que no varía)
+ *  quedaba desalineada respecto del cuerpo. */
+function colgroupHtml(): string {
+  const cols = visibleComputoColumns();
+  const total = cols.reduce((sum, c) => sum + c.excelWidth, 0) + ACTIONS_COL_WIDTH;
+  const dataColsHtml = cols
+    .map((c) => `<col style="width:${((c.excelWidth / total) * 100).toFixed(3)}%">`)
+    .join("");
+  const actionsColHtml = `<col style="width:${((ACTIONS_COL_WIDTH / total) * 100).toFixed(3)}%">`;
+  return `<colgroup>${dataColsHtml}${actionsColHtml}</colgroup>`;
 }
 
 function categoriaHeaderHtml(section: ComputoSection, total: number): string {
@@ -523,6 +589,7 @@ export function setupComputoSection(
     // monetario general de la tabla (sí los subtotales por grupo / sección).
     tableContainer.innerHTML = `
       <table class="computo-table">
+        ${colgroupHtml()}
         ${tableHeadHtml()}
         ${bodyHtml}
       </table>

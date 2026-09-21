@@ -23,10 +23,12 @@ export interface ComputoItem {
   iapvItem: string;
   /** Designación del SubItem del Presupuesto Oficial de IAPV (ej. "4.1 De
    *  ladrillos huecos de 0,20m de espesor"), leída del PSet `IAPV_Suitem`. Si
-   *  el elemento no trae ese PSet cae al nombre de tipo/familia (ej. "Basic
-   *  Wall:4.4 De ladrillos"): el ítem agrupa todas las instancias de ese tipo,
-   *  así que ese nombre es su designación — las instancias se despliegan como
-   *  filas hijas debajo (ver `getInstancias`). */
+   *  el elemento no trae ese PSet cae al nombre de tipo/familia (ej. "4.4 De
+   *  ladrillos", ya sin el prefijo de categoría ni el id de Revit que trae el
+   *  nombre crudo — ver `extractElementLabel` y `nombreElemento`): el ítem
+   *  agrupa todas las instancias de ese tipo, así que ese nombre es su
+   *  designación — las instancias se despliegan como filas hijas debajo (ver
+   *  `getInstancias`). */
   iapvSubItem: string;
   /** URL a la especificación técnica del Pliego que define este ítem —
    *  primera propiedad con VALOR con forma de URL que se encuentre entre los
@@ -60,6 +62,26 @@ export interface ComputoItem {
    *  losa de fundación (volumen) contra una losa de piso (área) que
    *  comparten "IFCSLAB". */
   predefinedType: string | null;
+  /** `true` cuando el método de cuantificación del tipo pide medir (área,
+   *  volumen o longitud) pero no se encontró esa magnitud en ningún elemento
+   *  del ítem — ni en la fuente explícita configurada en Configuración →
+   *  Cómputo → Reglas ("Medir desde"), ni en la búsqueda automática por
+   *  Property Sets, ni por geometría — y `cantidad` quedó en la cantidad de
+   *  piezas del ítem como último recurso (ver `recomputeCantidad`). Sin este
+   *  aviso, esa caída silenciosa es indistinguible de una medición real: la
+   *  tabla se ve exactamente igual (mismo campo `cantidad`, misma `unidad`
+   *  que quedó de la última medición válida o del default del método). Se
+   *  muestra como advertencia junto a Cantidad en computo-manager.ts. */
+  sinDato: boolean;
+  /** Nombre crudo (sin limpiar) del elemento/tipo que dio origen a
+   *  `iapvSubItem` cuando ese campo no vino del PSet de IAPV — ej. "Basic
+   *  Wall:4.4 De ladrillos:317645", con el prefijo de categoría y el id de
+   *  Revit que `extractElementLabel` recorta para armar la designación. No es
+   *  editable ni se muestra como columna: solo alimenta el tooltip sobre el
+   *  SubItem en la tabla (ver itemCellHtml en computo-manager.ts), para quien
+   *  necesite identificar el tipo/elemento exacto en el modelo. `null` si
+   *  `iapvSubItem` vino del PSet de IAPV o si el elemento no traía nombre. */
+  nombreElemento: string | null;
   /** Sección de la tabla de cómputo a la que pertenece este ítem (ver
    *  `ComputoCategoria`), o `null` si todavía no se arrastró a ninguna. Hoy
    *  la asignación es manual (drag & drop en computo-manager.ts); a futuro se
@@ -82,11 +104,22 @@ export interface ComputoItem {
 export interface ComputoInstancia {
   modelId: string;
   localId: number;
-  /** `Name` del elemento IFC (ej. "Basic Wall:4.4 De ladrillos:317645"), o
-   *  `#<localId>` si no trae ninguno. */
+  /** Nombre a mostrar (ej. "4.4 De ladrillos") — el `Name` del elemento IFC
+   *  ya limpio del prefijo de categoría y el id de Revit que trae el nombre
+   *  crudo (ver `extractElementLabel`); esos segmentos no le sirven al
+   *  usuario final del cómputo, aunque quedan disponibles en
+   *  `nombreCompleto` para quien sí los necesite. */
   nombre: string;
+  /** `Name` crudo del elemento IFC, sin limpiar (ej. "Basic Wall:4.4 De
+   *  ladrillos:317645", o `#<localId>` si no trae ninguno) — se muestra como
+   *  tooltip sobre `nombre` en la tabla (ver instanciaRowHtml en
+   *  computo-manager.ts), para identificar el elemento exacto en el modelo. */
+  nombreCompleto: string;
   unidad: string;
   cantidad: number;
+  /** Ver `ComputoItem.sinDato` — mismo aviso, pero para esta instancia sola:
+   *  no se encontró su magnitud individual y `cantidad` quedó en 1 (conteo). */
+  sinDato: boolean;
 }
 
 /** Sección de la tabla de cómputo creada a mano por el usuario (botón
@@ -325,6 +358,37 @@ async function getInstanceName(
 }
 
 /**
+ * Limpia el nombre crudo de un elemento/tipo IFC exportado por Revit para
+ * mostrarlo como designación de un ítem del cómputo. El exportador de Revit
+ * arma el `Name` con el patrón "Categoría:Tipo" (tipos) o
+ * "Categoría:Tipo:IdDeElemento" (instancias) — ej. "Basic Wall:4.4 De
+ * ladrillos" o "Basic Wall:4.4 De ladrillos:317645". Ni la categoría de Revit
+ * ("Basic Wall") ni el id de elemento le sirven a quien lee el cómputo
+ * (aunque sí sirven para identificar el elemento en el modelo — se preservan
+ * enteros en `ComputoItem.nombreElemento` / `ComputoInstancia.nombreCompleto`
+ * para eso), así que acá se recorta a lo que queda en el medio: el nombre de
+ * tipo real ("4.4 De ladrillos").
+ *
+ * Si el string no tiene el patrón esperado (sin ":", o con exactamente 2
+ * partes donde la última tampoco es un id numérico) se devuelve tal cual —
+ * mejor no recortar que recortar mal un nombre que no sigue esta convención.
+ */
+export function extractElementLabel(raw: string): string {
+  const parts = raw.split(":");
+  if (parts.length < 2) return raw;
+  const last = parts[parts.length - 1].trim();
+  // "Categoría:Tipo:12345" (instancia): el id numérico y la categoría se
+  // descartan, queda lo que hay entre ambos.
+  if (/^\d+$/.test(last)) {
+    const middle = parts.slice(1, -1).join(":").trim();
+    return middle || raw;
+  }
+  // "Categoría:Tipo" (tipo, sin id): se descarta solo la categoría.
+  const rest = parts.slice(1).join(":").trim();
+  return rest || raw;
+}
+
+/**
  * Herramienta de cómputo y presupuesto: mismo molde que CotaTool/DrawTool
  * (estado propio en `list`, eventos onItemAdded/onItemDeleted para que
  * data-layers-tree.ts anide cada ítem en la capa activa) pero, a diferencia
@@ -382,6 +446,7 @@ export function createComputoTool(
       // categoría se marcara como "contada") se autocorrija apenas se le
       // suma o saca un elemento, sin depender de borrarlo y recrearlo.
       item.unidad = "un";
+      item.sinDato = false;
       return;
     }
     const quantity = await getQuantityForSelection(
@@ -395,6 +460,10 @@ export function createComputoTool(
     // traída del modelo (PSet `Unidad`) o tipeada a mano por el usuario se
     // respeta.
     if (quantity && AUTO_UNIDADES.has(item.unidad)) item.unidad = quantity.unidad;
+    // Ver ComputoItem.sinDato: sin `quantity`, `cantidad` de arriba quedó en
+    // la cuenta de piezas como último recurso — se avisa en vez de dejarlo
+    // indistinguible de una medición real.
+    item.sinDato = quantity === null;
   }
 
   /** Detalle por instancia ya resuelto, por ítem (ver `ComputoInstancia`):
@@ -415,8 +484,9 @@ export function createComputoTool(
     const counted = isCountedCategory(item.tipoIfc, item.predefinedType);
     return Promise.all(
       item.elementos.map(async ({ modelId, localId }) => {
-        const nombre = (await getInstanceName(fragments, modelId, localId)) ?? `#${localId}`;
-        if (counted) return { modelId, localId, nombre, unidad: "un", cantidad: 1 };
+        const nombreCompleto = (await getInstanceName(fragments, modelId, localId)) ?? `#${localId}`;
+        const nombre = extractElementLabel(nombreCompleto);
+        if (counted) return { modelId, localId, nombre, nombreCompleto, unidad: "un", cantidad: 1, sinDato: false };
         const quantity = await getQuantityForSelection(
           { [modelId]: new Set([localId]) }, fragments, item.tipoIfc, item.predefinedType,
         );
@@ -424,11 +494,13 @@ export function createComputoTool(
           modelId,
           localId,
           nombre,
+          nombreCompleto,
           // Misma magnitud que mide el ítem; si el elemento no arroja ninguna,
           // se deja su unidad y 1 (el aporte por conteo, que es el respaldo
           // que usa `recomputeCantidad` para el total).
           unidad: quantity?.unidad ?? item.unidad,
           cantidad: round2(quantity?.cantidad ?? 1),
+          sinDato: quantity === null,
         };
       }),
     );
@@ -491,15 +563,17 @@ export function createComputoTool(
 
     // SubItem = designación del ítem. Con el PSet de IAPV manda ese; si no, es
     // el nombre de tipo/familia (compartido entre todas las instancias del
-    // tipo, ej. "Basic Wall:4.4 De ladrillos"), que es justamente lo que el
-    // ítem agrupa — cada instancia se ve como fila hija con su propio Name
-    // (ver `getInstancias`). Se prefiere el nombre del tipo por sobre el Name
-    // de la instancia, que trae un sufijo único por elemento y ensuciaría la
-    // designación.
-    const nombreTipo =
+    // tipo), que es justamente lo que el ítem agrupa — cada instancia se ve
+    // como fila hija con su propio Name (ver `getInstancias`). Se prefiere el
+    // nombre del tipo por sobre el Name de la instancia, que trae un sufijo
+    // único por elemento y ensuciaría la designación si se repitiera acá.
+    const nombreCrudo =
       item.tipoElemento
       ?? findPropertyValue(psets, NAME_KEY)
       ?? (await getInstanceName(fragments, modelId, localId));
+    // Se guarda entero (sin recortar) para el tooltip — ver `nombreElemento`.
+    item.nombreElemento = nombreCrudo;
+    const nombreTipo = nombreCrudo ? extractElementLabel(nombreCrudo) : null;
     item.iapvSubItem = findPropertyValue(psets, IAPV_SUBITEM_KEY) ?? nombreTipo ?? "";
 
     // Descripción: el texto del rubro (Pliego). Solo se siembra si el modelo
@@ -558,7 +632,7 @@ export function createComputoTool(
       item = {
         id: `computo-${Date.now()}-${itemCounter}`,
         rubro: "", descripcion: "", unidad: "", cantidad: 0, precioUnitario: 0,
-        iapvItem: "", iapvSubItem: "", urlPliego: "", psetValues: {},
+        iapvItem: "", iapvSubItem: "", urlPliego: "", psetValues: {}, nombreElemento: null, sinDato: false,
         elementos: [], tipoIfc: identity.tipoIfc, tipoElemento: identity.tipoElemento,
         predefinedType: identity.predefinedType,
         categoriaId: categoriaNombre ? findOrCreateCategoriaByName(categoriaNombre).id : null,
@@ -662,20 +736,20 @@ export function createComputoTool(
 
   function restoreItem(data: ComputoItem): void {
     // Proyectos guardados antes de que el nombre del elemento pasara a ser el
-    // SubItem (ver `seedFieldsFromElement`) lo traen en Descripción: se mueve
-    // acá para que la tabla restaurada quede igual que una recién computada. Si
-    // Descripción trae otra cosa (una descripción de verdad, de un PSet), se
-    // respeta y el SubItem se arma con el nombre del tipo.
-    const nombreTipo = data.tipoElemento ?? "";
+    // SubItem (ver `seedFieldsFromElement`) lo traen en Descripción, y antes
+    // de que ese nombre se limpiara de categoría/id de Revit (ver
+    // `extractElementLabel`) pueden traerlo crudo en el propio SubItem — se
+    // resuelve acá para que la tabla restaurada quede igual que una recién
+    // computada. Solo se toca cuando el SubItem está vacío: uno ya guardado
+    // con texto no se reescribe, por si el usuario lo editó a mano.
+    const nombreCrudo = data.nombreElemento ?? data.tipoElemento ?? null;
     let iapvSubItem = data.iapvSubItem ?? "";
     let descripcion = data.descripcion ?? "";
     if (!iapvSubItem) {
-      if (nombreTipo) {
-        iapvSubItem = nombreTipo;
-        if (descripcion === nombreTipo) descripcion = "";
-      } else {
-        iapvSubItem = descripcion;
-        descripcion = "";
+      const candidato = nombreCrudo || descripcion || null;
+      if (candidato) {
+        iapvSubItem = extractElementLabel(candidato);
+        if (descripcion === candidato) descripcion = "";
       }
     }
 
@@ -684,6 +758,7 @@ export function createComputoTool(
     // "sin dato"/"sin sección", igual que antes de que existieran estos campos).
     const item: ComputoItem = {
       ...data,
+      nombreElemento: nombreCrudo,
       predefinedType: data.predefinedType ?? null,
       categoriaId: data.categoriaId ?? null,
       iapvItem: data.iapvItem ?? "",
@@ -691,6 +766,11 @@ export function createComputoTool(
       descripcion,
       urlPliego: data.urlPliego ?? "",
       psetValues: data.psetValues ?? {},
+      // `sinDato` no se guarda con el proyecto (es un aviso derivado del
+      // estado actual del modelo/reglas, no un dato propio del ítem) — arranca
+      // en `false` y se resuelve solo apenas cambien las reglas o se toque el
+      // ítem (ver `scheduleRecomputeAll` / `recomputeCantidad`).
+      sinDato: false,
       elementos: [...data.elementos],
     };
     list.set(item.id, item);
